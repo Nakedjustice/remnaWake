@@ -1,5 +1,5 @@
 # remnawave-notify-bot
-
+Bot in entirely writted via Claude Code and other AI agents.
 **English** · [Русский](README.ru.md)
 
 Lightweight Go service that polls a [Remnawave](https://remna.st) panel once a
