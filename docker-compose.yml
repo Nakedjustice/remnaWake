@@ -1,0 +1,13 @@
+services:
+  bot:
+    build: .
+    image: remnawave-notify-bot:latest
+    container_name: remnawave-notify-bot
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
