@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anomalyco/remnawave-notify-bot/internal/remnawave"
-	tgbot "github.com/anomalyco/remnawave-notify-bot/internal/telegram"
+	"github.com/Nakedjustice/remnaWake/internal/remnawave"
+	tgbot "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
 var triggerDays = []int{7, 3, 1}

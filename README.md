@@ -86,18 +86,29 @@ On `/start` the bot replies with:
 
 ## Running
 
-### Quick install (recommended)
+### Install on your server (recommended)
 
-An interactive script asks for the panel URL, API token, bot token, admin
-Telegram ID, timezone and run time, writes a locked-down `.env` (mode `600`), and
-offers to build and start the container:
+One command downloads the project onto your server and launches the interactive
+installer:
 
 ```bash
-chmod +x install.sh
+curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | bash
+```
+
+Prefer to do it by hand? Clone and run the installer yourself:
+
+```bash
+git clone https://github.com/Nakedjustice/remnaWake.git
+cd remnaWake
 ./install.sh
 ```
 
-### Local
+The installer asks for the panel URL, API token, bot token, admin Telegram ID,
+timezone and run time, writes a locked-down `.env` (mode `600`), and offers to
+build and start the container with Docker Compose. Requires `git` (or `curl`/
+`wget`) plus Docker Engine + the Compose plugin.
+
+### Local (development)
 
 ```bash
 cp .env.example .env
@@ -127,3 +138,25 @@ docker compose logs -f
   and `message` updates to handle the "Я оплатил" button and the `/start` command.
 - Deduplication is an exact match of the remaining days (`7/3/1`) on the run date.
   No state is persisted.
+
+## Deploy your own copy
+
+To host the bot from your own GitHub repo (so the one-line installer above works
+for you and your users), push the project to a **public** repo:
+
+```bash
+# from the project directory
+git remote add origin https://github.com/<you>/<repo>.git
+git push -u origin main
+```
+
+Then point the download URLs at your repo by replacing
+`Nakedjustice/remnaWake` (and the branch `main`) in `get.sh`, `README.md` and
+`README.ru.md`, and the `module` path in `go.mod`. Your `.env` is gitignored and
+is never pushed, so your API tokens stay private.
+
+After pushing, verify the installer is reachable:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<you>/<repo>/main/get.sh | head -5
+```

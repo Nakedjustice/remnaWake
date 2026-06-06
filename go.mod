@@ -1,4 +1,4 @@
-module github.com/anomalyco/remnawave-notify-bot
+module github.com/Nakedjustice/remnaWake
 
 go 1.22
 
