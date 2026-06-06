@@ -1,4 +1,5 @@
 # remnawave-notify-bot
+Бот полностью написан при помощи Claude Code и других ИИ агентов
 
 [English](README.md) · **Русский**
 
