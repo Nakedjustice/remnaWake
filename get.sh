@@ -10,13 +10,13 @@
 # Overridable via environment variables:
 #   REPO=owner/name      (default: Nakedjustice/remnaWake)
 #   BRANCH=branch         (default: main)
-#   TARGET_DIR=path       (default: remnaWake)
+#   TARGET_DIR=path       (default: /opt/remnaWake)
 #
 set -euo pipefail
 
 REPO="${REPO:-Nakedjustice/remnaWake}"
 BRANCH="${BRANCH:-main}"
-TARGET_DIR="${TARGET_DIR:-remnaWake}"
+TARGET_DIR="${TARGET_DIR:-/opt/remnaWake}"
 
 if [ -t 1 ]; then
   BOLD="$(printf '\033[1m')"; DIM="$(printf '\033[2m')"
@@ -30,6 +30,27 @@ warn() { printf '%s\n' "${YELLOW}$*${RESET}" >&2; }
 err()  { printf '%s\n' "${RED}$*${RESET}" >&2; }
 
 printf '%s\n' "${BOLD}remnawave-notify-bot — downloading $REPO@$BRANCH${RESET}" >&2
+printf '%s\n' "${DIM}Install location: $TARGET_DIR${RESET}" >&2
+
+# --- Ensure the target's parent exists and is writable ----------------------
+# /opt typically requires root; fail early with a clear message instead of a
+# cryptic permission error mid-clone.
+parent="$(dirname "$TARGET_DIR")"
+need_root=0
+if [ ! -d "$parent" ]; then
+  mkdir -p "$parent" 2>/dev/null || need_root=1
+fi
+if [ -d "$parent" ] && [ ! -w "$parent" ]; then
+  need_root=1
+fi
+if [ "$need_root" -eq 1 ] && [ "$(id -u)" -ne 0 ]; then
+  err "Installing to $TARGET_DIR requires root privileges."
+  err "Re-run with sudo:"
+  err "  curl -fsSL https://raw.githubusercontent.com/$REPO/$BRANCH/get.sh | sudo bash"
+  err "…or pick a writable location:"
+  err "  curl -fsSL https://raw.githubusercontent.com/$REPO/$BRANCH/get.sh | TARGET_DIR=\"\$HOME/remnaWake\" bash"
+  exit 1
+fi
 
 # --- Refuse to clobber a non-empty target dir -------------------------------
 if [ -e "$TARGET_DIR" ] && [ -n "$(ls -A "$TARGET_DIR" 2>/dev/null || true)" ]; then

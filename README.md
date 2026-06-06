@@ -88,19 +88,26 @@ On `/start` the bot replies with:
 
 ### Install on your server (recommended)
 
-One command downloads the project onto your server and launches the interactive
-installer:
+One command downloads the project to **`/opt/remnaWake`** and launches the
+interactive installer. Installing under `/opt` needs root, so run it as root or
+with `sudo`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | sudo bash
 ```
 
-Prefer to do it by hand? Clone and run the installer yourself:
+To install somewhere else (a writable path needs no root), set `TARGET_DIR`:
 
 ```bash
-git clone https://github.com/Nakedjustice/remnaWake.git
-cd remnaWake
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | TARGET_DIR="$HOME/remnaWake" bash
+```
+
+Prefer to do it by hand?
+
+```bash
+sudo git clone https://github.com/Nakedjustice/remnaWake.git /opt/remnaWake
+cd /opt/remnaWake
+sudo ./install.sh
 ```
 
 The installer asks for the panel URL, API token, bot token, admin Telegram ID,

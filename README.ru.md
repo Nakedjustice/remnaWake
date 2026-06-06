@@ -88,18 +88,27 @@ chat ID группы/канала.
 
 ### Установка на сервер (рекомендуется)
 
-Одна команда скачивает проект на ваш сервер и запускает интерактивный установщик:
+Одна команда скачивает проект в **`/opt/remnaWake`** и запускает интерактивный
+установщик. Для установки в `/opt` нужны права root, поэтому запускайте от root
+или через `sudo`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | sudo bash
 ```
 
-Предпочитаете вручную? Клонируйте репозиторий и запустите установщик сами:
+Чтобы установить в другое место (для доступного на запись пути root не нужен),
+задайте `TARGET_DIR`:
 
 ```bash
-git clone https://github.com/Nakedjustice/remnaWake.git
-cd remnaWake
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | TARGET_DIR="$HOME/remnaWake" bash
+```
+
+Предпочитаете вручную?
+
+```bash
+sudo git clone https://github.com/Nakedjustice/remnaWake.git /opt/remnaWake
+cd /opt/remnaWake
+sudo ./install.sh
 ```
 
 Установщик спросит URL панели, API-токен, токен бота, Telegram ID администратора,
