@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anomalyco/remnawave-notify-bot/internal/textutil"
+	"github.com/Nakedjustice/remnaWake/internal/textutil"
 )
 
 type Client struct {

@@ -9,11 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anomalyco/remnawave-notify-bot/internal/config"
-	"github.com/anomalyco/remnawave-notify-bot/internal/notify"
-	"github.com/anomalyco/remnawave-notify-bot/internal/remnawave"
-	"github.com/anomalyco/remnawave-notify-bot/internal/scheduler"
-	tgbot "github.com/anomalyco/remnawave-notify-bot/internal/telegram"
+	"github.com/Nakedjustice/remnaWake/internal/config"
+	"github.com/Nakedjustice/remnaWake/internal/notify"
+	"github.com/Nakedjustice/remnaWake/internal/remnawave"
+	"github.com/Nakedjustice/remnaWake/internal/scheduler"
+	tgbot "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
 func main() {
