@@ -2,7 +2,7 @@ services:
   bot:
     build: .
     image: remnawave-notify-bot:latest
-    container_name: remnawave-notify-bot
+    container_name: remnaWake-bot
     restart: unless-stopped
     env_file:
       - ./.env
