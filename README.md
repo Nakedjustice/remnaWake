@@ -1,5 +1,5 @@
 # remnawave-notify-bot
-Bot in entirely writted via Claude Code and other AI agents.
+
 **English** · [Русский](README.ru.md)
 
 Lightweight Go service that polls a [Remnawave](https://remna.st) panel once a
@@ -40,23 +40,37 @@ ID.
 Enabled only when `TELEGRAM_ADMIN_ID` is set:
 
 1. A user taps **"Я оплатил"** under an expiry notification.
-2. The bot sends the **admin** a message with the client's details (Remnawave ID,
-   username, UUID, Telegram ID, current expiry) and a **"Подтвердить оплату"**
-   (*Confirm payment*) button.
-3. The admin taps **"Подтвердить оплату"**. The bot calls `PATCH /api/users`
-   (with `uuid` in the body) and extends the subscription by **one month**, then
-   reports the new expiry back to the admin.
+2. If the admin has configured tariffs, the bot shows month/price options on the
+   message (e.g. `1 мес. — 150₽`, `3 мес. — 450₽`, plus a «← Назад» button) and
+   the user picks one. With **no tariffs configured** it falls back to a single
+   1-month request.
+3. The bot sends the **admin** the client's details and the chosen months/price
+   with a **"Подтвердить оплату"** (*Confirm payment*) button.
+4. The admin confirms. The bot calls `PATCH /api/users` (with `uuid` in the body)
+   and extends the subscription by the **chosen number of months** (from
+   `max(now, current expiry)`), then reports the new expiry.
+
+Prices are **informational** — the bot does not process money. The user pays you
+externally and you confirm manually.
+
+### Managing tariffs (admin commands)
+
+Send these to the bot from the admin account:
+
+- `/tariffs` — list current tariffs
+- `/settariff <months> <price>` — add or update a tariff
+- `/deltariff <months>` — remove a tariff
+- `/help` — show the commands
+
+Tariffs and payment state are stored in SQLite (`DB_PATH`, default `/data/bot.db`,
+kept in the `botdata` Docker volume), so they survive restarts.
 
 Safeguards:
 
-- Only the configured admin can confirm — callbacks from anyone else are rejected.
+- Only the configured admin can confirm payments or manage tariffs.
 - Confirmation is **idempotent**: repeated taps will not extend twice.
-- The new expiry is computed from `max(now, current expiry)`, so a late
-  confirmation never lands in the past.
-
-> State (the client cache and the "already confirmed" set) is kept in memory and
-> resets on restart. If the process restarts before an admin confirms, the user
-> can tap "Я оплатил" again after the next daily run.
+- New expiry = `max(now, current expiry)` + chosen months, so a late confirmation
+  never lands in the past.
 
 ## Welcome message
 
@@ -83,6 +97,8 @@ On `/start` the bot replies with:
 | `HTTP_TIMEOUT`         | no       | `15s`            | HTTP request timeout (Go duration)                           |
 | `DRY_RUN`              | no       | `false`          | Log instead of sending to Telegram                           |
 | `RUN_ON_START`         | no       | `true`           | Run the job immediately on start                             |
+| `DB_PATH`              | no       | `/data/bot.db`   | SQLite database file path                                    |
+| `CURRENCY`             | no       | `₽`              | Currency label shown next to tariff prices                   |
 
 ## Running
 

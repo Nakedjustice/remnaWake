@@ -34,6 +34,12 @@ type answerCallbackQueryRequest struct {
 	ShowAlert       bool   `json:"show_alert,omitempty"`
 }
 
+type editMessageReplyMarkupRequest struct {
+	ChatID      int64                 `json:"chat_id"`
+	MessageID   int64                 `json:"message_id"`
+	ReplyMarkup *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
+}
+
 type getUpdatesRequest struct {
 	Offset         int64    `json:"offset,omitempty"`
 	Timeout        int      `json:"timeout,omitempty"`
@@ -257,6 +263,39 @@ func (b *Bot) AnswerCallbackQuery(ctx context.Context, callbackQueryID, text str
 	var ar apiResponse
 	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
 		return fmt.Errorf("telegram answer callback query not ok: %s", ar.Description)
+	}
+	return nil
+}
+
+func (b *Bot) EditMessageReplyMarkup(ctx context.Context, chatID, messageID int64, keyboard *InlineKeyboardMarkup) error {
+	payload := editMessageReplyMarkupRequest{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		ReplyMarkup: keyboard,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/editMessageReplyMarkup", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram edit reply markup: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("telegram edit reply markup failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+	var ar apiResponse
+	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
+		return fmt.Errorf("telegram edit reply markup not ok: %s", ar.Description)
 	}
 	return nil
 }
