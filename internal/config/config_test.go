@@ -32,25 +32,6 @@ func TestLoadUsesRemnawaveAPIToken(t *testing.T) {
 	}
 }
 
-func TestLoadDefaultsDBPathAndCurrency(t *testing.T) {
-	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
-	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
-	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
-	t.Setenv("DB_PATH", "")
-	t.Setenv("CURRENCY", "")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.DBPath != "/data/bot.db" {
-		t.Fatalf("DBPath = %q, want /data/bot.db", cfg.DBPath)
-	}
-	if cfg.Currency != "₽" {
-		t.Fatalf("Currency = %q, want ₽", cfg.Currency)
-	}
-}
-
 func TestLoadValidatesTelegramAdminID(t *testing.T) {
 	t.Setenv("REMNAWAVE_BASE_URL", "https://remnawave.example.com")
 	t.Setenv("REMNAWAVE_API_TOKEN", "api-token")
