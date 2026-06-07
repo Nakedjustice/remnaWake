@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/Nakedjustice/remnaWake/internal/store"
@@ -23,6 +24,40 @@ type Extender interface {
 	ExtendSubscriptionByUUID(ctx context.Context, uuid string, newExpireAt time.Time) error
 }
 
+// Subscriber is the minimal user view the gift flow needs, kept payments-local
+// so this package stays decoupled from the remnawave package.
+type Subscriber struct {
+	RemnawaveID int64
+	UUID        string
+	Username    string
+	TelegramID  int64
+	ExpireAt    time.Time
+}
+
+// Finder resolves a target subscriber by Telegram ID (may match several) or by
+// username (at most one).
+type Finder interface {
+	FindByTelegramID(ctx context.Context, telegramID int64) ([]Subscriber, error)
+	FindByUsername(ctx context.Context, username string) (*Subscriber, error)
+}
+
+type giftStep int
+
+const (
+	stepAwaitingIdentifier giftStep = iota
+	stepAwaitingTariff
+)
+
+const giftTTL = 10 * time.Minute
+
+type giftState struct {
+	step      giftStep
+	payerName string
+	payerTGID int64
+	target    *Subscriber
+	createdAt time.Time
+}
+
 type Service struct {
 	store    *store.Store
 	bot      BotSender
@@ -32,18 +67,24 @@ type Service struct {
 	dryRun   bool
 	logger   *slog.Logger
 	now      func() time.Time
+
+	finder Finder
+	mu     sync.Mutex
+	gifts  map[int64]*giftState
 }
 
-func New(st *store.Store, bot BotSender, ext Extender, adminID int64, currency string, dryRun bool, logger *slog.Logger) *Service {
+func New(st *store.Store, bot BotSender, ext Extender, finder Finder, adminID int64, currency string, dryRun bool, logger *slog.Logger) *Service {
 	return &Service{
 		store:    st,
 		bot:      bot,
 		extender: ext,
+		finder:   finder,
 		adminID:  adminID,
 		currency: currency,
 		dryRun:   dryRun,
 		logger:   logger,
 		now:      time.Now,
+		gifts:    make(map[int64]*giftState),
 	}
 }
 

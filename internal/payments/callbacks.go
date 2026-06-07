@@ -24,6 +24,14 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleBack(ctx, cb)
 	case strings.HasPrefix(cb.Data, "ok:"):
 		return s.handleConfirm(ctx, cb)
+	case strings.HasPrefix(cb.Data, "gpick:"):
+		return s.handleGiftPick(ctx, cb)
+	case cb.Data == "gcancel":
+		return s.handleGiftCancel(ctx, cb)
+	case cb.Data == "menu:payff":
+		return s.handleMenuPayff(ctx, cb)
+	case cb.Data == "menu:tariffs":
+		return s.handleMenuTariffs(ctx, cb)
 	default:
 		return false
 	}

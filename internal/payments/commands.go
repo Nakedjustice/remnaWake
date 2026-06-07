@@ -9,12 +9,6 @@ import (
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
-const adminUsage = "Команды тарифов:\n" +
-	"/tariffs — список тарифов\n" +
-	"/settariff <месяцев> <цена> — добавить/обновить\n" +
-	"/deltariff <месяцев> — удалить\n" +
-	"/help — эта справка"
-
 // HandleAdminCommand processes a tariff admin command. Returns true if the
 // message was a recognized admin command (handled), false otherwise.
 func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
@@ -28,9 +22,6 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 	switch fields[0] {
 	case "/tariffs":
 		s.cmdListTariffs(ctx)
-		return true
-	case "/help":
-		_ = s.bot.SendPlain(ctx, s.adminID, adminUsage)
 		return true
 	case "/settariff":
 		s.cmdSetTariff(ctx, fields)

@@ -37,3 +37,39 @@ func TestEditMessageReplyMarkupClearsKeyboard(t *testing.T) {
 		t.Fatalf("ids wrong: %v", body)
 	}
 }
+
+func TestSetMyCommandsPostsCommandList(t *testing.T) {
+	var gotPath string
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer srv.Close()
+
+	b := NewBot("token", "", time.Second)
+	b.apiBase = srv.URL
+
+	cmds := []BotCommand{
+		{Command: "payff", Description: "Оплатить за другого"},
+		{Command: "menu", Description: "Меню"},
+	}
+	if err := b.SetMyCommands(context.Background(), cmds); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if gotPath != "/setMyCommands" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	list, ok := body["commands"].([]any)
+	if !ok || len(list) != 2 {
+		t.Fatalf("commands wrong: %v", body)
+	}
+	first := list[0].(map[string]any)
+	if first["command"] != "payff" || first["description"] != "Оплатить за другого" {
+		t.Fatalf("first command wrong: %v", first)
+	}
+}

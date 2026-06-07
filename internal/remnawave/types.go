@@ -32,3 +32,14 @@ type UsersResponse struct {
 		Total int    `json:"total"`
 	} `json:"response"`
 }
+
+// userResponse wraps the single-user lookup (GET /api/users/by-username/{username}).
+type userResponse struct {
+	Response User `json:"response"`
+}
+
+// usersByTgResponse wraps the by-Telegram-ID lookup, which returns an array
+// because one Telegram ID may map to multiple subscriptions.
+type usersByTgResponse struct {
+	Response []User `json:"response"`
+}

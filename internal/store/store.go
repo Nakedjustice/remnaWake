@@ -40,7 +40,9 @@ CREATE TABLE IF NOT EXISTS payment_requests (
   expire_at         TEXT NOT NULL,
   status            TEXT NOT NULL,
   created_at        TEXT NOT NULL,
-  confirmed_at      TEXT
+  confirmed_at      TEXT,
+  payer_telegram_id INTEGER NOT NULL DEFAULT 0,
+  payer_username    TEXT NOT NULL DEFAULT ''
 );
 `
 
@@ -60,6 +62,10 @@ func New(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	if err := ensurePaymentRequestColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate payer columns: %w", err)
+	}
 	return &Store{db: db}, nil
 }
 
@@ -68,3 +74,41 @@ func (s *Store) Close() error { return s.db.Close() }
 func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
 func parseTime(s string) (time.Time, error) { return time.Parse(time.RFC3339, s) }
+
+// ensurePaymentRequestColumns adds the payer_* columns to payment_requests when
+// an older database created the table without them. Idempotent.
+func ensurePaymentRequestColumns(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(payment_requests)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	existing := map[string]bool{}
+	for rows.Next() {
+		var (
+			cid, notnull, pk int
+			name, ctype      string
+			dflt             sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		existing[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	if !existing["payer_telegram_id"] {
+		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN payer_telegram_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !existing["payer_username"] {
+		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN payer_username TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	return nil
+}

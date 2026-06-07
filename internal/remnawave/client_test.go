@@ -89,3 +89,82 @@ func TestExtendSubscriptionByUUIDSendsUUIDInBody(t *testing.T) {
 		t.Fatalf("ExtendSubscriptionByUUID returned error: %v", err)
 	}
 }
+
+func TestGetUserByUsername(t *testing.T) {
+	const token = "tok"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.EscapedPath() != "/api/users/by-username/alice%20b" {
+			t.Fatalf("path = %s", r.URL.EscapedPath())
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Fatalf("auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"uuid":"u-1","id":7,"username":"alice b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":555}}`))
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, token, time.Second)
+	u, err := c.GetUserByUsername(context.Background(), "alice b")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil || u.UUID != "u-1" || u.ID != 7 || u.TelegramID == nil || *u.TelegramID != 555 {
+		t.Fatalf("user wrong: %+v", u)
+	}
+}
+
+func TestGetUserByUsernameNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	u, err := c.GetUserByUsername(context.Background(), "ghost")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u != nil {
+		t.Fatalf("want nil, got %+v", u)
+	}
+}
+
+func TestGetUserByTelegramID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/users/by-telegram-id/123" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":[{"uuid":"u-a","id":1,"username":"a","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":123},{"uuid":"u-b","id":2,"username":"b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":123}]}`))
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	us, err := c.GetUserByTelegramID(context.Background(), 123)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(us) != 2 || us[0].Username != "a" || us[1].Username != "b" {
+		t.Fatalf("users wrong: %+v", us)
+	}
+}
+
+func TestGetUserByTelegramIDNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	us, err := c.GetUserByTelegramID(context.Background(), 999)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(us) != 0 {
+		t.Fatalf("want empty, got %+v", us)
+	}
+}

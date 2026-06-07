@@ -8,27 +8,30 @@ import (
 )
 
 type PaymentRequest struct {
-	ID          int64
-	RemnawaveID int64
-	UUID        string
-	Username    string
-	TelegramID  int64
-	Months      int
-	Price       int
-	ExpireAt    time.Time
-	Status      string // "pending" | "confirmed"
-	CreatedAt   time.Time
-	ConfirmedAt *time.Time
+	ID              int64
+	RemnawaveID     int64
+	UUID            string
+	Username        string
+	TelegramID      int64
+	Months          int
+	Price           int
+	ExpireAt        time.Time
+	Status          string // "pending" | "confirmed"
+	CreatedAt       time.Time
+	ConfirmedAt     *time.Time
+	PayerTelegramID int64
+	PayerUsername   string
 }
 
 func (s *Store) CreatePaymentRequest(ctx context.Context, r PaymentRequest) (int64, error) {
 	now := formatTime(time.Now())
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO payment_requests
-			(remnawave_user_id, uuid, username, telegram_id, months, price, expire_at, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			(remnawave_user_id, uuid, username, telegram_id, months, price, expire_at,
+			 status, created_at, payer_telegram_id, payer_username)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.RemnawaveID, r.UUID, r.Username, r.TelegramID, r.Months, r.Price,
-		formatTime(r.ExpireAt), "pending", now)
+		formatTime(r.ExpireAt), "pending", now, r.PayerTelegramID, r.PayerUsername)
 	if err != nil {
 		return 0, err
 	}
@@ -43,10 +46,10 @@ func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentReques
 	)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
-			expire_at, status, created_at, confirmed_at
+			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username
 		FROM payment_requests WHERE id = ?
 	`, id).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
-		&r.Price, &exp, &r.Status, &created, &confirmed)
+		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

@@ -150,7 +150,13 @@ func (b *Bot) SendWithKeyboard(ctx context.Context, chatID int64, text string, k
 func (b *Bot) SendWelcome(ctx context.Context, chatID int64) error {
 	text := `⏰ Привет! Я бот-напоминалка: если ваша подписка на КВН скоро закончится, я сообщу об этом заранее — за 7, 3 или 1 день до окончания.
 
-Также при нажатии кнопки "Я оплатил" администратор получит уведомление.`
+Меню и команды:
+/menu — открыть меню с кнопками
+/tariff — посмотреть текущие тарифы
+/payff — оплатить подписку за другого пользователя
+/cancel — отменить текущее действие
+
+После оплаты нажмите «Я оплатил» — администратор получит уведомление и подтвердит продление.`
 
 	return b.SendPlain(ctx, chatID, text)
 }
@@ -296,6 +302,43 @@ func (b *Bot) EditMessageReplyMarkup(ctx context.Context, chatID, messageID int6
 	var ar apiResponse
 	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
 		return fmt.Errorf("telegram edit reply markup not ok: %s", ar.Description)
+	}
+	return nil
+}
+
+// BotCommand is one entry in the bot's command menu (the "Menu" button and the
+// "/" autocomplete list).
+type BotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
+// SetMyCommands registers the bot's command menu via the setMyCommands API.
+func (b *Bot) SetMyCommands(ctx context.Context, commands []BotCommand) error {
+	payload := map[string]any{"commands": commands}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/setMyCommands", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram set my commands: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("telegram set my commands failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+	var ar apiResponse
+	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
+		return fmt.Errorf("telegram set my commands not ok: %s", ar.Description)
 	}
 	return nil
 }

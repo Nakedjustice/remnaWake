@@ -60,6 +60,18 @@ func (f *fakeExtender) ExtendSubscriptionByUUID(_ context.Context, uuid string, 
 	return nil
 }
 
+type fakeFinder struct {
+	byTG   map[int64][]Subscriber
+	byName map[string]*Subscriber
+}
+
+func (f *fakeFinder) FindByTelegramID(_ context.Context, id int64) ([]Subscriber, error) {
+	return f.byTG[id], nil
+}
+func (f *fakeFinder) FindByUsername(_ context.Context, name string) (*Subscriber, error) {
+	return f.byName[name], nil
+}
+
 func newTestService(t *testing.T) (*Service, *fakeBot, *fakeExtender, *store.Store) {
 	t.Helper()
 	st, err := store.New(filepath.Join(t.TempDir(), "test.db"))
@@ -70,14 +82,14 @@ func newTestService(t *testing.T) (*Service, *fakeBot, *fakeExtender, *store.Sto
 	bot := &fakeBot{}
 	ext := &fakeExtender{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, ext, 1000 /*adminID*/, "₽", false /*dryRun*/, logger)
+	svc := New(st, bot, ext, &fakeFinder{}, 1000 /*adminID*/, "₽", false /*dryRun*/, logger)
 	return svc, bot, ext, st
 }
 
 func TestPaymentButtonNilWithoutAdmin(t *testing.T) {
 	st, _ := store.New(filepath.Join(t.TempDir(), "x.db"))
 	defer st.Close()
-	svc := New(st, &fakeBot{}, &fakeExtender{}, 0, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := New(st, &fakeBot{}, &fakeExtender{}, &fakeFinder{}, 0, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if svc.PaymentButton(42) != nil {
 		t.Fatal("expected nil button when adminID == 0")
 	}

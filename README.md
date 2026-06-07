@@ -53,17 +53,51 @@ Enabled only when `TELEGRAM_ADMIN_ID` is set:
 Prices are **informational** — the bot does not process money. The user pays you
 externally and you confirm manually.
 
-### Managing tariffs (admin commands)
+### Commands
 
-Send these to the bot from the admin account:
+**User commands** (anyone who messages the bot):
 
-- `/tariffs` — list current tariffs
-- `/settariff <months> <price>` — add or update a tariff
-- `/deltariff <months>` — remove a tariff
-- `/help` — show the commands
+| Command   | What it does                                            |
+| --------- | ------------------------------------------------------- |
+| `/start`  | Show the welcome message                                |
+| `/menu`   | Open the menu (💵 Тарифы and 💳 Оплатить за другого buttons) |
+| `/tariff` | Show the current tariffs/prices                         |
+| `/payff`  | Pay for another user (subscribers only)                 |
+| `/cancel` | Cancel the current `/payff` step                        |
+| `/help`   | Same as `/menu`                                         |
+
+**Admin-only commands** (only the account whose ID equals `TELEGRAM_ADMIN_ID`;
+silently ignored for everyone else):
+
+| Command                      | What it does                  |
+| ---------------------------- | ----------------------------- |
+| `/tariffs`                   | List current tariffs          |
+| `/settariff <months> <price>`| Add or update a tariff        |
+| `/deltariff <months>`        | Remove a tariff               |
 
 Tariffs and payment state are stored in SQLite (`DB_PATH`, default `/data/bot.db`,
 kept in the `botdata` Docker volume), so they survive restarts.
+
+### Paying for another user (`/payff`)
+
+Any existing subscriber can pay for someone else:
+
+1. Send `/payff` to the bot.
+2. Enter the target's **Remnawave username** or **Telegram ID** (a value that is
+   all digits is looked up by Telegram ID, otherwise by username).
+3. Pick a period from the tariff buttons (or the single 1-month option when no
+   tariffs are configured). `/cancel` or the **Отмена** button aborts.
+4. The admin receives a request naming both the payer and the target, with a
+   **"Подтвердить оплату"** button. Confirming extends the target's subscription.
+
+Only existing subscribers may start `/payff`; every request is still gated by
+admin confirmation.
+
+**Discovering it:** the bot registers a command menu on startup (via
+`setMyCommands`), so users get the blue **Menu** button and `/` autocomplete for
+`/start`, `/menu`, `/tariff`, `/payff`, `/help`, `/cancel`. Sending `/menu` (or
+`/help`) replies with **💵 Тарифы** and **💳 Оплатить за другого** buttons.
+`/tariff` lets any user see the current prices.
 
 Safeguards:
 
@@ -79,7 +113,13 @@ On `/start` the bot replies with:
 ```
 ⏰ Привет! Я бот-напоминалка: если ваша подписка на КВН скоро закончится, я сообщу об этом заранее — за 7, 3 или 1 день до окончания.
 
-Также при нажатии кнопки "Я оплатил" администратор получит уведомление.
+Меню и команды:
+/menu — открыть меню с кнопками
+/tariff — посмотреть текущие тарифы
+/payff — оплатить подписку за другого пользователя
+/cancel — отменить текущее действие
+
+После оплаты нажмите «Я оплатил» — администратор получит уведомление и подтвердит продление.
 ```
 
 ## Configuration (.env)
