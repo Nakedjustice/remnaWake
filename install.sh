@@ -194,15 +194,17 @@ LOG_LEVEL="info"
 HTTP_TIMEOUT="15s"
 DRY_RUN="false"
 RUN_ON_START="true"
+CURRENCY="₽"
 
 printf '\n' >&2
-if ask_yes_no "Configure advanced options (parse mode, log level, timeout, dry-run)?" "n"; then
+if ask_yes_no "Configure advanced options (parse mode, log level, timeout, dry-run, currency)?" "n"; then
   info "── Advanced ────────────────────────────────────────────────"
   ask TELEGRAM_PARSE_MODE "Telegram parse mode (HTML / MarkdownV2)" "HTML"  v_nonempty
   ask LOG_LEVEL           "Log level (debug/info/warn/error)"       "info"  v_loglevel
   ask HTTP_TIMEOUT        "HTTP timeout (Go duration, e.g. 15s)"    "15s"   v_duration
   ask DRY_RUN             "Dry run? log instead of sending (true/false)"   "false" v_bool
   ask RUN_ON_START        "Run once immediately on start (true/false)"     "true"  v_bool
+  ask CURRENCY            "Currency label shown next to tariff prices"     "₽"     v_nonempty
 fi
 
 # --- Write .env atomically with strict permissions --------------------------
@@ -227,6 +229,8 @@ LOG_LEVEL=$LOG_LEVEL
 HTTP_TIMEOUT=$HTTP_TIMEOUT
 DRY_RUN=$DRY_RUN
 RUN_ON_START=$RUN_ON_START
+
+CURRENCY=$CURRENCY
 EOF
 
 mv "$tmp_env" "$ENV_FILE"
@@ -248,6 +252,7 @@ ${BOLD}Summary${RESET}
   Timezone / run-at  : $TZ at $RUN_AT
   Parse / log / http : $TELEGRAM_PARSE_MODE / $LOG_LEVEL / $HTTP_TIMEOUT
   Dry-run / on-start : $DRY_RUN / $RUN_ON_START
+  Currency           : $CURRENCY
 
 EOF
 

@@ -19,6 +19,8 @@ type Config struct {
 	LogLevel   slog.Level
 	DryRun     bool
 	RunOnStart bool
+	DBPath     string
+	Currency   string
 }
 
 type RemnawaveConfig struct {
@@ -59,6 +61,8 @@ func Load() (*Config, error) {
 		LogLevel:   parseLogLevel(getenv("LOG_LEVEL", "info")),
 		DryRun:     getenvBool("DRY_RUN", false),
 		RunOnStart: getenvBool("RUN_ON_START", true),
+		DBPath:     getenv("DB_PATH", "/data/bot.db"),
+		Currency:   getenv("CURRENCY", "₽"),
 	}
 
 	timeout := getenv("HTTP_TIMEOUT", "15s")
