@@ -11,10 +11,8 @@ import (
 
 	"github.com/Nakedjustice/remnaWake/internal/config"
 	"github.com/Nakedjustice/remnaWake/internal/notify"
-	"github.com/Nakedjustice/remnaWake/internal/payments"
 	"github.com/Nakedjustice/remnaWake/internal/remnawave"
 	"github.com/Nakedjustice/remnaWake/internal/scheduler"
-	"github.com/Nakedjustice/remnaWake/internal/store"
 	tgbot "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
@@ -46,22 +44,13 @@ func main() {
 	}
 
 	bot := tgbot.NewBot(cfg.Telegram.BotToken, cfg.Telegram.ParseMode, cfg.HTTP.Timeout)
-
-	db, err := store.New(cfg.DBPath)
-	if err != nil {
-		logger.Error("store init failed", "err", err.Error(), "db_path", cfg.DBPath)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	pay := payments.New(db, bot, rwClient, cfg.Telegram.AdminID, cfg.Currency, cfg.DryRun, logger)
-	svc := notify.NewService(rwClient, bot, pay, logger, cfg.DryRun)
+	svc := notify.NewService(rwClient, bot, logger, cfg.DryRun, cfg.Telegram.AdminID)
 
 	rootCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	if cfg.Telegram.AdminID != 0 {
-		go pollTelegramCallbacks(rootCtx, bot, pay, logger)
+		go pollTelegramCallbacks(rootCtx, bot, svc, logger)
 	}
 
 	if cfg.RunOnStart {
@@ -94,7 +83,7 @@ func redactURL(raw string) string {
 	return raw
 }
 
-func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Service, logger *slog.Logger) {
+func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, svc *notify.Service, logger *slog.Logger) {
 	logger.Info("telegram callback polling started")
 	defer logger.Info("telegram callback polling stopped")
 
@@ -126,23 +115,18 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 				offset = u.UpdateID + 1
 			}
 			if u.CallbackQuery != nil {
-				if pay.HandleCallback(ctx, u.CallbackQuery) {
+				if svc.HandleCallback(ctx, u.CallbackQuery) {
 					continue
 				}
 				logger.Debug("ignored telegram callback", "data", u.CallbackQuery.Data)
 				continue
 			}
-			if u.Message != nil && u.Message.Text != "" {
-				if strings.TrimSpace(u.Message.Text) == "/start" {
-					logger.Info("received /start command", "chat_id", u.Message.Chat.ID)
-					if err := bot.SendWelcome(ctx, u.Message.Chat.ID); err != nil {
-						logger.Error("send welcome message failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
-					}
-					continue
+			if u.Message != nil && u.Message.Text != "" && strings.TrimSpace(u.Message.Text) == "/start" {
+				logger.Info("received /start command", "chat_id", u.Message.Chat.ID)
+				if err := bot.SendWelcome(ctx, u.Message.Chat.ID); err != nil {
+					logger.Error("send welcome message failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
 				}
-				if pay.HandleAdminCommand(ctx, u.Message) {
-					continue
-				}
+				continue
 			}
 		}
 	}
