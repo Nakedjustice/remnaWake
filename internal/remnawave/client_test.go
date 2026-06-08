@@ -90,6 +90,53 @@ func TestExtendSubscriptionByUUIDSendsUUIDInBody(t *testing.T) {
 	}
 }
 
+func TestSetTelegramIDSendsUUIDAndTelegramID(t *testing.T) {
+	const (
+		token = "test-api-token"
+		uuid  = "b1a2c3d4-0000-1111-2222-333344445555"
+	)
+	var telegramID int64 = 424242
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Fatalf("method = %s, want PATCH", r.Method)
+		}
+		if r.URL.Path != "/api/users" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer "+token; got != want {
+			t.Fatalf("Authorization header = %q, want %q", got, want)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("decode body: %v (body=%s)", err, body)
+		}
+		if got, want := payload["uuid"], uuid; got != want {
+			t.Fatalf("body uuid = %v, want %v", got, want)
+		}
+		// JSON numbers decode to float64.
+		if got, want := payload["telegramId"], float64(telegramID); got != want {
+			t.Fatalf("body telegramId = %v, want %v", got, want)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"uuid":"` + uuid + `"}}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, token, time.Second)
+	if err != nil {
+		t.Fatalf("NewClient returned error: %v", err)
+	}
+
+	if err := client.SetTelegramID(context.Background(), uuid, telegramID); err != nil {
+		t.Fatalf("SetTelegramID returned error: %v", err)
+	}
+}
+
 func TestGetUserByUsername(t *testing.T) {
 	const token = "tok"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

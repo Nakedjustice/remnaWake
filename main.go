@@ -54,7 +54,7 @@ func main() {
 	}
 	defer db.Close()
 
-	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwFinder{rwClient}, cfg.Telegram.AdminID, cfg.Currency, cfg.DryRun, logger)
+	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, cfg.Telegram.AdminID, cfg.Currency, cfg.DryRun, logger)
 	svc := notify.NewService(rwClient, bot, pay, logger, cfg.DryRun)
 
 	rootCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -158,6 +158,10 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 					if pay.StartInviteFlow(ctx, u.Message) {
 						continue
 					}
+				case "/register":
+					if pay.StartRegisterFlow(ctx, u.Message) {
+						continue
+					}
 				}
 				if pay.HandleText(ctx, u.Message) {
 					continue
@@ -178,6 +182,7 @@ func userBotCommands() []tgbot.BotCommand {
 		{Command: "tariff", Description: "Посмотреть тарифы"},
 		{Command: "payff", Description: "Оплатить за другого пользователя"},
 		{Command: "invite", Description: "Пригласить нового пользователя"},
+		{Command: "register", Description: "Привязать свой Telegram к профилю"},
 		{Command: "cancel", Description: "Отменить текущее действие"},
 		{Command: "help", Description: "Помощь"},
 		{Command: "start", Description: "О боте"},
@@ -220,6 +225,13 @@ func (f rwCreator) CreateUser(ctx context.Context, username string, expireAt tim
 		return nil, err
 	}
 	return &payments.CreatedUser{UUID: u.UUID, Username: u.Username, SubscriptionURL: u.SubscriptionURL}, nil
+}
+
+// rwRegistrar adapts *remnawave.Client to payments.Registrar.
+type rwRegistrar struct{ c *remnawave.Client }
+
+func (r rwRegistrar) SetTelegramID(ctx context.Context, uuid string, telegramID int64) error {
+	return r.c.SetTelegramID(ctx, uuid, telegramID)
 }
 
 func toSubscriber(u remnawave.User) payments.Subscriber {

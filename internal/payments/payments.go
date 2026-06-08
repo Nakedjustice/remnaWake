@@ -36,6 +36,11 @@ type Creator interface {
 	CreateUser(ctx context.Context, username string, expireAt time.Time) (*CreatedUser, error)
 }
 
+// Registrar links an existing panel user to a Telegram ID.
+type Registrar interface {
+	SetTelegramID(ctx context.Context, uuid string, telegramID int64) error
+}
+
 // Subscriber is the minimal user view the gift flow needs, kept payments-local
 // so this package stays decoupled from the remnawave package.
 type Subscriber struct {
@@ -71,36 +76,40 @@ type giftState struct {
 }
 
 type Service struct {
-	store    *store.Store
-	bot      BotSender
-	extender Extender
-	creator  Creator
-	adminID  int64
-	currency string
-	dryRun   bool
-	logger   *slog.Logger
-	now      func() time.Time
+	store     *store.Store
+	bot       BotSender
+	extender  Extender
+	creator   Creator
+	registrar Registrar
+	adminID   int64
+	currency  string
+	dryRun    bool
+	logger    *slog.Logger
+	now       func() time.Time
 
-	finder  Finder
-	mu      sync.Mutex
-	gifts   map[int64]*giftState
-	invites map[int64]*inviteState
+	finder    Finder
+	mu        sync.Mutex
+	gifts     map[int64]*giftState
+	invites   map[int64]*inviteState
+	registers map[int64]*registerState
 }
 
-func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder Finder, adminID int64, currency string, dryRun bool, logger *slog.Logger) *Service {
+func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder Finder, registrar Registrar, adminID int64, currency string, dryRun bool, logger *slog.Logger) *Service {
 	return &Service{
-		store:    st,
-		bot:      bot,
-		extender: ext,
-		creator:  creator,
-		finder:   finder,
-		adminID:  adminID,
-		currency: currency,
-		dryRun:   dryRun,
-		logger:   logger,
-		now:      time.Now,
-		gifts:    make(map[int64]*giftState),
-		invites:  make(map[int64]*inviteState),
+		store:     st,
+		bot:       bot,
+		extender:  ext,
+		creator:   creator,
+		registrar: registrar,
+		finder:    finder,
+		adminID:   adminID,
+		currency:  currency,
+		dryRun:    dryRun,
+		logger:    logger,
+		now:       time.Now,
+		gifts:     make(map[int64]*giftState),
+		invites:   make(map[int64]*inviteState),
+		registers: make(map[int64]*registerState),
 	}
 }
 

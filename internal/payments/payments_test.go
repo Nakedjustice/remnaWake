@@ -81,6 +81,23 @@ func (f *fakeCreator) CreateUser(_ context.Context, username string, _ time.Time
 	return &CreatedUser{UUID: "fake-uuid", Username: username}, nil
 }
 
+type fakeRegistrar struct {
+	uuid       string
+	telegramID int64
+	calls      int
+	err        error
+}
+
+func (f *fakeRegistrar) SetTelegramID(_ context.Context, uuid string, telegramID int64) error {
+	f.calls++
+	if f.err != nil {
+		return f.err
+	}
+	f.uuid = uuid
+	f.telegramID = telegramID
+	return nil
+}
+
 func newTestService(t *testing.T) (*Service, *fakeBot, *fakeExtender, *store.Store) {
 	t.Helper()
 	st, err := store.New(filepath.Join(t.TempDir(), "test.db"))
@@ -91,14 +108,14 @@ func newTestService(t *testing.T) (*Service, *fakeBot, *fakeExtender, *store.Sto
 	bot := &fakeBot{}
 	ext := &fakeExtender{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, 1000 /*adminID*/, "₽", false /*dryRun*/, logger)
+	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, 1000 /*adminID*/, "₽", false /*dryRun*/, logger)
 	return svc, bot, ext, st
 }
 
 func TestPaymentButtonNilWithoutAdmin(t *testing.T) {
 	st, _ := store.New(filepath.Join(t.TempDir(), "x.db"))
 	defer st.Close()
-	svc := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeFinder{}, 0, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, 0, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if svc.PaymentButton(42) != nil {
 		t.Fatal("expected nil button when adminID == 0")
 	}

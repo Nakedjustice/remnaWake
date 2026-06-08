@@ -93,6 +93,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 		"/tariff — посмотреть тарифы\n" +
 		"/payff — оплатить подписку за другого пользователя\n" +
 		"/invite — пригласить нового пользователя\n" +
+		"/register — привязать свой Telegram к профилю\n" +
 		"/cancel — отменить текущее действие"
 	if s.adminID == 0 {
 		_ = s.bot.SendPlain(ctx, chatID, text)
@@ -103,6 +104,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 			{{Text: "💵 Тарифы", CallbackData: "menu:tariffs"}},
 			{{Text: "💳 Оплатить за другого", CallbackData: "menu:payff"}},
 			{{Text: "👤 Пригласить пользователя", CallbackData: "menu:invite"}},
+			{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
 		},
 	}
 	_ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
@@ -160,18 +162,23 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 	if text == "/cancel" {
 		hasGift := s.getGift(chatID) != nil
 		hasInvite := s.getInvite(chatID) != nil
-		if !hasGift && !hasInvite {
+		hasRegister := s.getRegister(chatID) != nil
+		if !hasGift && !hasInvite && !hasRegister {
 			return false
 		}
 		s.clearGift(chatID)
 		s.clearInvite(chatID)
+		s.clearRegister(chatID)
 		_ = s.bot.SendPlain(ctx, chatID, "Отменено.")
 		return true
 	}
 
 	g := s.getGift(chatID)
 	if g == nil || g.step != stepAwaitingIdentifier {
-		return s.handleInviteUsernameInput(ctx, m)
+		if s.handleInviteUsernameInput(ctx, m) {
+			return true
+		}
+		return s.handleRegisterUsernameInput(ctx, m)
 	}
 
 	if strings.HasPrefix(text, "/") {

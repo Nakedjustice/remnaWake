@@ -121,6 +121,41 @@ func (c *Client) ExtendSubscriptionByUUID(ctx context.Context, uuid string, newE
 	return nil
 }
 
+func (c *Client) SetTelegramID(ctx context.Context, uuid string, telegramID int64) error {
+	endpoint := fmt.Sprintf("%s/api/users", c.baseURL)
+	payload := map[string]interface{}{
+		"uuid":       uuid,
+		"telegramId": telegramID,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	c.setRequestHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("set telegram id: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("set telegram id: unauthorized (status=%d)", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("set telegram id: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
+	}
+
+	return nil
+}
+
 func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User, error) {
 	endpoint := fmt.Sprintf("%s/api/users/by-username/%s", c.baseURL, url.PathEscape(username))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)

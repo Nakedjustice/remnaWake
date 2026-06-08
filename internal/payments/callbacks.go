@@ -42,6 +42,12 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleInviteReject(ctx, cb)
 	case cb.Data == "inv_cancel":
 		return s.handleInviteCancel(ctx, cb)
+	case cb.Data == "menu:register":
+		return s.handleMenuRegister(ctx, cb)
+	case cb.Data == "reg_confirm":
+		return s.handleRegisterConfirm(ctx, cb)
+	case cb.Data == "reg_cancel":
+		return s.handleRegisterCancel(ctx, cb)
 	default:
 		return false
 	}
