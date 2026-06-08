@@ -101,9 +101,9 @@ v_bot_token() {
 }
 
 v_admin_id() {
-  # Allow 0 (disables the payment-confirmation flow) or a positive integer.
+  # Allow 0 (disables the admin-gated flows) or a positive integer.
   if printf '%s' "$1" | grep -Eq '^[0-9]+$'; then
-    [ "$1" = "0" ] && warn "  → 0 entered: the «Я оплатил» payment flow will be disabled."
+    [ "$1" = "0" ] && warn "  → 0 entered: the «Я оплатил» payment and «/invite» flows will be disabled."
     return 0
   fi
   err "  → Must be a numeric Telegram user ID (digits only)."
@@ -180,7 +180,7 @@ ask REMNAWAVE_API_TOKEN "Remnawave API token (panel → API tokens)" "" v_nonemp
 printf '\n' >&2
 info "── Telegram ────────────────────────────────────────────────"
 ask TELEGRAM_BOT_TOKEN  "Telegram bot token (from @BotFather, e.g. 123456789:AA...)" "" v_bot_token secret
-ask TELEGRAM_ADMIN_ID   "Telegram admin user ID (numeric, from @userinfobot; 0 to disable payments)" "0" v_admin_id
+ask TELEGRAM_ADMIN_ID   "Telegram admin user ID (numeric, from @userinfobot; 0 to disable payments & invites)" "0" v_admin_id
 
 # --- Scheduling -------------------------------------------------------------
 printf '\n' >&2

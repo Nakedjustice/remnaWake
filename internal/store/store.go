@@ -44,6 +44,17 @@ CREATE TABLE IF NOT EXISTS payment_requests (
   payer_telegram_id INTEGER NOT NULL DEFAULT 0,
   payer_username    TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS invite_requests (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  inviter_telegram_id INTEGER NOT NULL,
+  inviter_username    TEXT NOT NULL DEFAULT '',
+  new_username        TEXT NOT NULL,
+  months              INTEGER NOT NULL DEFAULT 1,
+  price               INTEGER NOT NULL DEFAULT 0,
+  status              TEXT NOT NULL,
+  created_at          TEXT NOT NULL,
+  resolved_at         TEXT
+);
 `
 
 // New opens (creating if needed) the SQLite database at path and applies migrations.

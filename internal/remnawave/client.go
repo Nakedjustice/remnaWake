@@ -157,6 +157,52 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User,
 	return &payload.Response, nil
 }
 
+func (c *Client) CreateUser(ctx context.Context, username string, expireAt time.Time) (*User, error) {
+	endpoint := fmt.Sprintf("%s/api/users", c.baseURL)
+	reqBody := map[string]interface{}{
+		"username":             username,
+		"expireAt":             expireAt.UTC().Format(time.RFC3339),
+		"status":               "ACTIVE",
+		"trafficLimitBytes":    0,
+		"trafficLimitStrategy": "NO_RESET",
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	c.setRequestHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("create user: unauthorized (status=%d)", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("create user: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var payload userResponse
+	if err := json.Unmarshal(respBody, &payload); err != nil {
+		return nil, fmt.Errorf("decode created user: %w (body=%s)", err, textutil.Truncate(string(respBody), 300))
+	}
+	return &payload.Response, nil
+}
+
 func (c *Client) GetUserByTelegramID(ctx context.Context, telegramID int64) ([]User, error) {
 	endpoint := fmt.Sprintf("%s/api/users/by-telegram-id/%d", c.baseURL, telegramID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)

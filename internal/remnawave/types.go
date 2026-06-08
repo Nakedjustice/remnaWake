@@ -12,18 +12,19 @@ const (
 )
 
 type User struct {
-	UUID        string    `json:"uuid"`
-	ID          int64     `json:"id"`
-	ShortUUID   string    `json:"shortUuid"`
-	Username    string    `json:"username"`
-	Status      Status    `json:"status"`
-	ExpireAt    time.Time `json:"expireAt"`
-	TelegramID  *int64    `json:"telegramId"`
-	Email       *string   `json:"email"`
-	Description *string   `json:"description"`
-	Tag         *string   `json:"tag"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	UUID            string    `json:"uuid"`
+	ID              int64     `json:"id"`
+	ShortUUID       string    `json:"shortUuid"`
+	Username        string    `json:"username"`
+	Status          Status    `json:"status"`
+	ExpireAt        time.Time `json:"expireAt"`
+	TelegramID      *int64    `json:"telegramId"`
+	Email           *string   `json:"email"`
+	Description     *string   `json:"description"`
+	Tag             *string   `json:"tag"`
+	SubscriptionURL string    `json:"subscriptionUrl"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 type UsersResponse struct {

@@ -87,11 +87,12 @@ func (s *Service) beginGiftFlow(ctx context.Context, chatID int64) {
 
 // SendMenu replies with the user menu: a short command list plus, when the
 // payment flow is enabled, buttons to view tariffs and start the
-// pay-for-another-user flow.
+// pay-for-another-user and invite flows.
 func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 	text := "Меню\n\n" +
 		"/tariff — посмотреть тарифы\n" +
 		"/payff — оплатить подписку за другого пользователя\n" +
+		"/invite — пригласить нового пользователя\n" +
 		"/cancel — отменить текущее действие"
 	if s.adminID == 0 {
 		_ = s.bot.SendPlain(ctx, chatID, text)
@@ -101,6 +102,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
 			{{Text: "💵 Тарифы", CallbackData: "menu:tariffs"}},
 			{{Text: "💳 Оплатить за другого", CallbackData: "menu:payff"}},
+			{{Text: "👤 Пригласить пользователя", CallbackData: "menu:invite"}},
 		},
 	}
 	_ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
@@ -146,8 +148,8 @@ func (s *Service) handleMenuTariffs(ctx context.Context, cb *tg.CallbackQuery) b
 	return true
 }
 
-// HandleText consumes a free-text message when the chat is mid-/payff, plus
-// /cancel. Returns true only when it handled the message.
+// HandleText consumes a free-text message when the chat is mid-/payff or
+// mid-/invite, plus /cancel. Returns true only when it handled the message.
 func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 	if m == nil {
 		return false
@@ -156,17 +158,20 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 	text := strings.TrimSpace(m.Text)
 
 	if text == "/cancel" {
-		if s.getGift(chatID) == nil {
+		hasGift := s.getGift(chatID) != nil
+		hasInvite := s.getInvite(chatID) != nil
+		if !hasGift && !hasInvite {
 			return false
 		}
 		s.clearGift(chatID)
+		s.clearInvite(chatID)
 		_ = s.bot.SendPlain(ctx, chatID, "Отменено.")
 		return true
 	}
 
 	g := s.getGift(chatID)
 	if g == nil || g.step != stepAwaitingIdentifier {
-		return false
+		return s.handleInviteUsernameInput(ctx, m)
 	}
 
 	if strings.HasPrefix(text, "/") {
