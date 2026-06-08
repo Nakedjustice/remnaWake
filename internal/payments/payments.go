@@ -24,6 +24,18 @@ type Extender interface {
 	ExtendSubscriptionByUUID(ctx context.Context, uuid string, newExpireAt time.Time) error
 }
 
+// CreatedUser is the minimal result returned after a new user is created.
+type CreatedUser struct {
+	UUID            string
+	Username        string
+	SubscriptionURL string
+}
+
+// Creator creates a new user in the remote panel.
+type Creator interface {
+	CreateUser(ctx context.Context, username string, expireAt time.Time) (*CreatedUser, error)
+}
+
 // Subscriber is the minimal user view the gift flow needs, kept payments-local
 // so this package stays decoupled from the remnawave package.
 type Subscriber struct {
@@ -62,22 +74,25 @@ type Service struct {
 	store    *store.Store
 	bot      BotSender
 	extender Extender
+	creator  Creator
 	adminID  int64
 	currency string
 	dryRun   bool
 	logger   *slog.Logger
 	now      func() time.Time
 
-	finder Finder
-	mu     sync.Mutex
-	gifts  map[int64]*giftState
+	finder  Finder
+	mu      sync.Mutex
+	gifts   map[int64]*giftState
+	invites map[int64]*inviteState
 }
 
-func New(st *store.Store, bot BotSender, ext Extender, finder Finder, adminID int64, currency string, dryRun bool, logger *slog.Logger) *Service {
+func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder Finder, adminID int64, currency string, dryRun bool, logger *slog.Logger) *Service {
 	return &Service{
 		store:    st,
 		bot:      bot,
 		extender: ext,
+		creator:  creator,
 		finder:   finder,
 		adminID:  adminID,
 		currency: currency,
@@ -85,6 +100,7 @@ func New(st *store.Store, bot BotSender, ext Extender, finder Finder, adminID in
 		logger:   logger,
 		now:      time.Now,
 		gifts:    make(map[int64]*giftState),
+		invites:  make(map[int64]*inviteState),
 	}
 }
 

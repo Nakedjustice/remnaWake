@@ -54,7 +54,7 @@ func main() {
 	}
 	defer db.Close()
 
-	pay := payments.New(db, bot, rwClient, rwFinder{rwClient}, cfg.Telegram.AdminID, cfg.Currency, cfg.DryRun, logger)
+	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwFinder{rwClient}, cfg.Telegram.AdminID, cfg.Currency, cfg.DryRun, logger)
 	svc := notify.NewService(rwClient, bot, pay, logger, cfg.DryRun)
 
 	rootCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -154,6 +154,10 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 					if pay.StartGiftFlow(ctx, u.Message) {
 						continue
 					}
+				case "/invite":
+					if pay.StartInviteFlow(ctx, u.Message) {
+						continue
+					}
 				}
 				if pay.HandleText(ctx, u.Message) {
 					continue
@@ -173,6 +177,7 @@ func userBotCommands() []tgbot.BotCommand {
 		{Command: "menu", Description: "Открыть меню"},
 		{Command: "tariff", Description: "Посмотреть тарифы"},
 		{Command: "payff", Description: "Оплатить за другого пользователя"},
+		{Command: "invite", Description: "Пригласить нового пользователя"},
 		{Command: "cancel", Description: "Отменить текущее действие"},
 		{Command: "help", Description: "Помощь"},
 		{Command: "start", Description: "О боте"},
@@ -204,6 +209,17 @@ func (f rwFinder) FindByUsername(ctx context.Context, username string) (*payment
 	}
 	s := toSubscriber(*u)
 	return &s, nil
+}
+
+// rwCreator adapts *remnawave.Client to payments.Creator.
+type rwCreator struct{ c *remnawave.Client }
+
+func (f rwCreator) CreateUser(ctx context.Context, username string, expireAt time.Time) (*payments.CreatedUser, error) {
+	u, err := f.c.CreateUser(ctx, username, expireAt)
+	if err != nil {
+		return nil, err
+	}
+	return &payments.CreatedUser{UUID: u.UUID, Username: u.Username, SubscriptionURL: u.SubscriptionURL}, nil
 }
 
 func toSubscriber(u remnawave.User) payments.Subscriber {
