@@ -31,7 +31,7 @@ type RemnawaveConfig struct {
 type TelegramConfig struct {
 	BotToken  string
 	ParseMode string
-	AdminID   int64
+	AdminIDs  []int64
 }
 
 type SchedulerConfig struct {
@@ -44,6 +44,11 @@ type HTTPConfig struct {
 }
 
 func Load() (*Config, error) {
+	adminIDs, err := parseAdminIDs(os.Getenv("TELEGRAM_ADMIN_ID"))
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		Remnawave: RemnawaveConfig{
 			BaseURL:  strings.TrimRight(os.Getenv("REMNAWAVE_BASE_URL"), "/"),
@@ -52,7 +57,7 @@ func Load() (*Config, error) {
 		Telegram: TelegramConfig{
 			BotToken:  os.Getenv("TELEGRAM_BOT_TOKEN"),
 			ParseMode: getenv("TELEGRAM_PARSE_MODE", "HTML"),
-			AdminID:   getenvInt64("TELEGRAM_ADMIN_ID", 0),
+			AdminIDs:  adminIDs,
 		},
 		Scheduler: SchedulerConfig{
 			Timezone: getenv("TZ", "Europe/Moscow"),
@@ -90,11 +95,6 @@ func (c *Config) validate() error {
 	}
 	if c.Telegram.BotToken == "" {
 		return errors.New("TELEGRAM_BOT_TOKEN is required")
-	}
-	if rawAdminID := os.Getenv("TELEGRAM_ADMIN_ID"); rawAdminID != "" {
-		if _, err := strconv.ParseInt(rawAdminID, 10, 64); err != nil {
-			return fmt.Errorf("invalid TELEGRAM_ADMIN_ID: %q", rawAdminID)
-		}
 	}
 	if _, err := time.Parse("15:04", c.Scheduler.RunAt); err != nil {
 		return fmt.Errorf("invalid RUN_AT (expected HH:MM): %q", c.Scheduler.RunAt)
@@ -147,4 +147,25 @@ func getenvInt64(key string, def int64) int64 {
 		return def
 	}
 	return n
+}
+
+func parseAdminIDs(raw string) ([]int64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "0" {
+		return nil, nil
+	}
+	tokens := strings.Split(raw, ",")
+	out := make([]int64, 0, len(tokens))
+	for _, t := range tokens {
+		t = strings.TrimSpace(t)
+		if t == "" || t == "0" {
+			continue
+		}
+		n, err := strconv.ParseInt(t, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid TELEGRAM_ADMIN_ID: %q", raw)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }

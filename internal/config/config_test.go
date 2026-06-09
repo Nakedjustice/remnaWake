@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadRequiresRemnawaveAPIToken(t *testing.T) {
 	t.Setenv("REMNAWAVE_BASE_URL", "https://remnawave.example.com")
@@ -63,5 +66,65 @@ func TestLoadValidatesTelegramAdminID(t *testing.T) {
 	}
 	if got, want := err.Error(), `invalid TELEGRAM_ADMIN_ID: "not-a-number"`; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
+	}
+}
+
+func TestLoadAdminIDSingle(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("TELEGRAM_ADMIN_ID", "123456")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Telegram.AdminIDs) != 1 || cfg.Telegram.AdminIDs[0] != 123456 {
+		t.Fatalf("AdminIDs = %v, want [123456]", cfg.Telegram.AdminIDs)
+	}
+}
+
+func TestLoadAdminIDMultiple(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("TELEGRAM_ADMIN_ID", "111, 222, 333")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Telegram.AdminIDs) != 3 || cfg.Telegram.AdminIDs[1] != 222 {
+		t.Fatalf("AdminIDs = %v, want [111 222 333]", cfg.Telegram.AdminIDs)
+	}
+}
+
+func TestLoadAdminIDZeroDisables(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("TELEGRAM_ADMIN_ID", "0")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Telegram.AdminIDs) != 0 {
+		t.Fatalf("AdminIDs = %v, want empty (disabled)", cfg.Telegram.AdminIDs)
+	}
+}
+
+func TestLoadAdminIDInvalidToken(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("TELEGRAM_ADMIN_ID", "111,bad")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load should fail with invalid TELEGRAM_ADMIN_ID token")
+	}
+	if !strings.Contains(err.Error(), "TELEGRAM_ADMIN_ID") {
+		t.Fatalf("error = %q, want mention of TELEGRAM_ADMIN_ID", err.Error())
 	}
 }
