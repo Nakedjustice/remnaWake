@@ -64,7 +64,7 @@ func TestLoadValidatesTelegramAdminID(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load succeeded with invalid TELEGRAM_ADMIN_ID")
 	}
-	if got, want := err.Error(), `invalid TELEGRAM_ADMIN_ID: "not-a-number"`; got != want {
+	if got, want := err.Error(), `invalid TELEGRAM_ADMIN_ID token: "not-a-number"`; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }

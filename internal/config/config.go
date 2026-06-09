@@ -137,18 +137,6 @@ func getenvBool(key string, def bool) bool {
 	return b
 }
 
-func getenvInt64(key string, def int64) int64 {
-	v, ok := os.LookupEnv(key)
-	if !ok || v == "" {
-		return def
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return def
-	}
-	return n
-}
-
 func parseAdminIDs(raw string) ([]int64, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "0" {
@@ -163,7 +151,7 @@ func parseAdminIDs(raw string) ([]int64, error) {
 		}
 		n, err := strconv.ParseInt(t, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid TELEGRAM_ADMIN_ID: %q", raw)
+			return nil, fmt.Errorf("invalid TELEGRAM_ADMIN_ID token: %q", t)
 		}
 		out = append(out, n)
 	}
