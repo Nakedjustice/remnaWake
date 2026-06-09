@@ -101,13 +101,32 @@ v_bot_token() {
 }
 
 v_admin_id() {
-  # Allow 0 (disables the admin-gated flows) or a positive integer.
-  if printf '%s' "$1" | grep -Eq '^[0-9]+$'; then
-    [ "$1" = "0" ] && warn "  → 0 entered: the «Я оплатил» payment and «/invite» flows will be disabled."
+  local input="$1"
+  # A single "0" disables the admin-gated flows.
+  if [ "$input" = "0" ]; then
+    warn "  → 0 entered: the «Я оплатил» payment and «/invite» flows will be disabled."
     return 0
   fi
-  err "  → Must be a numeric Telegram user ID (digits only)."
-  return 1
+  # Otherwise accept a comma-separated list of numeric IDs (spaces tolerated).
+  local old_ifs="$IFS" token valid=0
+  IFS=','
+  for token in $input; do
+    IFS="$old_ifs"
+    token="$(printf '%s' "$token" | tr -d ' \t')"
+    [ -z "$token" ] && continue
+    if ! printf '%s' "$token" | grep -Eq '^[0-9]+$'; then
+      err "  → Each ID must be digits only. Got: \"$token\""
+      IFS="$old_ifs"
+      return 1
+    fi
+    valid=$((valid + 1))
+  done
+  IFS="$old_ifs"
+  if [ "$valid" -eq 0 ]; then
+    err "  → Must be a numeric Telegram user ID (digits only), or 0 to disable."
+    return 1
+  fi
+  return 0
 }
 
 v_time_hhmm() {
@@ -180,7 +199,7 @@ ask REMNAWAVE_API_TOKEN "Remnawave API token (panel → API tokens)" "" v_nonemp
 printf '\n' >&2
 info "── Telegram ────────────────────────────────────────────────"
 ask TELEGRAM_BOT_TOKEN  "Telegram bot token (from @BotFather, e.g. 123456789:AA...)" "" v_bot_token secret
-ask TELEGRAM_ADMIN_ID   "Telegram admin user ID (numeric, from @userinfobot; 0 to disable payments & invites)" "0" v_admin_id
+ask TELEGRAM_ADMIN_ID   "Telegram admin user ID(s) (numeric, comma-separated e.g. 123456 or 123456,789012; 0 to disable)" "0" v_admin_id
 
 # --- Scheduling -------------------------------------------------------------
 printf '\n' >&2
@@ -248,7 +267,7 @@ ${BOLD}Summary${RESET}
   Panel URL          : $REMNAWAVE_BASE_URL
   Remnawave token    : $(mask "$REMNAWAVE_API_TOKEN")
   Bot token          : $(mask "$TELEGRAM_BOT_TOKEN")
-  Admin ID           : $TELEGRAM_ADMIN_ID
+  Admin ID(s)        : $TELEGRAM_ADMIN_ID
   Timezone / run-at  : $TZ at $RUN_AT
   Parse / log / http : $TELEGRAM_PARSE_MODE / $LOG_LEVEL / $HTTP_TIMEOUT
   Dry-run / on-start : $DRY_RUN / $RUN_ON_START
