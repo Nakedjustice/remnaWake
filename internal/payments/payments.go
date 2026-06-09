@@ -14,7 +14,7 @@ import (
 // BotSender is the subset of *telegram.Bot that payments needs.
 type BotSender interface {
 	SendPlain(ctx context.Context, chatID int64, text string) error
-	SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) error
+	SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error)
 	AnswerCallbackQuery(ctx context.Context, id, text string) error
 	EditMessageReplyMarkup(ctx context.Context, chatID, messageID int64, kb *tg.InlineKeyboardMarkup) error
 }
@@ -70,7 +70,7 @@ const giftTTL = 10 * time.Minute
 type adminInputStep int
 
 const (
-	adminInputNone         adminInputStep = iota
+	adminInputNone adminInputStep = iota
 	adminInputRequisites
 	adminInputTariffMonths
 	adminInputTariffPrice
@@ -89,13 +89,18 @@ type giftState struct {
 	createdAt time.Time
 }
 
+type adminMsgRef struct {
+	chatID    int64
+	messageID int64
+}
+
 type Service struct {
 	store     *store.Store
 	bot       BotSender
 	extender  Extender
 	creator   Creator
 	registrar Registrar
-	adminID   int64
+	adminIDs  []int64
 	currency  string
 	dryRun    bool
 	logger    *slog.Logger
@@ -107,30 +112,35 @@ type Service struct {
 	invites   map[int64]*inviteState
 	registers map[int64]*registerState
 
-	adminInput adminInputState // protected by mu
-	requisites string          // protected by mu; empty = not set
+	adminInput map[int64]adminInputState
+	payMsgs    map[int64][]adminMsgRef
+	inviteMsgs map[int64][]adminMsgRef
+	requisites string // protected by mu; empty = not set
 }
 
 // requisitesKey is the settings-table key under which payment requisites text
 // is persisted.
 const requisitesKey = "payment_requisites"
 
-func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder Finder, registrar Registrar, adminID int64, currency string, dryRun bool, logger *slog.Logger) *Service {
+func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder Finder, registrar Registrar, adminIDs []int64, currency string, dryRun bool, logger *slog.Logger) *Service {
 	s := &Service{
-		store:     st,
-		bot:       bot,
-		extender:  ext,
-		creator:   creator,
-		registrar: registrar,
-		finder:    finder,
-		adminID:   adminID,
-		currency:  currency,
-		dryRun:    dryRun,
-		logger:    logger,
-		now:       time.Now,
-		gifts:     make(map[int64]*giftState),
-		invites:   make(map[int64]*inviteState),
-		registers: make(map[int64]*registerState),
+		store:      st,
+		bot:        bot,
+		extender:   ext,
+		creator:    creator,
+		registrar:  registrar,
+		finder:     finder,
+		adminIDs:   adminIDs,
+		currency:   currency,
+		dryRun:     dryRun,
+		logger:     logger,
+		now:        time.Now,
+		gifts:      make(map[int64]*giftState),
+		invites:    make(map[int64]*inviteState),
+		registers:  make(map[int64]*registerState),
+		adminInput: make(map[int64]adminInputState),
+		payMsgs:    make(map[int64][]adminMsgRef),
+		inviteMsgs: make(map[int64][]adminMsgRef),
 	}
 	// Load persisted payment requisites into the in-memory cache so the user
 	// flow never needs a DB read on each button tap.
@@ -142,10 +152,23 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 	return s
 }
 
+func (s *Service) isAdmin(id int64) bool {
+	for _, a := range s.adminIDs {
+		if a == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) isEnabled() bool {
+	return len(s.adminIDs) > 0
+}
+
 // PaymentButton returns the single «Я оплатил» keyboard, or nil when the
 // payment flow is disabled (no admin configured).
 func (s *Service) PaymentButton(userID int64) *tg.InlineKeyboardMarkup {
-	if s.adminID == 0 {
+	if !s.isEnabled() {
 		return nil
 	}
 	return &tg.InlineKeyboardMarkup{

@@ -52,7 +52,7 @@ func (s *Service) clearGift(chatID int64) {
 
 // StartGiftFlow handles /payff. Returns true if it consumed the message.
 func (s *Service) StartGiftFlow(ctx context.Context, m *tg.Message) bool {
-	if m == nil || s.adminID == 0 {
+	if m == nil || !s.isEnabled() {
 		return false
 	}
 	s.beginGiftFlow(ctx, m.Chat.ID)
@@ -95,7 +95,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 		"/invite — пригласить нового пользователя\n" +
 		"/register — привязать свой Telegram к профилю\n" +
 		"/cancel — отменить текущее действие"
-	if s.adminID == 0 {
+	if !s.isEnabled() {
 		_ = s.bot.SendPlain(ctx, chatID, text)
 		return true
 	}
@@ -107,7 +107,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 			{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
 		},
 	}
-	_ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
 	return true
 }
 
@@ -223,7 +223,7 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 	if len(tariffs) == 0 {
 		tariffs = []store.Tariff{{Months: 1, Price: 0}} // fallback: single 1-month option
 	}
-	_ = s.bot.SendPlainWithKeyboard(ctx, chatID, prompt, s.giftTariffKeyboard(tariffs))
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, prompt, s.giftTariffKeyboard(tariffs))
 	return true
 }
 
@@ -344,8 +344,10 @@ func (s *Service) handleGiftPick(ctx context.Context, cb *tg.CallbackQuery) bool
 			{{Text: "Подтвердить оплату", CallbackData: fmt.Sprintf("ok:%d", reqID)}},
 		},
 	}
-	if err := s.bot.SendPlainWithKeyboard(ctx, s.adminID, text, kb); err != nil {
-		s.logger.Error("payff: notify admin failed", "err", err.Error())
+	for _, adminID := range s.adminIDs {
+		if _, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb); err != nil {
+			s.logger.Error("payff: notify admin failed", "admin_id", adminID, "err", err.Error())
+		}
 	}
 	return true
 }

@@ -46,7 +46,7 @@ func (s *Service) clearRegister(chatID int64) {
 
 // StartRegisterFlow handles /register. Returns true if the message was consumed.
 func (s *Service) StartRegisterFlow(ctx context.Context, m *tg.Message) bool {
-	if m == nil || s.adminID == 0 || s.registrar == nil {
+	if m == nil || !s.isEnabled() || s.registrar == nil {
 		return false
 	}
 	s.beginRegisterFlow(ctx, m.Chat.ID)
@@ -141,7 +141,7 @@ func (s *Service) showRegisterConfirm(ctx context.Context, chatID int64, r *regi
 			{{Text: "Отмена", CallbackData: "reg_cancel"}},
 		},
 	}
-	_ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
 }
 
 // handleRegisterConfirm processes the "Привязать" button press.

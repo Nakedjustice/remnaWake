@@ -19,24 +19,27 @@ type sentMsg struct {
 	ChatID   int64
 	Text     string
 	Keyboard *tg.InlineKeyboardMarkup
+	MsgID    int64
 }
 type editCall struct {
 	ChatID, MessageID int64
 	Keyboard          *tg.InlineKeyboardMarkup
 }
 type fakeBot struct {
-	sent    []sentMsg
-	answers []string
-	edits   []editCall
+	sent     []sentMsg
+	answers  []string
+	edits    []editCall
+	msgIDSeq int64
 }
 
 func (f *fakeBot) SendPlain(_ context.Context, chatID int64, text string) error {
 	f.sent = append(f.sent, sentMsg{ChatID: chatID, Text: text})
 	return nil
 }
-func (f *fakeBot) SendPlainWithKeyboard(_ context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) error {
-	f.sent = append(f.sent, sentMsg{ChatID: chatID, Text: text, Keyboard: kb})
-	return nil
+func (f *fakeBot) SendPlainWithKeyboard(_ context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error) {
+	f.msgIDSeq++
+	f.sent = append(f.sent, sentMsg{ChatID: chatID, Text: text, Keyboard: kb, MsgID: f.msgIDSeq})
+	return f.msgIDSeq, nil
 }
 func (f *fakeBot) AnswerCallbackQuery(_ context.Context, _ string, text string) error {
 	f.answers = append(f.answers, text)
@@ -108,16 +111,16 @@ func newTestService(t *testing.T) (*Service, *fakeBot, *fakeExtender, *store.Sto
 	bot := &fakeBot{}
 	ext := &fakeExtender{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, 1000 /*adminID*/, "₽", false /*dryRun*/, logger)
+	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, []int64{1000}, "₽", false /*dryRun*/, logger)
 	return svc, bot, ext, st
 }
 
 func TestPaymentButtonNilWithoutAdmin(t *testing.T) {
 	st, _ := store.New(filepath.Join(t.TempDir(), "x.db"))
 	defer st.Close()
-	svc := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, 0, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if svc.PaymentButton(42) != nil {
-		t.Fatal("expected nil button when adminID == 0")
+		t.Fatal("expected nil button when no admins")
 	}
 }
 

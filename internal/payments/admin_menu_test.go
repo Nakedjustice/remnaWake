@@ -10,7 +10,7 @@ import (
 
 func TestSendAdminMenu(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
-	svc.SendAdminMenu(context.Background())
+	svc.SendAdminMenu(context.Background(), 1000)
 
 	if len(bot.sent) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(bot.sent))
@@ -199,7 +199,7 @@ func TestAdmSetReqCallbackStartsFlow(t *testing.T) {
 		t.Fatal("adm:setreq should be handled")
 	}
 	svc.mu.Lock()
-	step := svc.adminInput.step
+	step := svc.adminInput[1000].step
 	svc.mu.Unlock()
 	if step != adminInputRequisites {
 		t.Fatalf("step = %v, want adminInputRequisites", step)
@@ -235,7 +235,7 @@ func TestAdmAddTariffCallbackStartsFlow(t *testing.T) {
 		t.Fatal("adm:addtariff should be handled")
 	}
 	svc.mu.Lock()
-	step := svc.adminInput.step
+	step := svc.adminInput[1000].step
 	svc.mu.Unlock()
 	if step != adminInputTariffMonths {
 		t.Fatalf("step = %v, want adminInputTariffMonths", step)
@@ -258,7 +258,7 @@ func TestAdmAddTariffFullFlow(t *testing.T) {
 		t.Fatal("months should be captured")
 	}
 	svc.mu.Lock()
-	step := svc.adminInput.step
+	step := svc.adminInput[1000].step
 	svc.mu.Unlock()
 	if step != adminInputTariffPrice {
 		t.Fatalf("step after months = %v, want adminInputTariffPrice", step)
@@ -284,7 +284,7 @@ func TestAdmAddTariffFullFlow(t *testing.T) {
 
 	// State reset
 	svc.mu.Lock()
-	finalStep := svc.adminInput.step
+	finalStep := svc.adminInput[1000].step
 	svc.mu.Unlock()
 	if finalStep != adminInputNone {
 		t.Fatalf("state not reset: %v", finalStep)
@@ -306,7 +306,7 @@ func TestAdmAddTariffInvalidInput(t *testing.T) {
 		t.Fatalf("expected validation error: %+v", bot.sent)
 	}
 	svc.mu.Lock()
-	step := svc.adminInput.step
+	step := svc.adminInput[1000].step
 	svc.mu.Unlock()
 	if step != adminInputTariffMonths {
 		t.Fatalf("step should remain adminInputTariffMonths, got %v", step)
@@ -324,7 +324,7 @@ func TestAdmInputFlowCancelledByCommand(t *testing.T) {
 		// /tariffs is handled via cmdListTariffs — that's fine
 	}
 	svc.mu.Lock()
-	step := svc.adminInput.step
+	step := svc.adminInput[1000].step
 	svc.mu.Unlock()
 	// The "/" command was NOT captured by consumeAdminInput, so step is unchanged.
 	if step != adminInputTariffMonths {

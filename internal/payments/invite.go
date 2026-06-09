@@ -50,7 +50,7 @@ func (s *Service) clearInvite(chatID int64) {
 
 // StartInviteFlow handles /invite. Returns true if the message was consumed.
 func (s *Service) StartInviteFlow(ctx context.Context, m *tg.Message) bool {
-	if m == nil || s.adminID == 0 || s.creator == nil {
+	if m == nil || !s.isEnabled() || s.creator == nil {
 		return false
 	}
 	s.beginInviteFlow(ctx, m.Chat.ID)
@@ -149,7 +149,7 @@ func (s *Service) showInviteConfirm(ctx context.Context, chatID int64, inv *invi
 			{{Text: "Отмена", CallbackData: "inv_cancel"}},
 		},
 	}
-	_ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
 }
 
 // handleInviteSubmit processes the "Отправить заявку" button press.
@@ -202,15 +202,17 @@ func (s *Service) handleInviteSubmit(ctx context.Context, cb *tg.CallbackQuery) 
 			{Text: "❌ Отклонить", CallbackData: fmt.Sprintf("inv_rej:%d", reqID)},
 		}},
 	}
-	if err := s.bot.SendPlainWithKeyboard(ctx, s.adminID, text, kb); err != nil {
-		s.logger.Error("invite: notify admin failed", "err", err.Error())
+	for _, adminID := range s.adminIDs {
+		if _, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb); err != nil {
+			s.logger.Error("invite: notify admin failed", "admin_id", adminID, "err", err.Error())
+		}
 	}
 	return true
 }
 
 // handleInviteApprove processes admin's "Одобрить" button.
 func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if s.adminID == 0 || cb.From.ID != s.adminID {
+	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
 		s.logger.Warn("unauthorized invite approve attempt", "from_id", cb.From.ID)
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Недостаточно прав.")
 		return true
@@ -246,7 +248,7 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 			_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 		}
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Пользователь создан (dry-run).")
-		_ = s.bot.SendPlain(ctx, s.adminID,
+		_ = s.bot.SendPlain(ctx, cb.From.ID,
 			fmt.Sprintf("✅ (dry-run) Пользователь «%s» создан, подписка до %s.",
 				req.NewUsername, expireAt.Format("02.01.2006")))
 		if req.InviterTelegramID != 0 {
@@ -271,7 +273,7 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Пользователь создан!")
-	_ = s.bot.SendPlain(ctx, s.adminID,
+	_ = s.bot.SendPlain(ctx, cb.From.ID,
 		fmt.Sprintf("✅ Пользователь «%s» создан (UUID: %s), подписка до %s.",
 			created.Username, created.UUID, expireAt.Format("02.01.2006")))
 
@@ -288,7 +290,7 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 
 // handleInviteReject processes admin's "Отклонить" button.
 func (s *Service) handleInviteReject(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if s.adminID == 0 || cb.From.ID != s.adminID {
+	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
 		s.logger.Warn("unauthorized invite reject attempt", "from_id", cb.From.ID)
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Недостаточно прав.")
 		return true
@@ -323,7 +325,7 @@ func (s *Service) handleInviteReject(ctx context.Context, cb *tg.CallbackQuery) 
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отклонена.")
-	_ = s.bot.SendPlain(ctx, s.adminID,
+	_ = s.bot.SendPlain(ctx, cb.From.ID,
 		fmt.Sprintf("❌ Заявка на пользователя «%s» отклонена.", req.NewUsername))
 
 	if req.InviterTelegramID != 0 {
