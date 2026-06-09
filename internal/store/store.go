@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS invite_requests (
   created_at          TEXT NOT NULL,
   resolved_at         TEXT
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `
 
 // New opens (creating if needed) the SQLite database at path and applies migrations.

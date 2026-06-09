@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Interactive installer for remnawave-notify-bot.
+# Interactive installer for remnaWake.
 #
 # Asks for everything the bot needs (the values that end up in ./.env),
 # validates the answers, writes a locked-down .env file, and optionally
@@ -152,7 +152,7 @@ v_bool() {
 
 # --- Banner -----------------------------------------------------------------
 cat >&2 <<EOF
-${BOLD}remnawave-notify-bot installer${RESET}
+${BOLD}remnaWake installer${RESET}
 ${DIM}This will collect the settings the bot needs and write them to ./.env${RESET}
 
 EOF
@@ -267,7 +267,7 @@ fi
 if [ -z "$COMPOSE" ]; then
   warn "Docker Compose was not found on this machine."
   warn "Install Docker Engine + the Compose plugin, then run:"
-  warn "  ${COMPOSE:-docker compose} up -d --build"
+  warn "  ${COMPOSE:-docker compose} up -d"
   ok "Configuration is ready — start the bot whenever Docker is available."
   exit 0
 fi
@@ -278,14 +278,15 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 printf '\n' >&2
-if ask_yes_no "Build and start the bot now with '$COMPOSE up -d --build'?" "y"; then
-  info "Building and starting…"
-  $COMPOSE up -d --build
+if ask_yes_no "Pull the pre-built image and start the bot now with '$COMPOSE up -d'?" "y"; then
+  info "Pulling image and starting…"
+  $COMPOSE up -d
   printf '\n' >&2
   ok "Bot is up. Useful commands:"
-  printf '%s\n' "  ${DIM}$COMPOSE logs -f${RESET}     # follow logs"  >&2
-  printf '%s\n' "  ${DIM}$COMPOSE ps${RESET}          # status"        >&2
-  printf '%s\n' "  ${DIM}$COMPOSE down${RESET}        # stop & remove" >&2
+  printf '%s\n' "  ${DIM}$COMPOSE logs -f${RESET}     # follow logs"           >&2
+  printf '%s\n' "  ${DIM}$COMPOSE ps${RESET}          # status"                 >&2
+  printf '%s\n' "  ${DIM}$COMPOSE pull && $COMPOSE up -d${RESET}  # update to latest" >&2
+  printf '%s\n' "  ${DIM}$COMPOSE down${RESET}        # stop & remove"          >&2
 else
-  ok "Skipped startup. When ready, run:  $COMPOSE up -d --build"
+  ok "Skipped startup. When ready, run:  $COMPOSE up -d"
 fi

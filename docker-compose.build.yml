@@ -1,0 +1,12 @@
+# Development override: build the image from local source instead of pulling
+# the pre-built one from GHCR.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# This tags the locally built image with the same name the main file expects,
+# and disables the registry pull so your local build is used.
+services:
+  bot:
+    build: .
+    pull_policy: build

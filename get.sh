@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Bootstrap downloader for remnawave-notify-bot.
+# Bootstrap downloader for remnaWake.
 #
 # Downloads the project source onto the current server and launches the
 # interactive installer (install.sh). Designed to be run straight from a URL:
@@ -29,7 +29,7 @@ ok()   { printf '%s\n' "${GREEN}$*${RESET}"; }
 warn() { printf '%s\n' "${YELLOW}$*${RESET}" >&2; }
 err()  { printf '%s\n' "${RED}$*${RESET}" >&2; }
 
-printf '%s\n' "${BOLD}remnawave-notify-bot — downloading $REPO@$BRANCH${RESET}" >&2
+printf '%s\n' "${BOLD}remnaWake — downloading $REPO@$BRANCH${RESET}" >&2
 printf '%s\n' "${DIM}Install location: $TARGET_DIR${RESET}" >&2
 
 # --- Ensure the target's parent exists and is writable ----------------------

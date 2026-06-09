@@ -60,6 +60,14 @@ func (s *Service) handlePay(ctx context.Context, cb *tg.CallbackQuery) bool {
 		return true
 	}
 
+	// Show payment requisites to the user, if the admin has set any.
+	s.mu.Lock()
+	req := s.requisites
+	s.mu.Unlock()
+	if req != "" && cb.Message != nil {
+		_ = s.bot.SendPlain(ctx, cb.Message.Chat.ID, "Реквизиты для оплаты:\n\n"+req)
+	}
+
 	tariffs, err := s.store.ListTariffs(ctx)
 	if err != nil {
 		s.logger.Error("list tariffs failed", "err", err.Error())

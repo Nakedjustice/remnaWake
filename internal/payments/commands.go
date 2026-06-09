@@ -15,6 +15,10 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 	if m == nil || s.adminID == 0 || m.Chat.ID != s.adminID {
 		return false
 	}
+	// A pending /setrequisites captures the next non-command admin message.
+	if s.consumeRequisitesInput(ctx, m) {
+		return true
+	}
 	fields := strings.Fields(m.Text)
 	if len(fields) == 0 {
 		return false
@@ -29,9 +33,68 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 	case "/deltariff":
 		s.cmdDelTariff(ctx, fields)
 		return true
+	case "/setrequisites":
+		s.cmdSetRequisites(ctx)
+		return true
+	case "/requisites":
+		s.cmdShowRequisites(ctx)
+		return true
 	default:
 		return false
 	}
+}
+
+// cmdSetRequisites starts the two-step flow: the next non-command admin message
+// becomes the stored requisites text.
+func (s *Service) cmdSetRequisites(ctx context.Context) {
+	s.mu.Lock()
+	s.awaitingRequisites = true
+	s.mu.Unlock()
+	_ = s.bot.SendPlain(ctx, s.adminID, "Отправьте текст реквизитов следующим сообщением.")
+}
+
+// cmdShowRequisites replies with the currently stored requisites, or a notice
+// that none are set.
+func (s *Service) cmdShowRequisites(ctx context.Context) {
+	s.mu.Lock()
+	req := s.requisites
+	s.mu.Unlock()
+	if req == "" {
+		_ = s.bot.SendPlain(ctx, s.adminID, "Реквизиты не заданы.")
+		return
+	}
+	_ = s.bot.SendPlain(ctx, s.adminID, "Реквизиты для оплаты:\n\n"+req)
+}
+
+// consumeRequisitesInput captures the admin's requisites text while a
+// /setrequisites flow is pending. Commands (messages starting with "/") are not
+// captured so the admin can still cancel by issuing another command. Returns
+// true only when it stored the message as requisites.
+func (s *Service) consumeRequisitesInput(ctx context.Context, m *tg.Message) bool {
+	s.mu.Lock()
+	awaiting := s.awaitingRequisites
+	s.mu.Unlock()
+	if !awaiting {
+		return false
+	}
+	text := strings.TrimSpace(m.Text)
+	if text == "" || strings.HasPrefix(text, "/") {
+		return false
+	}
+	if err := s.store.UpsertSetting(ctx, requisitesKey, text); err != nil {
+		s.logger.Error("save requisites failed", "err", err.Error())
+		s.mu.Lock()
+		s.awaitingRequisites = false
+		s.mu.Unlock()
+		_ = s.bot.SendPlain(ctx, s.adminID, "Ошибка сохранения реквизитов.")
+		return true
+	}
+	s.mu.Lock()
+	s.requisites = text
+	s.awaitingRequisites = false
+	s.mu.Unlock()
+	_ = s.bot.SendPlain(ctx, s.adminID, "Реквизиты сохранены.")
+	return true
 }
 
 func (s *Service) cmdListTariffs(ctx context.Context) {

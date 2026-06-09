@@ -92,10 +92,17 @@ type Service struct {
 	gifts     map[int64]*giftState
 	invites   map[int64]*inviteState
 	registers map[int64]*registerState
+
+	awaitingRequisites bool   // protected by mu; admin is mid-/setrequisites
+	requisites         string // protected by mu; empty = not set
 }
 
+// requisitesKey is the settings-table key under which payment requisites text
+// is persisted.
+const requisitesKey = "payment_requisites"
+
 func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder Finder, registrar Registrar, adminID int64, currency string, dryRun bool, logger *slog.Logger) *Service {
-	return &Service{
+	s := &Service{
 		store:     st,
 		bot:       bot,
 		extender:  ext,
@@ -111,6 +118,14 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 		invites:   make(map[int64]*inviteState),
 		registers: make(map[int64]*registerState),
 	}
+	// Load persisted payment requisites into the in-memory cache so the user
+	// flow never needs a DB read on each button tap.
+	if value, found, err := st.GetSetting(context.Background(), requisitesKey); err != nil {
+		logger.Error("load requisites failed", "err", err.Error())
+	} else if found {
+		s.requisites = value
+	}
+	return s
 }
 
 // PaymentButton returns the single «Я оплатил» keyboard, or nil when the

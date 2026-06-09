@@ -277,7 +277,7 @@ func (c *Client) GetUserByTelegramID(ctx context.Context, telegramID int64) ([]U
 func (c *Client) setRequestHeaders(req *http.Request) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiToken)
-	req.Header.Set("User-Agent", "remnawave-notify-bot/1.0")
+	req.Header.Set("User-Agent", "remnaWake/1.0")
 }
 
 func (c *Client) BaseURL() string {
