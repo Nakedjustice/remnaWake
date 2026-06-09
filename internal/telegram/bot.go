@@ -343,6 +343,42 @@ func (b *Bot) SetMyCommands(ctx context.Context, commands []BotCommand) error {
 	return nil
 }
 
+// SetMyCommandsForChat registers the bot's command menu for a specific chat via the setMyCommands API.
+func (b *Bot) SetMyCommandsForChat(ctx context.Context, chatID int64, commands []BotCommand) error {
+	payload := map[string]any{
+		"commands": commands,
+		"scope": map[string]any{
+			"type":    "chat",
+			"chat_id": chatID,
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/setMyCommands", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram set my commands for chat: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("telegram set my commands for chat failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+	var ar apiResponse
+	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
+		return fmt.Errorf("telegram set my commands for chat not ok: %s", ar.Description)
+	}
+	return nil
+}
+
 func (b *Bot) EndpointHost() string {
 	u, _ := url.Parse(b.apiBase)
 	return u.Host

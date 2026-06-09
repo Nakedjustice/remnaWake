@@ -64,6 +64,9 @@ func main() {
 		if err := bot.SetMyCommands(rootCtx, userBotCommands()); err != nil {
 			logger.Warn("set bot commands failed", "err", err.Error())
 		}
+		if err := bot.SetMyCommandsForChat(rootCtx, cfg.Telegram.AdminID, adminBotCommands()); err != nil {
+			logger.Warn("set admin bot commands failed", "err", err.Error())
+		}
 		go pollTelegramCallbacks(rootCtx, bot, pay, logger)
 	}
 
@@ -172,6 +175,14 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 			}
 		}
 	}
+}
+
+// adminBotCommands returns the command menu for the admin chat (user commands + /admin).
+func adminBotCommands() []tgbot.BotCommand {
+	return append(userBotCommands(), tgbot.BotCommand{
+		Command:     "admin",
+		Description: "Панель администратора",
+	})
 }
 
 // userBotCommands is the command menu shown to users (the "Menu" button and the

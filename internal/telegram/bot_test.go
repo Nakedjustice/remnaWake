@@ -73,3 +73,38 @@ func TestSetMyCommandsPostsCommandList(t *testing.T) {
 		t.Fatalf("first command wrong: %v", first)
 	}
 }
+
+func TestSetMyCommandsForChatSendsCorrectScope(t *testing.T) {
+	var gotPath string
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer srv.Close()
+
+	b := NewBot("token", "", time.Second)
+	b.apiBase = srv.URL
+
+	cmds := []BotCommand{{Command: "admin", Description: "Panel"}}
+	if err := b.SetMyCommandsForChat(context.Background(), 9999, cmds); err != nil {
+		t.Fatalf("SetMyCommandsForChat: %v", err)
+	}
+	if gotPath != "/setMyCommands" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	scope, ok := body["scope"].(map[string]any)
+	if !ok {
+		t.Fatalf("scope missing: %v", body)
+	}
+	if scope["type"] != "chat" {
+		t.Fatalf("scope type = %q, want chat", scope["type"])
+	}
+	if scope["chat_id"].(float64) != 9999 {
+		t.Fatalf("chat_id = %v", scope["chat_id"])
+	}
+}

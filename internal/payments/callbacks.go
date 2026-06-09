@@ -48,6 +48,8 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleRegisterConfirm(ctx, cb)
 	case cb.Data == "reg_cancel":
 		return s.handleRegisterCancel(ctx, cb)
+	case strings.HasPrefix(cb.Data, "adm:"):
+		return s.handleAdminMenu(ctx, cb)
 	default:
 		return false
 	}
@@ -246,6 +248,128 @@ func (s *Service) tariffKeyboard(userID int64, tariffs []store.Tariff) *tg.Inlin
 		Text: "← Назад", CallbackData: fmt.Sprintf("back:%d", userID),
 	}})
 	return &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) bool {
+	if s.adminID == 0 || cb.From.ID != s.adminID {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Недостаточно прав.")
+		return true
+	}
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	switch {
+	case cb.Data == "adm:menu":
+		s.SendAdminMenu(ctx)
+	case cb.Data == "adm:tariffs":
+		s.sendAdminTariffs(ctx)
+	case cb.Data == "adm:del_list":
+		s.sendAdminDelList(ctx)
+	case cb.Data == "adm:req":
+		s.sendAdminRequisites(ctx)
+	case strings.HasPrefix(cb.Data, "adm:del:"):
+		s.handleAdminDelTariff(ctx, cb.Data)
+	case cb.Data == "adm:setreq":
+		s.startSetRequisitesFlow(ctx)
+	case cb.Data == "adm:addtariff":
+		s.startAddTariffFlow(ctx)
+	}
+	return true
+}
+
+func (s *Service) sendAdminTariffs(ctx context.Context) {
+	tariffs, err := s.store.ListTariffs(ctx)
+	if err != nil {
+		s.logger.Error("admin: list tariffs failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, s.adminID, "Ошибка чтения тарифов.")
+		return
+	}
+	kb := &tg.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tg.InlineKeyboardButton{
+			{{Text: "← Меню", CallbackData: "adm:menu"}},
+		},
+	}
+	if len(tariffs) == 0 {
+		_ = s.bot.SendPlainWithKeyboard(ctx, s.adminID, "Тарифы не заданы.", kb)
+		return
+	}
+	var b strings.Builder
+	b.WriteString("Тарифы:\n")
+	for _, t := range tariffs {
+		b.WriteString(fmt.Sprintf("%d мес. — %s\n", t.Months, s.priceLabel(t.Price)))
+	}
+	_ = s.bot.SendPlainWithKeyboard(ctx, s.adminID, strings.TrimRight(b.String(), "\n"), kb)
+}
+
+func (s *Service) sendAdminDelList(ctx context.Context) {
+	tariffs, err := s.store.ListTariffs(ctx)
+	if err != nil {
+		s.logger.Error("admin: list tariffs for delete failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, s.adminID, "Ошибка чтения тарифов.")
+		return
+	}
+	rows := make([][]tg.InlineKeyboardButton, 0, len(tariffs)+1)
+	for _, t := range tariffs {
+		rows = append(rows, []tg.InlineKeyboardButton{{
+			Text:         fmt.Sprintf("%d мес. — %s", t.Months, s.priceLabel(t.Price)),
+			CallbackData: fmt.Sprintf("adm:del:%d", t.Months),
+		}})
+	}
+	rows = append(rows, []tg.InlineKeyboardButton{{Text: "← Меню", CallbackData: "adm:menu"}})
+	text := "Выберите тариф для удаления:"
+	if len(tariffs) == 0 {
+		text = "Тарифы не заданы."
+	}
+	_ = s.bot.SendPlainWithKeyboard(ctx, s.adminID, text, &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+func (s *Service) sendAdminRequisites(ctx context.Context) {
+	s.mu.Lock()
+	req := s.requisites
+	s.mu.Unlock()
+	kb := &tg.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tg.InlineKeyboardButton{
+			{{Text: "← Меню", CallbackData: "adm:menu"}},
+		},
+	}
+	text := "Реквизиты не заданы."
+	if req != "" {
+		text = "Реквизиты для оплаты:\n\n" + req
+	}
+	_ = s.bot.SendPlainWithKeyboard(ctx, s.adminID, text, kb)
+}
+
+func (s *Service) handleAdminDelTariff(ctx context.Context, data string) {
+	monthsStr := strings.TrimPrefix(data, "adm:del:")
+	months, err := strconv.Atoi(monthsStr)
+	if err != nil || months < 1 {
+		_ = s.bot.SendPlain(ctx, s.adminID, "Не удалось распознать тариф.")
+		return
+	}
+	deleted, err := s.store.DeleteTariff(ctx, months)
+	if err != nil {
+		s.logger.Error("admin: delete tariff failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, s.adminID, "Ошибка удаления тарифа.")
+		return
+	}
+	if !deleted {
+		_ = s.bot.SendPlain(ctx, s.adminID, fmt.Sprintf("Тариф на %d мес. не найден.", months))
+	} else {
+		_ = s.bot.SendPlain(ctx, s.adminID, fmt.Sprintf("Тариф на %d мес. удалён.", months))
+	}
+	s.sendAdminDelList(ctx)
+}
+
+func (s *Service) startSetRequisitesFlow(ctx context.Context) {
+	s.mu.Lock()
+	s.adminInput.step = adminInputRequisites
+	s.mu.Unlock()
+	_ = s.bot.SendPlain(ctx, s.adminID, "Отправьте новый текст реквизитов:")
+}
+
+func (s *Service) startAddTariffFlow(ctx context.Context) {
+	s.mu.Lock()
+	s.adminInput.step = adminInputTariffMonths
+	s.mu.Unlock()
+	_ = s.bot.SendPlain(ctx, s.adminID, "Введите количество месяцев (целое ≥ 1):")
 }
 
 func (s *Service) formatAdminRequest(u *store.NotifiedUser, months, price int) string {

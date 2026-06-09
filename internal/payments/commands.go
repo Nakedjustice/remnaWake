@@ -15,8 +15,8 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 	if m == nil || s.adminID == 0 || m.Chat.ID != s.adminID {
 		return false
 	}
-	// A pending /setrequisites captures the next non-command admin message.
-	if s.consumeRequisitesInput(ctx, m) {
+	// A pending admin input flow captures the next non-command admin message.
+	if s.consumeAdminInput(ctx, m) {
 		return true
 	}
 	fields := strings.Fields(m.Text)
@@ -24,6 +24,9 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 		return false
 	}
 	switch fields[0] {
+	case "/admin":
+		s.SendAdminMenu(ctx)
+		return true
 	case "/tariffs":
 		s.cmdListTariffs(ctx)
 		return true
@@ -48,7 +51,7 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 // becomes the stored requisites text.
 func (s *Service) cmdSetRequisites(ctx context.Context) {
 	s.mu.Lock()
-	s.awaitingRequisites = true
+	s.adminInput.step = adminInputRequisites
 	s.mu.Unlock()
 	_ = s.bot.SendPlain(ctx, s.adminID, "Отправьте текст реквизитов следующим сообщением.")
 }
@@ -66,34 +69,75 @@ func (s *Service) cmdShowRequisites(ctx context.Context) {
 	_ = s.bot.SendPlain(ctx, s.adminID, "Реквизиты для оплаты:\n\n"+req)
 }
 
-// consumeRequisitesInput captures the admin's requisites text while a
-// /setrequisites flow is pending. Commands (messages starting with "/") are not
-// captured so the admin can still cancel by issuing another command. Returns
-// true only when it stored the message as requisites.
-func (s *Service) consumeRequisitesInput(ctx context.Context, m *tg.Message) bool {
+func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 	s.mu.Lock()
-	awaiting := s.awaitingRequisites
+	step := s.adminInput.step
 	s.mu.Unlock()
-	if !awaiting {
+	if step == adminInputNone {
 		return false
 	}
 	text := strings.TrimSpace(m.Text)
 	if text == "" || strings.HasPrefix(text, "/") {
 		return false
 	}
+	switch step {
+	case adminInputRequisites:
+		return s.consumeRequisitesText(ctx, text)
+	case adminInputTariffMonths:
+		return s.consumeTariffMonths(ctx, text)
+	case adminInputTariffPrice:
+		return s.consumeTariffPrice(ctx, text)
+	}
+	return false
+}
+
+func (s *Service) consumeRequisitesText(ctx context.Context, text string) bool {
 	if err := s.store.UpsertSetting(ctx, requisitesKey, text); err != nil {
 		s.logger.Error("save requisites failed", "err", err.Error())
 		s.mu.Lock()
-		s.awaitingRequisites = false
+		s.adminInput.step = adminInputNone
 		s.mu.Unlock()
 		_ = s.bot.SendPlain(ctx, s.adminID, "Ошибка сохранения реквизитов.")
 		return true
 	}
 	s.mu.Lock()
 	s.requisites = text
-	s.awaitingRequisites = false
+	s.adminInput.step = adminInputNone
 	s.mu.Unlock()
 	_ = s.bot.SendPlain(ctx, s.adminID, "Реквизиты сохранены.")
+	return true
+}
+
+func (s *Service) consumeTariffMonths(ctx context.Context, text string) bool {
+	months, err := strconv.Atoi(text)
+	if err != nil || months < 1 {
+		_ = s.bot.SendPlain(ctx, s.adminID, "Введите целое число ≥ 1. Пример: 3")
+		return true
+	}
+	s.mu.Lock()
+	s.adminInput.pendingMonths = months
+	s.adminInput.step = adminInputTariffPrice
+	s.mu.Unlock()
+	_ = s.bot.SendPlain(ctx, s.adminID, "Введите цену (целое ≥ 0):")
+	return true
+}
+
+func (s *Service) consumeTariffPrice(ctx context.Context, text string) bool {
+	price, err := strconv.Atoi(text)
+	if err != nil || price < 0 {
+		_ = s.bot.SendPlain(ctx, s.adminID, "Введите целое число ≥ 0. Пример: 500")
+		return true
+	}
+	s.mu.Lock()
+	months := s.adminInput.pendingMonths
+	s.adminInput = adminInputState{}
+	s.mu.Unlock()
+	if err := s.store.UpsertTariff(ctx, months, price); err != nil {
+		s.logger.Error("upsert tariff failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, s.adminID, "Ошибка сохранения тарифа.")
+		return true
+	}
+	_ = s.bot.SendPlain(ctx, s.adminID, fmt.Sprintf("Тариф сохранён: %d мес. — %s", months, s.priceLabel(price)))
 	return true
 }
 
@@ -133,6 +177,19 @@ func (s *Service) cmdSetTariff(ctx context.Context, fields []string) {
 		return
 	}
 	_ = s.bot.SendPlain(ctx, s.adminID, fmt.Sprintf("Тариф сохранён: %d мес. — %s", months, s.priceLabel(price)))
+}
+
+func (s *Service) SendAdminMenu(ctx context.Context) {
+	kb := &tg.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tg.InlineKeyboardButton{
+			{{Text: "📋 Посмотреть тарифы", CallbackData: "adm:tariffs"}},
+			{{Text: "➕ Добавить тариф", CallbackData: "adm:addtariff"}},
+			{{Text: "❌ Удалить тариф", CallbackData: "adm:del_list"}},
+			{{Text: "💳 Посмотреть реквизиты", CallbackData: "adm:req"}},
+			{{Text: "✏️ Изменить реквизиты", CallbackData: "adm:setreq"}},
+		},
+	}
+	_ = s.bot.SendPlainWithKeyboard(ctx, s.adminID, "Меню администратора", kb)
 }
 
 func (s *Service) cmdDelTariff(ctx context.Context, fields []string) {

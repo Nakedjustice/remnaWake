@@ -67,6 +67,20 @@ const (
 
 const giftTTL = 10 * time.Minute
 
+type adminInputStep int
+
+const (
+	adminInputNone         adminInputStep = iota
+	adminInputRequisites
+	adminInputTariffMonths
+	adminInputTariffPrice
+)
+
+type adminInputState struct {
+	step          adminInputStep
+	pendingMonths int
+}
+
 type giftState struct {
 	step      giftStep
 	payerName string
@@ -93,8 +107,8 @@ type Service struct {
 	invites   map[int64]*inviteState
 	registers map[int64]*registerState
 
-	awaitingRequisites bool   // protected by mu; admin is mid-/setrequisites
-	requisites         string // protected by mu; empty = not set
+	adminInput adminInputState // protected by mu
+	requisites string          // protected by mu; empty = not set
 }
 
 // requisitesKey is the settings-table key under which payment requisites text
