@@ -202,11 +202,18 @@ func (s *Service) handleInviteSubmit(ctx context.Context, cb *tg.CallbackQuery) 
 			{Text: "❌ Отклонить", CallbackData: fmt.Sprintf("inv_rej:%d", reqID)},
 		}},
 	}
+	var refs []adminMsgRef
 	for _, adminID := range s.adminIDs {
-		if _, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb); err != nil {
+		msgID, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
+		if err != nil {
 			s.logger.Error("invite: notify admin failed", "admin_id", adminID, "err", err.Error())
+			continue
 		}
+		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
 	}
+	s.mu.Lock()
+	s.inviteMsgs[reqID] = refs
+	s.mu.Unlock()
 	return true
 }
 
@@ -244,9 +251,7 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 	if s.dryRun {
 		s.logger.Info("dry-run: would create user", "username", req.NewUsername, "expire_at", expireAt.Format("2006-01-02"))
 		_, _ = s.store.ResolveInviteRequest(ctx, reqID, "approved", s.now())
-		if cb.Message != nil {
-			_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
-		}
+		s.clearInviteButtons(ctx, reqID)
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Пользователь создан (dry-run).")
 		_ = s.bot.SendPlain(ctx, cb.From.ID,
 			fmt.Sprintf("✅ (dry-run) Пользователь «%s» создан, подписка до %s.",
@@ -269,9 +274,7 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 		s.logger.Error("invite: mark approved failed", "err", err.Error())
 	}
 
-	if cb.Message != nil {
-		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
-	}
+	s.clearInviteButtons(ctx, reqID)
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Пользователь создан!")
 	_ = s.bot.SendPlain(ctx, cb.From.ID,
 		fmt.Sprintf("✅ Пользователь «%s» создан (UUID: %s), подписка до %s.",
@@ -321,9 +324,7 @@ func (s *Service) handleInviteReject(ctx context.Context, cb *tg.CallbackQuery) 
 		s.logger.Error("invite: mark rejected failed", "err", err.Error())
 	}
 
-	if cb.Message != nil {
-		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
-	}
+	s.clearInviteButtons(ctx, reqID)
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отклонена.")
 	_ = s.bot.SendPlain(ctx, cb.From.ID,
 		fmt.Sprintf("❌ Заявка на пользователя «%s» отклонена.", req.NewUsername))
@@ -333,6 +334,20 @@ func (s *Service) handleInviteReject(ctx context.Context, cb *tg.CallbackQuery) 
 			fmt.Sprintf("❌ Ваша заявка на пользователя «%s» отклонена администратором.", req.NewUsername))
 	}
 	return true
+}
+
+// clearInviteButtons removes the approve/reject buttons from every admin's copy
+// of the invite notification for reqID, then forgets the stored refs.
+func (s *Service) clearInviteButtons(ctx context.Context, reqID int64) {
+	s.mu.Lock()
+	refs := s.inviteMsgs[reqID]
+	delete(s.inviteMsgs, reqID)
+	s.mu.Unlock()
+	for _, ref := range refs {
+		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
+			s.logger.Warn("clear admin invite button failed", "chat_id", ref.chatID, "err", err.Error())
+		}
+	}
 }
 
 // handleInviteCancel processes the "Отмена" button shown during username confirmation.

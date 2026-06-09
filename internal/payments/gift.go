@@ -344,11 +344,18 @@ func (s *Service) handleGiftPick(ctx context.Context, cb *tg.CallbackQuery) bool
 			{{Text: "Подтвердить оплату", CallbackData: fmt.Sprintf("ok:%d", reqID)}},
 		},
 	}
+	var refs []adminMsgRef
 	for _, adminID := range s.adminIDs {
-		if _, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb); err != nil {
+		msgID, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
+		if err != nil {
 			s.logger.Error("payff: notify admin failed", "admin_id", adminID, "err", err.Error())
+			continue
 		}
+		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
 	}
+	s.mu.Lock()
+	s.payMsgs[reqID] = refs
+	s.mu.Unlock()
 	return true
 }
 

@@ -338,3 +338,76 @@ func TestConfirmExtendsFromNowWhenExpired(t *testing.T) {
 		t.Fatalf("new expiry = %s, want %s (from now)", ext.expire, want)
 	}
 }
+
+func newTestServiceTwoAdmins(t *testing.T) (*Service, *fakeBot, *fakeExtender, *store.Store) {
+	t.Helper()
+	st, err := store.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	bot := &fakeBot{}
+	ext := &fakeExtender{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, []int64{1000, 2000}, "₽", false, logger)
+	return svc, bot, ext, st
+}
+
+func TestBroadcastNotifiesBothAdmins(t *testing.T) {
+	svc, bot, _, st := newTestServiceTwoAdmins(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+
+	if !svc.HandleCallback(ctx, cbq(777, "pay:42")) {
+		t.Fatal("pay should be handled")
+	}
+
+	adminGot := map[int64]bool{}
+	for _, m := range bot.sent {
+		if m.Keyboard != nil && m.Keyboard.InlineKeyboard[0][0].CallbackData == "ok:1" {
+			adminGot[m.ChatID] = true
+		}
+	}
+	if !adminGot[1000] || !adminGot[2000] {
+		t.Fatalf("expected both admins to receive confirm button, got: %+v", bot.sent)
+	}
+}
+
+func TestConfirmClearsBothAdminButtons(t *testing.T) {
+	svc, bot, _, st := newTestServiceTwoAdmins(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+
+	if !svc.HandleCallback(ctx, cbq(777, "pay:42")) {
+		t.Fatal("pay: should be handled")
+	}
+	bot.edits = nil
+
+	if !svc.HandleCallback(ctx, cbq(1000, "ok:1")) {
+		t.Fatal("ok: should be handled")
+	}
+
+	cleared := map[int64]bool{}
+	for _, e := range bot.edits {
+		if e.Keyboard == nil {
+			cleared[e.ChatID] = true
+		}
+	}
+	if !cleared[1000] || !cleared[2000] {
+		t.Fatalf("expected buttons cleared for both admins, edits: %+v", bot.edits)
+	}
+}
+
+func TestSecondConfirmIsNoop(t *testing.T) {
+	svc, _, ext, st := newTestServiceTwoAdmins(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+
+	svc.HandleCallback(ctx, cbq(777, "pay:42"))
+	svc.HandleCallback(ctx, cbq(1000, "ok:1")) // first confirm
+	calls := ext.calls
+	svc.HandleCallback(ctx, cbq(2000, "ok:1")) // second confirm — already done
+	if ext.calls != calls {
+		t.Fatalf("second confirm must not extend again: calls=%d", ext.calls)
+	}
+}

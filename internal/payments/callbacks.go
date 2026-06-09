@@ -170,11 +170,18 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 			{{Text: "Подтвердить оплату", CallbackData: fmt.Sprintf("ok:%d", reqID)}},
 		},
 	}
+	var refs []adminMsgRef
 	for _, adminID := range s.adminIDs {
-		if _, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb); err != nil {
+		msgID, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
+		if err != nil {
 			s.logger.Error("notify admin failed", "admin_id", adminID, "err", err.Error())
+			continue
 		}
+		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
 	}
+	s.mu.Lock()
+	s.payMsgs[reqID] = refs
+	s.mu.Unlock()
 }
 
 func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool {
@@ -214,6 +221,7 @@ func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool 
 	if s.dryRun {
 		s.logger.Info("dry-run: would extend", "uuid", req.UUID, "months", req.Months, "new_expire", newExpireAt.Format("2006-01-02"))
 		_, _ = s.store.ConfirmPaymentRequest(ctx, reqID, s.now())
+		s.clearPayButtons(ctx, reqID)
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подписка продлена (dry-run).")
 		return true
 	}
@@ -228,14 +236,25 @@ func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool 
 		s.logger.Error("mark confirmed failed", "err", err.Error())
 	}
 
-	// Remove the admin's confirm button to prevent re-taps.
-	if cb.Message != nil {
-		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
-	}
+	s.clearPayButtons(ctx, reqID)
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Подписка продлена!")
 	_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf("✅ Подписка для %s продлена на %d мес. до %s",
 		req.Username, req.Months, newExpireAt.Format("02.01.2006")))
 	return true
+}
+
+// clearPayButtons removes the confirm button from every admin's copy of the
+// payment notification for reqID, then forgets the stored refs.
+func (s *Service) clearPayButtons(ctx context.Context, reqID int64) {
+	s.mu.Lock()
+	refs := s.payMsgs[reqID]
+	delete(s.payMsgs, reqID)
+	s.mu.Unlock()
+	for _, ref := range refs {
+		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
+			s.logger.Warn("clear admin confirm button failed", "chat_id", ref.chatID, "err", err.Error())
+		}
+	}
 }
 
 func (s *Service) tariffKeyboard(userID int64, tariffs []store.Tariff) *tg.InlineKeyboardMarkup {
