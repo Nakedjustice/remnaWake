@@ -150,7 +150,7 @@ func parseAdminIDs(raw string) ([]int64, error) {
 			continue
 		}
 		n, err := strconv.ParseInt(t, 10, 64)
-		if err != nil {
+		if err != nil || n <= 0 {
 			return nil, fmt.Errorf("invalid TELEGRAM_ADMIN_ID token: %q", t)
 		}
 		out = append(out, n)

@@ -64,6 +64,11 @@ func (s *Service) StartGiftFlow(ctx context.Context, m *tg.Message) bool {
 // /payff command and the menu button. chatID is the payer's private chat, which
 // equals their Telegram ID.
 func (s *Service) beginGiftFlow(ctx context.Context, chatID int64) {
+	// Guard the menu-button path too: a stale button could be tapped after the
+	// admin list was cleared, which would otherwise orphan a pending request.
+	if !s.isEnabled() {
+		return
+	}
 	subs, err := s.finder.FindByTelegramID(ctx, chatID)
 	if err != nil {
 		s.logger.Error("payff: find payer failed", "err", err.Error())

@@ -412,6 +412,31 @@ func TestSecondConfirmIsNoop(t *testing.T) {
 	}
 }
 
+func TestMenuFlowsInertWhenDisabled(t *testing.T) {
+	st, _ := store.New(filepath.Join(t.TempDir(), "x.db"))
+	defer st.Close()
+	bot := &fakeBot{}
+	// Finder would return a subscriber, so the flow would proceed if not gated.
+	finder := &fakeFinder{byTG: map[int64][]Subscriber{
+		555: {{RemnawaveID: 1, UUID: "u-1", Username: "sub", TelegramID: 555}},
+	}}
+	svc := New(st, bot, &fakeExtender{}, &fakeCreator{}, finder, &fakeRegistrar{}, []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx := context.Background()
+
+	// Menu-button entry points must be inert when no admins are configured.
+	svc.beginGiftFlow(ctx, 555)
+	if svc.getGift(555) != nil {
+		t.Fatal("gift flow must not start when disabled")
+	}
+	svc.beginInviteFlow(ctx, 555)
+	if svc.getInvite(555) != nil {
+		t.Fatal("invite flow must not start when disabled")
+	}
+	if len(bot.sent) != 0 {
+		t.Fatalf("no messages should be sent when disabled: %+v", bot.sent)
+	}
+}
+
 func TestInviteApproveClearsBothAdminButtons(t *testing.T) {
 	svc, bot, _, _ := newTestServiceTwoAdmins(t)
 	ctx := context.Background()

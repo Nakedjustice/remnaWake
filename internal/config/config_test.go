@@ -114,6 +114,21 @@ func TestLoadAdminIDZeroDisables(t *testing.T) {
 	}
 }
 
+func TestLoadAdminIDRejectsNegative(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("TELEGRAM_ADMIN_ID", "111,-222")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load should fail with a negative TELEGRAM_ADMIN_ID token")
+	}
+	if !strings.Contains(err.Error(), "TELEGRAM_ADMIN_ID") {
+		t.Fatalf("error = %q, want mention of TELEGRAM_ADMIN_ID", err.Error())
+	}
+}
+
 func TestLoadAdminIDInvalidToken(t *testing.T) {
 	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
 	t.Setenv("REMNAWAVE_API_TOKEN", "tok")

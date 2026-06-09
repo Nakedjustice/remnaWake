@@ -58,6 +58,11 @@ func (s *Service) StartInviteFlow(ctx context.Context, m *tg.Message) bool {
 }
 
 func (s *Service) beginInviteFlow(ctx context.Context, chatID int64) {
+	// Guard the menu-button path too: a stale button could be tapped after the
+	// admin list was cleared, which would otherwise orphan a pending request.
+	if !s.isEnabled() {
+		return
+	}
 	subs, err := s.finder.FindByTelegramID(ctx, chatID)
 	if err != nil {
 		s.logger.Error("invite: find inviter failed", "err", err.Error())
