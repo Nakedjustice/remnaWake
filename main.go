@@ -36,7 +36,7 @@ func main() {
 		"run_at", cfg.Scheduler.RunAt,
 		"dry_run", cfg.DryRun,
 		"run_on_start", cfg.RunOnStart,
-		"payment_notifications_enabled", cfg.Telegram.AdminID != 0,
+		"payment_notifications_enabled", len(cfg.Telegram.AdminIDs) > 0,
 	)
 
 	rwClient, err := remnawave.NewClient(cfg.Remnawave.BaseURL, cfg.Remnawave.APIToken, cfg.HTTP.Timeout)
@@ -54,18 +54,20 @@ func main() {
 	}
 	defer db.Close()
 
-	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, cfg.Telegram.AdminID, cfg.Currency, cfg.DryRun, logger)
+	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, cfg.Telegram.AdminIDs, cfg.Currency, cfg.DryRun, logger)
 	svc := notify.NewService(rwClient, bot, pay, logger, cfg.DryRun)
 
 	rootCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	if cfg.Telegram.AdminID != 0 {
+	if len(cfg.Telegram.AdminIDs) > 0 {
 		if err := bot.SetMyCommands(rootCtx, userBotCommands()); err != nil {
 			logger.Warn("set bot commands failed", "err", err.Error())
 		}
-		if err := bot.SetMyCommandsForChat(rootCtx, cfg.Telegram.AdminID, adminBotCommands()); err != nil {
-			logger.Warn("set admin bot commands failed", "err", err.Error())
+		for _, adminID := range cfg.Telegram.AdminIDs {
+			if err := bot.SetMyCommandsForChat(rootCtx, adminID, adminBotCommands()); err != nil {
+				logger.Warn("set admin bot commands failed", "err", err.Error(), "admin_id", adminID)
+			}
 		}
 		go pollTelegramCallbacks(rootCtx, bot, pay, logger)
 	}
