@@ -112,10 +112,10 @@ type Service struct {
 	invites   map[int64]*inviteState
 	registers map[int64]*registerState
 
-	adminInput map[int64]adminInputState
-	payMsgs    map[int64][]adminMsgRef
-	inviteMsgs map[int64][]adminMsgRef
-	requisites string // protected by mu; empty = not set
+	adminInput map[int64]adminInputState // protected by mu
+	payMsgs    map[int64][]adminMsgRef   // protected by mu
+	inviteMsgs map[int64][]adminMsgRef   // protected by mu
+	requisites string                    // protected by mu; empty = not set
 }
 
 // requisitesKey is the settings-table key under which payment requisites text

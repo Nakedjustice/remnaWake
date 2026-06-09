@@ -92,18 +92,14 @@ func (s *Service) consumeRequisitesText(ctx context.Context, chatID int64, text 
 	if err := s.store.UpsertSetting(ctx, requisitesKey, text); err != nil {
 		s.logger.Error("save requisites failed", "err", err.Error())
 		s.mu.Lock()
-		state := s.adminInput[chatID]
-		state.step = adminInputNone
-		s.adminInput[chatID] = state
+		delete(s.adminInput, chatID)
 		s.mu.Unlock()
 		_ = s.bot.SendPlain(ctx, chatID, "Ошибка сохранения реквизитов.")
 		return true
 	}
 	s.mu.Lock()
 	s.requisites = text
-	state := s.adminInput[chatID]
-	state.step = adminInputNone
-	s.adminInput[chatID] = state
+	delete(s.adminInput, chatID)
 	s.mu.Unlock()
 	_ = s.bot.SendPlain(ctx, chatID, "Реквизиты сохранены.")
 	return true
