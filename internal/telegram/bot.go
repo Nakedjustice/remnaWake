@@ -100,6 +100,11 @@ type apiResponse struct {
 	} `json:"parameters"`
 }
 
+type sendMessageResponse struct {
+	apiResponse
+	Result Message `json:"result"`
+}
+
 type getUpdatesResponse struct {
 	apiResponse
 	Result []Update `json:"result,omitempty"`
@@ -125,10 +130,11 @@ func (b *Bot) SendPlain(ctx context.Context, chatID int64, text string) error {
 		ChatID: chatID,
 		Text:   text,
 	}
-	return b.sendMessage(ctx, payload)
+	_, err := b.sendMessage(ctx, payload)
+	return err
 }
 
-func (b *Bot) SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) error {
+func (b *Bot) SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) (int64, error) {
 	payload := sendMessageRequest{
 		ChatID:      chatID,
 		Text:        text,
@@ -144,7 +150,8 @@ func (b *Bot) SendWithKeyboard(ctx context.Context, chatID int64, text string, k
 		ParseMode:   b.parseMode,
 		ReplyMarkup: keyboard,
 	}
-	return b.sendMessage(ctx, payload)
+	_, err := b.sendMessage(ctx, payload)
+	return err
 }
 
 func (b *Bot) SendWelcome(ctx context.Context, chatID int64) error {
@@ -161,22 +168,22 @@ func (b *Bot) SendWelcome(ctx context.Context, chatID int64) error {
 	return b.SendPlain(ctx, chatID, text)
 }
 
-func (b *Bot) sendMessage(ctx context.Context, payload sendMessageRequest) error {
+func (b *Bot) sendMessage(ctx context.Context, payload sendMessageRequest) (int64, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	endpoint := b.apiBase + "/sendMessage"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := b.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("telegram send: %w", err)
+		return 0, fmt.Errorf("telegram send: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -184,19 +191,19 @@ func (b *Bot) sendMessage(ctx context.Context, payload sendMessageRequest) error
 	if resp.StatusCode == http.StatusTooManyRequests {
 		var ar apiResponse
 		if err := json.Unmarshal(raw, &ar); err == nil && ar.Parameters != nil && ar.Parameters.RetryAfter > 0 {
-			return fmt.Errorf("telegram rate limited, retry_after=%ds", ar.Parameters.RetryAfter)
+			return 0, fmt.Errorf("telegram rate limited, retry_after=%ds", ar.Parameters.RetryAfter)
 		}
-		return fmt.Errorf("telegram rate limited, status=%d", resp.StatusCode)
+		return 0, fmt.Errorf("telegram rate limited, status=%d", resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("telegram send failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+		return 0, fmt.Errorf("telegram send failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
 	}
 
-	var ar apiResponse
+	var ar sendMessageResponse
 	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
-		return fmt.Errorf("telegram send not ok: %s", ar.Description)
+		return 0, fmt.Errorf("telegram send not ok: %s", ar.Description)
 	}
-	return nil
+	return ar.Result.MessageID, nil
 }
 
 func (b *Bot) GetUpdates(ctx context.Context, offset int64, timeout int) ([]Update, error) {

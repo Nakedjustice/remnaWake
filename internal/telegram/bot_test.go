@@ -10,6 +10,25 @@ import (
 	"time"
 )
 
+func TestSendPlainWithKeyboardReturnsMessageID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":42,"chat":{"id":100,"type":"private"},"text":"hi"}}`))
+	}))
+	defer srv.Close()
+
+	b := NewBot("token", "", time.Second)
+	b.apiBase = srv.URL
+
+	msgID, err := b.SendPlainWithKeyboard(context.Background(), 100, "hi", nil)
+	if err != nil {
+		t.Fatalf("SendPlainWithKeyboard: %v", err)
+	}
+	if msgID != 42 {
+		t.Fatalf("msgID = %d, want 42", msgID)
+	}
+}
+
 func TestEditMessageReplyMarkupClearsKeyboard(t *testing.T) {
 	var gotPath string
 	var body map[string]any
