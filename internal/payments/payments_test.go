@@ -411,3 +411,42 @@ func TestSecondConfirmIsNoop(t *testing.T) {
 		t.Fatalf("second confirm must not extend again: calls=%d", ext.calls)
 	}
 }
+
+func TestInviteApproveClearsBothAdminButtons(t *testing.T) {
+	svc, bot, _, _ := newTestServiceTwoAdmins(t)
+	ctx := context.Background()
+
+	// Seed an active invite ready to submit, in the inviter's chat (id 300).
+	svc.setInvite(300, &inviteState{
+		inviterName: "payer",
+		inviterTGID: 300,
+		newUsername: "newbie",
+		price:       0,
+		createdAt:   svc.now(),
+	})
+
+	// Submit -> notifies both admins and records inviteMsgs refs.
+	submitCb := &tg.CallbackQuery{ID: "c1", From: tg.User{ID: 300},
+		Message: &tg.Message{MessageID: 9, Chat: tg.Chat{ID: 300}}, Data: "inv_submit"}
+	if !svc.HandleCallback(ctx, submitCb) {
+		t.Fatal("inv_submit should be handled")
+	}
+	bot.edits = nil
+
+	// Approve from admin 1000 -> clears the button on both admins' copies.
+	approveCb := &tg.CallbackQuery{ID: "c2", From: tg.User{ID: 1000},
+		Message: &tg.Message{MessageID: 10, Chat: tg.Chat{ID: 1000}}, Data: "inv_ok:1"}
+	if !svc.HandleCallback(ctx, approveCb) {
+		t.Fatal("inv_ok should be handled")
+	}
+
+	cleared := map[int64]bool{}
+	for _, e := range bot.edits {
+		if e.Keyboard == nil {
+			cleared[e.ChatID] = true
+		}
+	}
+	if !cleared[1000] || !cleared[2000] {
+		t.Fatalf("expected invite buttons cleared for both admins, edits: %+v", bot.edits)
+	}
+}

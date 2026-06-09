@@ -113,8 +113,12 @@ type Service struct {
 	registers map[int64]*registerState
 
 	adminInput map[int64]adminInputState // protected by mu
-	payMsgs    map[int64][]adminMsgRef   // protected by mu
-	inviteMsgs map[int64][]adminMsgRef   // protected by mu
+	// payMsgs/inviteMsgs map a request ID to the admin message copies of its
+	// notification, so confirming/rejecting clears the button for every admin.
+	// Entries are deleted on resolve; abandoned (never-actioned) requests leak
+	// slowly until restart. TODO: add TTL-based eviction if this grows.
+	payMsgs    map[int64][]adminMsgRef // protected by mu
+	inviteMsgs map[int64][]adminMsgRef // protected by mu
 	requisites string                    // protected by mu; empty = not set
 }
 
