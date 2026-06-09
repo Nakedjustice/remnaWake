@@ -200,7 +200,10 @@ func (b *Bot) sendMessage(ctx context.Context, payload sendMessageRequest) (int6
 	}
 
 	var ar sendMessageResponse
-	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
+	if err := json.Unmarshal(raw, &ar); err != nil {
+		return 0, fmt.Errorf("telegram send decode: %w", err)
+	}
+	if !ar.OK {
 		return 0, fmt.Errorf("telegram send not ok: %s", ar.Description)
 	}
 	return ar.Result.MessageID, nil
