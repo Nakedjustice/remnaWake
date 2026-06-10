@@ -72,20 +72,23 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 
 	rows := make([][]tg.InlineKeyboardButton, 0, len(subs)+5)
 	if url := s.getWebAppURL(); url != "" {
+		// Renewal lives in the mini app, so the inline «Продлить» buttons
+		// would duplicate it — show one or the other.
 		rows = append(rows, []tg.InlineKeyboardButton{{
 			Text:   "🖥 Открыть мини-приложение",
 			WebApp: &tg.WebAppInfo{URL: url},
 		}})
-	}
-	for i := range subs {
-		label := "💳 Оплатить / продлить"
-		if len(subs) > 1 {
-			label = fmt.Sprintf("💳 Продлить «%s»", subs[i].Username)
+	} else {
+		for i := range subs {
+			label := "💳 Оплатить / продлить"
+			if len(subs) > 1 {
+				label = fmt.Sprintf("💳 Продлить «%s»", subs[i].Username)
+			}
+			rows = append(rows, []tg.InlineKeyboardButton{{
+				Text:         label,
+				CallbackData: fmt.Sprintf("cab:pay:%d", subs[i].RemnawaveID),
+			}})
 		}
-		rows = append(rows, []tg.InlineKeyboardButton{{
-			Text:         label,
-			CallbackData: fmt.Sprintf("cab:pay:%d", subs[i].RemnawaveID),
-		}})
 	}
 	rows = append(rows,
 		[]tg.InlineKeyboardButton{{Text: "🎁 Подарить подписку", CallbackData: "menu:gift"}},
