@@ -28,6 +28,10 @@ the bot extends the subscription by the chosen number of months.
 - **`/mygifts`** — list the gift codes you bought with their current status
   (pending / issued / activated / rejected / revoked) and re-request the message
   with the redemption link if the original one was lost.
+- **`/me`** — personal cabinet: linked profile(s) with status and expiry date,
+  the subscription URL, a gifts/invites summary, plus buttons to renew, gift,
+  invite, and re-link. Also opens via the persistent **«👤 Личный кабинет»**
+  reply button installed on `/start`; unlinked users are offered the linking flow.
 - Welcome message on the `/start` command, with a **🔗 Привязать аккаунт** button
   that walks new users through linking (and warns that without it no notifications arrive).
 - Structured logs to stdout (`log/slog` JSON).
@@ -75,6 +79,7 @@ externally and you confirm manually.
 | Command      | What it does                                                          |
 | ------------ | --------------------------------------------------------------------- |
 | `/start`     | Show the welcome message                                              |
+| `/me`        | Personal cabinet: subscription status, link, gifts/invites, actions   |
 | `/menu`      | Open the menu with inline buttons                                     |
 | `/tariff`    | Show the current tariffs/prices                                       |
 | `/gift`      | Buy a gift subscription and get a shareable code/link (subscribers only) |

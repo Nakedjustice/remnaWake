@@ -26,6 +26,12 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleConfirm(ctx, cb)
 	case cb.Data == "menu:tariffs":
 		return s.handleMenuTariffs(ctx, cb)
+	case cb.Data == "menu:cabinet":
+		return s.handleMenuCabinet(ctx, cb)
+	case strings.HasPrefix(cb.Data, "cab:pay:"):
+		return s.handleCabinetPay(ctx, cb)
+	case cb.Data == "cab:cancel":
+		return s.handleCabinetCancel(ctx, cb)
 	case cb.Data == "menu:invite":
 		return s.handleMenuInvite(ctx, cb)
 	case cb.Data == "inv_submit":

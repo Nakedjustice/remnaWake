@@ -159,9 +159,17 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 					if err := bot.SendWelcome(ctx, u.Message.Chat.ID); err != nil {
 						logger.Error("send welcome message failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
 					}
+					if err := bot.SendPlainWithReplyKeyboard(ctx, u.Message.Chat.ID,
+						"Кнопка «"+tgbot.CabinetButtonLabel+"» теперь всегда под полем ввода 👇", tgbot.MainReplyKeyboard()); err != nil {
+						logger.Error("send reply keyboard failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
+					}
 					continue
 				}
 				switch text {
+				case "/me", "/cabinet", tgbot.CabinetButtonLabel:
+					if pay.SendCabinet(ctx, u.Message.Chat.ID) {
+						continue
+					}
 				case "/menu", "/help":
 					pay.SendMenu(ctx, u.Message.Chat.ID)
 					continue
@@ -207,6 +215,7 @@ func adminBotCommands() []tgbot.BotCommand {
 // "/" autocomplete list).
 func userBotCommands() []tgbot.BotCommand {
 	return []tgbot.BotCommand{
+		{Command: "me", Description: "Личный кабинет"},
 		{Command: "menu", Description: "Открыть меню"},
 		{Command: "tariff", Description: "Посмотреть тарифы"},
 		{Command: "gift", Description: "Подарить подписку"},
@@ -270,10 +279,12 @@ func toSubscriber(u remnawave.User) payments.Subscriber {
 		tgID = *u.TelegramID
 	}
 	return payments.Subscriber{
-		RemnawaveID: u.ID,
-		UUID:        u.UUID,
-		Username:    u.Username,
-		TelegramID:  tgID,
-		ExpireAt:    u.ExpireAt,
+		RemnawaveID:     u.ID,
+		UUID:            u.UUID,
+		Username:        u.Username,
+		TelegramID:      tgID,
+		ExpireAt:        u.ExpireAt,
+		Status:          string(u.Status),
+		SubscriptionURL: u.SubscriptionURL,
 	}
 }

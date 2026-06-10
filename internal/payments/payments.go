@@ -44,11 +44,13 @@ type Registrar interface {
 // Subscriber is the minimal user view the gift flow needs, kept payments-local
 // so this package stays decoupled from the remnawave package.
 type Subscriber struct {
-	RemnawaveID int64
-	UUID        string
-	Username    string
-	TelegramID  int64
-	ExpireAt    time.Time
+	RemnawaveID     int64
+	UUID            string
+	Username        string
+	TelegramID      int64
+	ExpireAt        time.Time
+	Status          string // panel status: ACTIVE / EXPIRED / DISABLED / LIMITED
+	SubscriptionURL string
 }
 
 // Finder resolves a target subscriber by Telegram ID (may match several) or by
@@ -128,7 +130,7 @@ type Service struct {
 	payMsgs    map[int64][]adminMsgRef // protected by mu
 	inviteMsgs map[int64][]adminMsgRef // protected by mu
 	giftMsgs   map[int64][]adminMsgRef // protected by mu
-	requisites string                    // protected by mu; empty = not set
+	requisites string                  // protected by mu; empty = not set
 }
 
 // requisitesKey is the settings-table key under which payment requisites text
