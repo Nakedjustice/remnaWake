@@ -21,20 +21,21 @@ the bot extends the subscription by the chosen number of months.
   admin involvement.
 - **`/invite`** — existing subscribers can request a new user to be created in the
   panel; admin approves and the new subscription URL is sent back to the inviter.
-- Welcome message on the `/start` command.
+- Welcome message on the `/start` command, with a **🔗 Привязать аккаунт** button
+  that walks new users through linking (and warns that without it no notifications arrive).
 - Structured logs to stdout (`log/slog` JSON).
 - Multi-stage Docker image based on `distroless/static`, `restart: unless-stopped`.
 
 ## Notification text
 
 ```
-⏰ Подписка истекает через 7 дней. Для продления оплатите подписку.
-⏰ Подписка истекает через 3 дня. Для продления оплатите подписку.
-⏰ Подписка истекает через 1 день. Для продления оплатите подписку.
+⏰ ivan, ваша подписка истекает 17.06.2026 — через 7 дней.
+Для продления оплатите подписку.
 ```
 
-The Russian word for "day" (день / дня / дней) is grammatically agreed with the
-number.
+Each message names the user's **Remnawave profile** and the **exact expiry date**
+(`DD.MM.YYYY`), so the recipient can tell which subscription is ending. The Russian
+word for "day" (день / дня / дней) is grammatically agreed with the number.
 
 If `TELEGRAM_ADMIN_ID` is set, an inline **"Я оплатил"** button is attached to
 the message. Use the admin's **Telegram user ID** here, not a group/channel chat
@@ -161,18 +162,30 @@ Safeguards:
 
 ## Welcome message
 
-On `/start` the bot replies with:
+On `/start` the bot replies with a message that explains how to link an account
+and **why it matters** (no link = no notifications), plus a **🔗 Привязать
+аккаунт** inline button that launches the same flow as `/register`:
 
 ```
 ⏰ Привет! Я бот-напоминалка: если ваша подписка на КВН скоро закончится, я сообщу об этом заранее — за 7, 3 или 1 день до окончания.
 
+❗️ Чтобы получать уведомления, сначала привяжите свой Telegram к профилю подписки. Без привязки я не смогу понять, какая подписка ваша, и напоминания приходить не будут.
+
+Как привязать:
+1. Нажмите кнопку «🔗 Привязать аккаунт» ниже (или команду /register).
+2. Введите имя вашего профиля — его можно посмотреть в приложении.
+3. Подтвердите привязку — и всё готово, уведомления включены.
+
 Меню и команды:
 /menu — открыть меню с кнопками
+/register — привязать свой Telegram к профилю
 /tariff — посмотреть текущие тарифы
 /payff — оплатить подписку за другого пользователя
 /cancel — отменить текущее действие
 
 После оплаты нажмите «Я оплатил» — администратор получит уведомление и подтвердит продление.
+
+[🔗 Привязать аккаунт]
 ```
 
 ## Configuration (.env)
