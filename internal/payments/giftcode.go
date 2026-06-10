@@ -309,7 +309,16 @@ func (s *Service) handleGiftCodeApprove(ctx context.Context, cb *tg.CallbackQuer
 	_ = s.bot.SendPlain(ctx, cb.From.ID,
 		fmt.Sprintf("✅ Подарочный код %s выдан покупателю %s.", g.Code, g.BuyerUsername))
 
-	msg := fmt.Sprintf("🎁 Оплата подтверждена! Подарочная подписка на %d мес.\n\nКод: %s\n", g.Months, g.Code)
+	msg := fmt.Sprintf("🎁 Оплата подтверждена! Подарочная подписка на %d мес.\n\n%s", g.Months, s.giftLinkMessage(g))
+	_ = s.bot.SendPlain(ctx, g.BuyerTelegramID, msg)
+	return true
+}
+
+// giftLinkMessage builds the code + redemption deep link block sent to the
+// buyer, falling back to manual /start instructions when the bot username is
+// unknown.
+func (s *Service) giftLinkMessage(g *store.GiftCode) string {
+	msg := fmt.Sprintf("Код: %s\n", g.Code)
 	if bu := s.getBotUsername(); bu != "" {
 		msg += fmt.Sprintf("Ссылка: https://t.me/%s?start=%s%s\n\nОтправьте ссылку тому, кому дарите подписку. Подарок активируется при переходе по ней.",
 			bu, giftDeepLinkPrefix, g.Code)
@@ -317,8 +326,7 @@ func (s *Service) handleGiftCodeApprove(ctx context.Context, cb *tg.CallbackQuer
 		msg += fmt.Sprintf("\nПередайте код тому, кому дарите подписку: для активации нужно отправить боту команду /start %s%s",
 			giftDeepLinkPrefix, g.Code)
 	}
-	_ = s.bot.SendPlain(ctx, g.BuyerTelegramID, msg)
-	return true
+	return msg
 }
 
 // handleGiftCodeReject processes admin's rejection of a gift purchase.
@@ -373,6 +381,102 @@ func (s *Service) clearGiftButtons(ctx context.Context, giftID int64) {
 			s.logger.Warn("clear admin gift button failed", "chat_id", ref.chatID, "err", err.Error())
 		}
 	}
+}
+
+// SendMyGifts lists the gift codes the user bought with their statuses, plus
+// a button to re-send the redemption link for issued (not yet activated)
+// gifts in case the original message was lost. Returns true (handled).
+func (s *Service) SendMyGifts(ctx context.Context, chatID int64) bool {
+	gifts, err := s.store.ListGiftCodesByBuyer(ctx, chatID)
+	if err != nil {
+		s.logger.Error("gift: list by buyer failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		return true
+	}
+	if len(gifts) == 0 {
+		_ = s.bot.SendPlain(ctx, chatID, "Вы ещё не покупали подарочных подписок.")
+		return true
+	}
+
+	var b strings.Builder
+	b.WriteString("🎁 Ваши подарочные подписки:\n")
+	var rows [][]tg.InlineKeyboardButton
+	for _, g := range gifts {
+		b.WriteString(fmt.Sprintf("\n%s — %d мес. (заявка от %s)\n%s",
+			g.Code, g.Months, g.CreatedAt.Format("02.01.2006"), giftStatusLabel(&g)))
+		b.WriteString("\n")
+		if g.Status == "issued" {
+			rows = append(rows, []tg.InlineKeyboardButton{{
+				Text:         fmt.Sprintf("🔗 Ссылка для %s", g.Code),
+				CallbackData: fmt.Sprintf("gc_link:%d", g.ID),
+			}})
+		}
+	}
+	text := strings.TrimRight(b.String(), "\n")
+	if len(rows) == 0 {
+		_ = s.bot.SendPlain(ctx, chatID, text)
+		return true
+	}
+	text += "\n\nЕсли вы потеряли сообщение со ссылкой, получите её заново:"
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+	return true
+}
+
+func giftStatusLabel(g *store.GiftCode) string {
+	switch g.Status {
+	case "pending":
+		return "⏳ Ожидает подтверждения оплаты"
+	case "issued":
+		return "📨 Выдан, ожидает активации"
+	case "redeemed":
+		if g.RedeemedUsername != "" {
+			return "✅ Активирован (" + g.RedeemedUsername + ")"
+		}
+		return "✅ Активирован"
+	case "rejected":
+		return "❌ Отклонён"
+	case "revoked":
+		return "🚫 Отозван"
+	}
+	return g.Status
+}
+
+// handleMenuMyGifts shows the user's gift list from the menu button.
+func (s *Service) handleMenuMyGifts(ctx context.Context, cb *tg.CallbackQuery) bool {
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	if cb.Message != nil {
+		s.SendMyGifts(ctx, cb.Message.Chat.ID)
+	}
+	return true
+}
+
+// handleGiftCodeResend re-sends the redemption link of an issued gift to its
+// buyer, for when the original message with the link was lost.
+func (s *Service) handleGiftCodeResend(ctx context.Context, cb *tg.CallbackQuery) bool {
+	giftID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "gc_link:"), 10, 64)
+	if err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать подарок.")
+		return true
+	}
+	g, err := s.store.GetGiftCode(ctx, giftID)
+	if err != nil {
+		s.logger.Error("gift: get gift code failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		return true
+	}
+	// Only the buyer may request the link again.
+	if g == nil || g.BuyerTelegramID != cb.From.ID {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подарок не найден.")
+		return true
+	}
+	if g.Status != "issued" {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Этот подарок уже активирован, отклонён или отозван.")
+		return true
+	}
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	_ = s.bot.SendPlain(ctx, g.BuyerTelegramID,
+		fmt.Sprintf("🎁 Подарочная подписка на %d мес.\n\n%s", g.Months, s.giftLinkMessage(g)))
+	return true
 }
 
 // sendAdminGiftList shows issued (unredeemed) gift codes with revoke buttons.

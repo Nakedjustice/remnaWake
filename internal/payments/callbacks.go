@@ -44,6 +44,10 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleRegisterCancel(ctx, cb)
 	case cb.Data == "menu:gift":
 		return s.handleMenuGift(ctx, cb)
+	case cb.Data == "menu:mygifts":
+		return s.handleMenuMyGifts(ctx, cb)
+	case strings.HasPrefix(cb.Data, "gc_link:"):
+		return s.handleGiftCodeResend(ctx, cb)
 	case strings.HasPrefix(cb.Data, "gc_pick:"):
 		return s.handleGiftCodePick(ctx, cb)
 	case cb.Data == "gc_cancel":

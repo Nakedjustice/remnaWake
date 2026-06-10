@@ -133,11 +133,20 @@ func (s *Store) transitionGift(ctx context.Context, query string, args ...any) (
 }
 
 func (s *Store) ListGiftCodesByStatus(ctx context.Context, status string) ([]GiftCode, error) {
+	return s.listGiftCodes(ctx, `WHERE status = ? ORDER BY id`, status)
+}
+
+// ListGiftCodesByBuyer returns every gift code purchased by the given buyer,
+// newest first.
+func (s *Store) ListGiftCodesByBuyer(ctx context.Context, buyerTGID int64) ([]GiftCode, error) {
+	return s.listGiftCodes(ctx, `WHERE buyer_telegram_id = ? ORDER BY id DESC`, buyerTGID)
+}
+
+func (s *Store) listGiftCodes(ctx context.Context, where string, arg any) ([]GiftCode, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, code, buyer_telegram_id, buyer_username, months, price, status,
 			redeemer_telegram_id, redeemed_username, created_at, issued_at, resolved_at
-		FROM gift_codes WHERE status = ? ORDER BY id
-	`, status)
+		FROM gift_codes `+where, arg)
 	if err != nil {
 		return nil, err
 	}

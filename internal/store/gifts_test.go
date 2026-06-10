@@ -161,3 +161,25 @@ func TestListGiftCodesByStatus(t *testing.T) {
 		t.Fatalf("pending list mismatch: %+v", pending)
 	}
 }
+
+func TestListGiftCodesByBuyer(t *testing.T) {
+	st := newGiftStore(t)
+	ctx := context.Background()
+
+	first, _ := st.CreateGiftCode(ctx, GiftCode{Code: "M1", BuyerTelegramID: 111, Months: 1})
+	second, _ := st.CreateGiftCode(ctx, GiftCode{Code: "M2", BuyerTelegramID: 111, Months: 3})
+	_, _ = st.CreateGiftCode(ctx, GiftCode{Code: "OTHER", BuyerTelegramID: 222, Months: 1})
+
+	mine, err := st.ListGiftCodesByBuyer(ctx, 111)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(mine) != 2 || mine[0].ID != second || mine[1].ID != first {
+		t.Fatalf("buyer list must be newest first: %+v", mine)
+	}
+
+	none, err := st.ListGiftCodesByBuyer(ctx, 999)
+	if err != nil || len(none) != 0 {
+		t.Fatalf("unknown buyer must get empty list: %v %+v", err, none)
+	}
+}
