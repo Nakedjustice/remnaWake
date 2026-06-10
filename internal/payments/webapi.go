@@ -53,6 +53,7 @@ type WebInvites struct {
 // WebCabinet is the full /api/me payload for the mini app.
 type WebCabinet struct {
 	Linked     bool         `json:"linked"`
+	IsAdmin    bool         `json:"is_admin,omitempty"`
 	Profiles   []WebProfile `json:"profiles,omitempty"`
 	Tariffs    []WebTariff  `json:"tariffs,omitempty"`
 	Requisites string       `json:"requisites,omitempty"`
@@ -68,7 +69,8 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 		return nil, fmt.Errorf("find by telegram id: %w", err)
 	}
 
-	out := &WebCabinet{Linked: len(subs) > 0}
+	// Presentational only: every /api/admin call re-checks isAdmin server-side.
+	out := &WebCabinet{Linked: len(subs) > 0, IsAdmin: s.isEnabled() && s.isAdmin(telegramID)}
 	now := s.now()
 	for i := range subs {
 		sub := &subs[i]

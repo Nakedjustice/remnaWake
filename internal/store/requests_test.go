@@ -78,3 +78,79 @@ func TestEnsurePaymentRequestColumnsAddsToLegacyDB(t *testing.T) {
 	}
 	_ = db.Close()
 }
+
+func TestListPaymentRequestsByStatus(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+
+	mk := func(username string) int64 {
+		id, err := st.CreatePaymentRequest(ctx, PaymentRequest{
+			RemnawaveID: 42, UUID: "uuid-42", Username: username, TelegramID: 999,
+			Months: 3, Price: 450, ExpireAt: exp, Status: "pending",
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		return id
+	}
+
+	first := mk("alice")
+	second := mk("bob")
+	third := mk("carol")
+
+	when := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	if ok, err := st.ConfirmPaymentRequest(ctx, second, when); err != nil || !ok {
+		t.Fatalf("confirm: %v %v", ok, err)
+	}
+
+	pending, err := st.ListPaymentRequestsByStatus(ctx, "pending")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(pending) != 2 || pending[0].ID != first || pending[1].ID != third {
+		t.Fatalf("unexpected pending list: %+v", pending)
+	}
+	if pending[0].Username != "alice" || !pending[0].ExpireAt.Equal(exp) || pending[0].Months != 3 {
+		t.Fatalf("unexpected fields: %+v", pending[0])
+	}
+
+	confirmed, err := st.ListPaymentRequestsByStatus(ctx, "confirmed")
+	if err != nil || len(confirmed) != 1 || confirmed[0].ID != second {
+		t.Fatalf("unexpected confirmed list: %+v err %v", confirmed, err)
+	}
+}
+
+func TestRejectPaymentRequest(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+
+	id, err := st.CreatePaymentRequest(ctx, PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 999,
+		Months: 3, Price: 450, ExpireAt: exp, Status: "pending",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	when := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	ok, err := st.RejectPaymentRequest(ctx, id, when)
+	if err != nil || !ok {
+		t.Fatalf("first reject: ok=%v err=%v", ok, err)
+	}
+	again, err := st.RejectPaymentRequest(ctx, id, when)
+	if err != nil || again {
+		t.Fatalf("second reject should be no-op: again=%v err=%v", again, err)
+	}
+
+	got, _ := st.GetPaymentRequest(ctx, id)
+	if got.Status != "rejected" || got.ConfirmedAt == nil {
+		t.Fatalf("expected rejected with resolved-at: %+v", got)
+	}
+
+	// A rejected request can no longer be confirmed.
+	if ok, err := st.ConfirmPaymentRequest(ctx, id, when); err != nil || ok {
+		t.Fatalf("confirm after reject must fail: ok=%v err=%v", ok, err)
+	}
+}
