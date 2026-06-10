@@ -15,14 +15,31 @@ services:
     volumes:
       - botdata:/data
     # Telegram Mini App: set WEBAPP_URL in .env and expose the embedded web
-    # server to your HTTPS reverse proxy.
+    # server (default :8080) to your HTTPS reverse proxy.
+    #
+    # Host-level proxy (nginx / standalone Caddy on the host): uncomment the
+    # ports block so the proxy can reach the bot on 127.0.0.1:8080.
     # ports:
     #   - "127.0.0.1:8080:8080"
+    #
+    # Containerised Caddy alongside remnawave: do NOT publish the port — inside
+    # the Caddy container 127.0.0.1 is Caddy itself. Instead join remnawave's
+    # network (below) and proxy to the container name: `reverse_proxy
+    # remnaWake-bot:8080`. See "Running alongside remnawave" in the README.
+    # networks:
+    #   - remnawave-network
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+# Uncomment to attach the bot to remnawave's existing network (used by the
+# containerised-Caddy setup above so Caddy can reach `remnaWake-bot:8080`).
+# networks:
+#   remnawave-network:
+#     name: remnawave-network
+#     external: true
 
 volumes:
   botdata:
