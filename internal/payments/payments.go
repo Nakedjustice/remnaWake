@@ -58,15 +58,6 @@ type Finder interface {
 	FindByUsername(ctx context.Context, username string) (*Subscriber, error)
 }
 
-type giftStep int
-
-const (
-	stepAwaitingIdentifier giftStep = iota
-	stepAwaitingTariff
-)
-
-const giftTTL = 10 * time.Minute
-
 type adminInputStep int
 
 const (
@@ -79,14 +70,6 @@ const (
 type adminInputState struct {
 	step          adminInputStep
 	pendingMonths int
-}
-
-type giftState struct {
-	step      giftStep
-	payerName string
-	payerTGID int64
-	target    *Subscriber
-	createdAt time.Time
 }
 
 type adminMsgRef struct {
@@ -130,7 +113,6 @@ type Service struct {
 
 	finder    Finder
 	mu        sync.Mutex
-	gifts     map[int64]*giftState
 	invites   map[int64]*inviteState
 	registers map[int64]*registerState
 	giftCodes map[int64]*giftCodeState
@@ -166,7 +148,6 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 		dryRun:     dryRun,
 		logger:     logger,
 		now:        time.Now,
-		gifts:      make(map[int64]*giftState),
 		invites:    make(map[int64]*inviteState),
 		registers:  make(map[int64]*registerState),
 		giftCodes:  make(map[int64]*giftCodeState),

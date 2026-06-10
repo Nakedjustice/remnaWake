@@ -74,11 +74,10 @@ externally and you confirm manually.
 | `/start`     | Show the welcome message                                              |
 | `/menu`      | Open the menu with inline buttons                                     |
 | `/tariff`    | Show the current tariffs/prices                                       |
-| `/payff`     | Pay for another user (subscribers only)                               |
 | `/gift`      | Buy a gift subscription and get a shareable code/link (subscribers only) |
 | `/invite`    | Invite a new user to the panel (subscribers only)                     |
 | `/register`  | Link your Telegram to an existing Remnawave profile                   |
-| `/cancel`    | Cancel the current `/payff`, `/gift`, `/invite`, or `/register` step  |
+| `/cancel`    | Cancel the current `/gift`, `/invite`, or `/register` step            |
 | `/help`      | Same as `/menu`                                                       |
 
 **Admin-only commands** (only the account whose ID equals `TELEGRAM_ADMIN_ID`;
@@ -100,35 +99,20 @@ kept in the `botdata` Docker volume), so they survive restarts.
 
 ### Menu buttons
 
-When a user sends `/menu` (or `/help`), the bot replies with five inline buttons:
+When a user sends `/menu` (or `/help`), the bot replies with four inline buttons:
 
 | Button                       | Action                                |
 | ---------------------------- | ------------------------------------- |
 | 💵 Тарифы                   | Show current tariff prices            |
-| 💳 Оплатить за другого       | Start the pay-for-another-user flow   |
 | 🎁 Подарить подписку         | Start the gift-subscription flow      |
 | 👤 Пригласить пользователя   | Start the invite-new-user flow        |
 | 🔗 Привязать аккаунт         | Start the Telegram-linking flow       |
 
-### Paying for another user (`/payff`)
-
-Any existing subscriber can pay for someone else:
-
-1. Send `/payff` to the bot.
-2. Enter the target's **Remnawave username** or **Telegram ID** (a value that is
-   all digits is looked up by Telegram ID, otherwise by username).
-3. Pick a period from the tariff buttons (or the single 1-month option when no
-   tariffs are configured). `/cancel` or the **Отмена** button aborts.
-4. The admin receives a request naming both the payer and the target, with a
-   **"Подтвердить оплату"** button. Confirming extends the target's subscription.
-
-Only existing subscribers may start `/payff`; every request is still gated by
-admin confirmation.
-
 ### Gifting a subscription (`/gift`)
 
-Unlike `/payff`, a gift does not require knowing the recipient in advance — the
-buyer gets a transferable code instead:
+A gift does not require knowing the recipient in advance — the buyer gets a
+transferable code instead (this also covers paying for another user: just
+forward them the link):
 
 1. Send `/gift` to the bot (or tap **🎁 Подарить подписку** in the menu). The bot
    shows the payment requisites (if set) and the tariff buttons.
@@ -214,7 +198,7 @@ and **why it matters** (no link = no notifications), plus a **🔗 Привяз�
 /menu — открыть меню с кнопками
 /register — привязать свой Telegram к профилю
 /tariff — посмотреть текущие тарифы
-/payff — оплатить подписку за другого пользователя
+/gift — подарить подписку
 /cancel — отменить текущее действие
 
 После оплаты нажмите «Я оплатил» — администратор получит уведомление и подтвердит продление.

@@ -74,7 +74,7 @@ func TestSetMyCommandsPostsCommandList(t *testing.T) {
 	b.apiBase = srv.URL
 
 	cmds := []BotCommand{
-		{Command: "payff", Description: "Оплатить за другого"},
+		{Command: "gift", Description: "Подарить подписку"},
 		{Command: "menu", Description: "Меню"},
 	}
 	if err := b.SetMyCommands(context.Background(), cmds); err != nil {
@@ -88,7 +88,7 @@ func TestSetMyCommandsPostsCommandList(t *testing.T) {
 		t.Fatalf("commands wrong: %v", body)
 	}
 	first := list[0].(map[string]any)
-	if first["command"] != "payff" || first["description"] != "Оплатить за другого" {
+	if first["command"] != "gift" || first["description"] != "Подарить подписку" {
 		t.Fatalf("first command wrong: %v", first)
 	}
 }

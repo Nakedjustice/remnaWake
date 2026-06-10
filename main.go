@@ -168,10 +168,6 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 				case "/tariff":
 					pay.SendTariffs(ctx, u.Message.Chat.ID)
 					continue
-				case "/payff":
-					if pay.StartGiftFlow(ctx, u.Message) {
-						continue
-					}
 				case "/gift":
 					if pay.StartGiftCodeFlow(ctx, u.Message) {
 						continue
@@ -210,7 +206,6 @@ func userBotCommands() []tgbot.BotCommand {
 	return []tgbot.BotCommand{
 		{Command: "menu", Description: "Открыть меню"},
 		{Command: "tariff", Description: "Посмотреть тарифы"},
-		{Command: "payff", Description: "Оплатить за другого пользователя"},
 		{Command: "gift", Description: "Подарить подписку"},
 		{Command: "invite", Description: "Пригласить нового пользователя"},
 		{Command: "register", Description: "Привязать свой Telegram к профилю"},
