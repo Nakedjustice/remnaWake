@@ -52,6 +52,13 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleMenuGift(ctx, cb)
 	case cb.Data == "menu:mygifts":
 		return s.handleMenuMyGifts(ctx, cb)
+	case cb.Data == "mg:menu":
+		return s.handleMyGiftsMenu(ctx, cb)
+	case strings.HasPrefix(cb.Data, "mg:list:"):
+		return s.handleMyGiftsList(ctx, cb)
+	case cb.Data == "mg:noop":
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+		return true
 	case strings.HasPrefix(cb.Data, "gc_link:"):
 		return s.handleGiftCodeResend(ctx, cb)
 	case strings.HasPrefix(cb.Data, "gc_pick:"):
@@ -164,13 +171,7 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 		return
 	}
 
-	reqID, err := s.store.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
-		TelegramID: u.TelegramID, Months: months, Price: price,
-		ExpireAt: u.ExpireAt, Status: "pending",
-	})
-	if err != nil {
-		s.logger.Error("create payment request failed", "err", err.Error())
+	if _, err := s.createPaymentRequest(ctx, u, months, price); err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
 		return
 	}
@@ -180,6 +181,20 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отправлена администратору.")
+}
+
+// createPaymentRequest writes a pending payment request and DMs all admins a
+// confirm button. Shared by the chat callback flow and the mini app API.
+func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUser, months, price int) (int64, error) {
+	reqID, err := s.store.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
+		TelegramID: u.TelegramID, Months: months, Price: price,
+		ExpireAt: u.ExpireAt, Status: "pending",
+	})
+	if err != nil {
+		s.logger.Error("create payment request failed", "err", err.Error())
+		return 0, err
+	}
 
 	// Notify all admins with details + confirm button.
 	text := s.formatAdminRequest(u, months, price)
@@ -200,6 +215,7 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 	s.mu.Lock()
 	s.payMsgs[reqID] = refs
 	s.mu.Unlock()
+	return reqID, nil
 }
 
 func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool {

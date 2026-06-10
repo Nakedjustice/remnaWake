@@ -37,6 +37,9 @@
 - Приветственное сообщение при команде `/start` с кнопкой **🔗 Привязать
   аккаунт**, которая проводит новых пользователей через привязку (и предупреждает,
   что без неё уведомления не приходят).
+- **Мини-приложение Telegram** — веб-версия личного кабинета (профили, срок
+  действия, ссылка на подписку, тарифы с кнопкой продления, подарки),
+  открывается кнопкой меню чата; включается переменной `WEBAPP_URL` (см. ниже).
 - Структурированные логи в stdout (`log/slog` JSON).
 - Multi-stage Docker-образ на базе `distroless/static`, `restart: unless-stopped`.
 
@@ -245,6 +248,80 @@ inline-кнопку **🔗 Привязать аккаунт**, запускаю
 | `RUN_ON_START`           | нет         | `true`            | Выполнить задачу сразу при старте                                |
 | `DB_PATH`                | нет         | `/data/bot.db`    | Путь к файлу базы данных SQLite                                  |
 | `CURRENCY`               | нет         | `₽`               | Обозначение валюты рядом с ценами тарифов                        |
+| `WEBAPP_URL`             | нет         | —                 | Публичный HTTPS-адрес мини-приложения (пусто = выключено)        |
+| `WEBAPP_LISTEN`          | нет         | `:8080`           | Локальный адрес сервера мини-приложения (за реверс-прокси)       |
+
+## Мини-приложение Telegram
+
+Если задан `WEBAPP_URL`, бот поднимает мини-приложение «Личный кабинет» и
+регистрирует его как **кнопку меню** чата (плюс кнопка
+«🖥 Открыть мини-приложение» внутри `/me`). В приложении видны привязанные
+профили со статусом и сроком действия, ссылка на подписку с копированием в один
+тап, реквизиты для оплаты, сводка по подаркам и приглашениям, а также выбор
+тарифа с отправкой заявки на продление администратору.
+
+Что нужно:
+
+- Мини-приложение раздаёт сам бот на адресе `WEBAPP_LISTEN` (по умолчанию
+  `:8080`). Telegram открывает мини-приложения только по **HTTPS**, поэтому
+  поставьте впереди реверс-прокси (nginx / Caddy / Traefik) и укажите в
+  `WEBAPP_URL` публичный HTTPS-адрес, который проксирует на порт 8080
+  контейнера.
+- Запросы аутентифицируются проверкой Telegram `initData` (HMAC-подпись
+  токеном бота) — дополнительные пароли и логины не нужны.
+
+Пример с приложенным compose-файлом: раскомментируйте секцию `ports`,
+настройте прокси `https://bot.example.com` → `127.0.0.1:8080` и задайте
+`WEBAPP_URL=https://bot.example.com`.
+
+### Шаблоны для реверс-прокси
+
+В обоих шаблонах замените `bot.example.com` на свой домен.
+
+**Caddy** (`/etc/caddy/Caddyfile`) — TLS-сертификаты выпускаются и
+продлеваются автоматически:
+
+```caddyfile
+bot.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+**nginx** (`/etc/nginx/sites-available/remnawake-webapp`) — предполагаются
+сертификаты от certbot (`certbot --nginx -d bot.example.com` может добавить
+TLS-настройки за вас):
+
+```nginx
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name bot.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/bot.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/bot.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 80;
+    server_name bot.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+Включить и перезагрузить:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/remnawake-webapp /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
 
 ## Запуск
 

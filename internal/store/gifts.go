@@ -132,6 +132,18 @@ func (s *Store) transitionGift(ctx context.Context, query string, args ...any) (
 	return n > 0, err
 }
 
+// DeleteResolvedGiftCodes removes gifts the admin rejected or revoked.
+// Returns the number of deleted rows.
+func (s *Store) DeleteResolvedGiftCodes(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM gift_codes WHERE status IN ('rejected', 'revoked')
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (s *Store) ListGiftCodesByStatus(ctx context.Context, status string) ([]GiftCode, error) {
 	return s.listGiftCodes(ctx, `WHERE status = ? ORDER BY id`, status)
 }
@@ -142,11 +154,43 @@ func (s *Store) ListGiftCodesByBuyer(ctx context.Context, buyerTGID int64) ([]Gi
 	return s.listGiftCodes(ctx, `WHERE buyer_telegram_id = ? ORDER BY id DESC`, buyerTGID)
 }
 
-func (s *Store) listGiftCodes(ctx context.Context, where string, arg any) ([]GiftCode, error) {
+// ListGiftCodesByBuyerStatus returns one page of the buyer's gift codes in the
+// given status, newest first.
+func (s *Store) ListGiftCodesByBuyerStatus(ctx context.Context, buyerTGID int64, status string, limit, offset int) ([]GiftCode, error) {
+	return s.listGiftCodes(ctx,
+		`WHERE buyer_telegram_id = ? AND status = ? ORDER BY id DESC LIMIT ? OFFSET ?`,
+		buyerTGID, status, limit, offset)
+}
+
+// CountGiftCodesByBuyer returns the buyer's gift counts grouped by status.
+// Statuses with no gifts are absent from the map.
+func (s *Store) CountGiftCodesByBuyer(ctx context.Context, buyerTGID int64) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT status, COUNT(*) FROM gift_codes
+		WHERE buyer_telegram_id = ? GROUP BY status
+	`, buyerTGID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, err
+		}
+		out[status] = n
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) listGiftCodes(ctx context.Context, where string, args ...any) ([]GiftCode, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, code, buyer_telegram_id, buyer_username, months, price, status,
 			redeemer_telegram_id, redeemed_username, created_at, issued_at, resolved_at
-		FROM gift_codes `+where, arg)
+		FROM gift_codes `+where, args...)
 	if err != nil {
 		return nil, err
 	}

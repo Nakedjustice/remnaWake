@@ -197,7 +197,8 @@ func (s *Service) handleGiftCodePick(ctx context.Context, cb *tg.CallbackQuery) 
 	buyerName := g.buyerName
 	buyerTGID := g.buyerTGID
 	s.clearGiftCode(chatID)
-	_ = s.bot.EditMessageReplyMarkup(ctx, chatID, cb.Message.MessageID, nil)
+	_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID,
+		fmt.Sprintf("✅ Заявка на подарочную подписку (%d мес.) отправлена администратору. Ожидайте подтверждения оплаты.", months), nil)
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отправлена администратору.")
 
 	priceStr := "бесплатно"
@@ -383,28 +384,131 @@ func (s *Service) clearGiftButtons(ctx context.Context, giftID int64) {
 	}
 }
 
-// SendMyGifts lists the gift codes the user bought with their statuses, plus
-// a button to re-send the redemption link for issued (not yet activated)
-// gifts in case the original message was lost. Returns true (handled).
+// myGiftsPageSize is how many gifts one list page shows.
+const myGiftsPageSize = 5
+
+// myGiftsStatuses fixes the order of the status-picker buttons.
+var myGiftsStatuses = []struct {
+	status string
+	label  string
+}{
+	{"pending", "⏳ Ожидают оплаты"},
+	{"issued", "📨 Выданные"},
+	{"redeemed", "✅ Активированные"},
+	{"rejected", "❌ Отклонённые"},
+	{"revoked", "🚫 Отозванные"},
+}
+
+// SendMyGifts opens the gift list: a status-picker menu the user navigates
+// in place (the message is edited as they pick a status and flip pages).
+// Returns true (handled).
 func (s *Service) SendMyGifts(ctx context.Context, chatID int64) bool {
-	gifts, err := s.store.ListGiftCodesByBuyer(ctx, chatID)
+	counts, err := s.store.CountGiftCodesByBuyer(ctx, chatID)
 	if err != nil {
-		s.logger.Error("gift: list by buyer failed", "err", err.Error())
+		s.logger.Error("gift: count by buyer failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
 		return true
 	}
-	if len(gifts) == 0 {
+	if len(counts) == 0 {
 		_ = s.bot.SendPlain(ctx, chatID, "Вы ещё не покупали подарочных подписок.")
+		return true
+	}
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, myGiftsMenuText, s.myGiftsMenuKeyboard(counts))
+	return true
+}
+
+const myGiftsMenuText = "🎁 Мои подарки\n\nВыберите статус подарков:"
+
+func (s *Service) myGiftsMenuKeyboard(counts map[string]int) *tg.InlineKeyboardMarkup {
+	rows := make([][]tg.InlineKeyboardButton, 0, len(myGiftsStatuses))
+	for _, st := range myGiftsStatuses {
+		rows = append(rows, []tg.InlineKeyboardButton{{
+			Text:         fmt.Sprintf("%s (%d)", st.label, counts[st.status]),
+			CallbackData: fmt.Sprintf("mg:list:%s:0", st.status),
+		}})
+	}
+	return &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+// handleMyGiftsMenu returns from a list page to the status picker, editing
+// the same message.
+func (s *Service) handleMyGiftsMenu(ctx context.Context, cb *tg.CallbackQuery) bool {
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	if cb.Message == nil {
+		return true
+	}
+	chatID := cb.Message.Chat.ID
+	counts, err := s.store.CountGiftCodesByBuyer(ctx, chatID)
+	if err != nil {
+		s.logger.Error("gift: count by buyer failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		return true
+	}
+	_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID, myGiftsMenuText, s.myGiftsMenuKeyboard(counts))
+	return true
+}
+
+// handleMyGiftsList renders one page of the user's gifts in the requested
+// status ("mg:list:<status>:<page>"), editing the menu message in place.
+func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) bool {
+	if cb.Message == nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка.")
+		return true
+	}
+	parts := strings.Split(strings.TrimPrefix(cb.Data, "mg:list:"), ":")
+	page := 0
+	if len(parts) == 2 {
+		page, _ = strconv.Atoi(parts[1])
+	}
+	status := parts[0]
+	label := ""
+	for _, st := range myGiftsStatuses {
+		if st.status == status {
+			label = st.label
+		}
+	}
+	if label == "" || page < 0 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать запрос.")
+		return true
+	}
+	chatID := cb.Message.Chat.ID
+
+	counts, err := s.store.CountGiftCodesByBuyer(ctx, chatID)
+	if err != nil {
+		s.logger.Error("gift: count by buyer failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		return true
+	}
+	total := counts[status]
+	pages := (total + myGiftsPageSize - 1) / myGiftsPageSize
+	// The list may have changed since the buttons were drawn: fall back to
+	// the first page rather than showing an empty one.
+	if page >= pages {
+		page = 0
+	}
+
+	backRow := []tg.InlineKeyboardButton{{Text: "← К статусам", CallbackData: "mg:menu"}}
+	if total == 0 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+		_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID,
+			fmt.Sprintf("🎁 %s: подарков нет.", label),
+			&tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{backRow}})
+		return true
+	}
+
+	gifts, err := s.store.ListGiftCodesByBuyerStatus(ctx, chatID, status, myGiftsPageSize, page*myGiftsPageSize)
+	if err != nil {
+		s.logger.Error("gift: list by buyer failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
 		return true
 	}
 
 	var b strings.Builder
-	b.WriteString("🎁 Ваши подарочные подписки:\n")
+	b.WriteString(fmt.Sprintf("🎁 %s — стр. %d/%d:\n", label, page+1, pages))
 	var rows [][]tg.InlineKeyboardButton
 	for _, g := range gifts {
-		b.WriteString(fmt.Sprintf("\n%s — %d мес. (заявка от %s)\n%s",
+		b.WriteString(fmt.Sprintf("\n%s — %d мес. (заявка от %s)\n%s\n",
 			g.Code, g.Months, g.CreatedAt.Format("02.01.2006"), giftStatusLabel(&g)))
-		b.WriteString("\n")
 		if g.Status == "issued" {
 			rows = append(rows, []tg.InlineKeyboardButton{{
 				Text:         fmt.Sprintf("🔗 Ссылка для %s", g.Code),
@@ -412,13 +516,22 @@ func (s *Service) SendMyGifts(ctx context.Context, chatID int64) bool {
 			}})
 		}
 	}
-	text := strings.TrimRight(b.String(), "\n")
-	if len(rows) == 0 {
-		_ = s.bot.SendPlain(ctx, chatID, text)
-		return true
+	if pages > 1 {
+		nav := []tg.InlineKeyboardButton{}
+		if page > 0 {
+			nav = append(nav, tg.InlineKeyboardButton{Text: "◀️", CallbackData: fmt.Sprintf("mg:list:%s:%d", status, page-1)})
+		}
+		nav = append(nav, tg.InlineKeyboardButton{Text: fmt.Sprintf("стр. %d/%d", page+1, pages), CallbackData: "mg:noop"})
+		if page < pages-1 {
+			nav = append(nav, tg.InlineKeyboardButton{Text: "▶️", CallbackData: fmt.Sprintf("mg:list:%s:%d", status, page+1)})
+		}
+		rows = append(rows, nav)
 	}
-	text += "\n\nЕсли вы потеряли сообщение со ссылкой, получите её заново:"
-	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+	rows = append(rows, backRow)
+
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID,
+		strings.TrimRight(b.String(), "\n"), &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
 	return true
 }
 

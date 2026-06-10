@@ -16,6 +16,7 @@ import (
 	"github.com/Nakedjustice/remnaWake/internal/scheduler"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 	tgbot "github.com/Nakedjustice/remnaWake/internal/telegram"
+	"github.com/Nakedjustice/remnaWake/internal/webapp"
 )
 
 func main() {
@@ -37,6 +38,7 @@ func main() {
 		"dry_run", cfg.DryRun,
 		"run_on_start", cfg.RunOnStart,
 		"payment_notifications_enabled", len(cfg.Telegram.AdminIDs) > 0,
+		"webapp_enabled", cfg.WebApp.Enabled(),
 	)
 
 	rwClient, err := remnawave.NewClient(cfg.Remnawave.BaseURL, cfg.Remnawave.APIToken, cfg.HTTP.Timeout)
@@ -78,6 +80,19 @@ func main() {
 		go pollTelegramCallbacks(rootCtx, bot, pay, logger)
 	}
 
+	if cfg.WebApp.Enabled() {
+		pay.SetWebAppURL(cfg.WebApp.PublicURL)
+		if err := bot.SetChatMenuButton(rootCtx, "Кабинет", cfg.WebApp.PublicURL); err != nil {
+			logger.Warn("set chat menu button failed", "err", err.Error())
+		}
+		srv := webapp.NewServer(pay, cfg.Telegram.BotToken, logger)
+		go func() {
+			if err := srv.Run(rootCtx, cfg.WebApp.Listen); err != nil {
+				logger.Error("mini app server failed", "err", err.Error())
+			}
+		}()
+	}
+
 	if cfg.RunOnStart {
 		go func() {
 			runCtx, runCancel := context.WithTimeout(rootCtx, 5*time.Minute)
@@ -86,7 +101,18 @@ func main() {
 		}()
 	}
 
-	job := scheduler.New(func(ctx context.Context) { _ = svc.Run(ctx) }, logger, cfg.Scheduler.Timezone, cfg.Scheduler.RunAt)
+	job := scheduler.New(func(ctx context.Context) {
+		_ = svc.Run(ctx)
+		if cfg.DryRun {
+			logger.Info("gift cleanup skipped (dry run)")
+			return
+		}
+		if n, err := db.DeleteResolvedGiftCodes(ctx); err != nil {
+			logger.Error("gift cleanup failed", "err", err.Error())
+		} else if n > 0 {
+			logger.Info("gift cleanup done", "deleted", n)
+		}
+	}, logger, cfg.Scheduler.Timezone, cfg.Scheduler.RunAt)
 	sched, err := job.Start(rootCtx)
 	if err != nil {
 		logger.Error("scheduler start failed", "err", err.Error())

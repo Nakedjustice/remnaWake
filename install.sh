@@ -91,6 +91,13 @@ v_url() {
 
 v_nonempty() { [ -n "$1" ] && return 0; err "  → Cannot be empty."; return 1; }
 
+v_https_url() {
+  case "$1" in
+    https://*) return 0 ;;
+    *) err "  → Telegram Mini Apps require an https:// URL."; return 1 ;;
+  esac
+}
+
 v_bot_token() {
   if printf '%s' "$1" | grep -Eq '^[0-9]+:[A-Za-z0-9_-]+$'; then
     return 0
@@ -207,6 +214,16 @@ info "── Schedule ───────────────────�
 ask TZ      "Timezone (IANA name)" "Europe/Moscow" v_tz
 ask RUN_AT  "Daily run time (HH:MM, local to the timezone above)" "09:00" v_time_hhmm
 
+# --- Mini App (optional) ------------------------------------------------------
+printf '\n' >&2
+info "── Telegram Mini App (optional) ────────────────────────────"
+WEBAPP_URL=""
+WEBAPP_LISTEN=":8080"
+if ask_yes_no "Enable the Mini App personal cabinet? (needs an HTTPS reverse proxy in front)" "n"; then
+  ask WEBAPP_URL "Public Mini App URL (e.g. https://bot.example.com)" "" v_https_url
+  WEBAPP_URL="${WEBAPP_URL%/}"
+fi
+
 # --- Defaults for the rest (overridable via advanced section) ---------------
 TELEGRAM_PARSE_MODE="HTML"
 LOG_LEVEL="info"
@@ -250,6 +267,11 @@ DRY_RUN=$DRY_RUN
 RUN_ON_START=$RUN_ON_START
 
 CURRENCY=$CURRENCY
+
+# Telegram Mini App: public HTTPS URL served by your reverse proxy
+# (empty = mini app disabled) and the local bind address behind it.
+WEBAPP_URL=$WEBAPP_URL
+WEBAPP_LISTEN=$WEBAPP_LISTEN
 EOF
 
 mv "$tmp_env" "$ENV_FILE"
@@ -272,8 +294,16 @@ ${BOLD}Summary${RESET}
   Parse / log / http : $TELEGRAM_PARSE_MODE / $LOG_LEVEL / $HTTP_TIMEOUT
   Dry-run / on-start : $DRY_RUN / $RUN_ON_START
   Currency           : $CURRENCY
+  Mini App           : ${WEBAPP_URL:-disabled}
 
 EOF
+
+if [ -n "$WEBAPP_URL" ]; then
+  warn "Mini App checklist:"
+  warn "  1. Uncomment the 'ports' section in docker-compose.yml (exposes ${WEBAPP_LISTEN#:} on 127.0.0.1)."
+  warn "  2. Point your HTTPS reverse proxy at it: $WEBAPP_URL → 127.0.0.1:${WEBAPP_LISTEN#:}"
+  warn "     (nginx and Caddy templates are in the README, section «Telegram Mini App»)."
+fi
 
 # --- Detect Docker Compose --------------------------------------------------
 COMPOSE=""

@@ -17,6 +17,7 @@ type BotSender interface {
 	SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error)
 	AnswerCallbackQuery(ctx context.Context, id, text string) error
 	EditMessageReplyMarkup(ctx context.Context, chatID, messageID int64, kb *tg.InlineKeyboardMarkup) error
+	EditMessageText(ctx context.Context, chatID, messageID int64, text string, kb *tg.InlineKeyboardMarkup) error
 }
 
 // Extender is the subset of *remnawave.Client that payments needs.
@@ -121,6 +122,7 @@ type Service struct {
 	redeems   map[int64]*redeemState
 
 	botUsername string // protected by mu; empty = unknown, fall back to raw code
+	webAppURL   string // protected by mu; empty = mini app disabled
 
 	adminInput map[int64]adminInputState // protected by mu
 	// payMsgs/inviteMsgs map a request ID to the admin message copies of its
@@ -176,6 +178,20 @@ func (s *Service) SetBotUsername(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.botUsername = name
+}
+
+// SetWebAppURL stores the public Mini App URL; when set, the cabinet keyboard
+// gains a button that opens the mini app.
+func (s *Service) SetWebAppURL(url string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.webAppURL = url
+}
+
+func (s *Service) getWebAppURL() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.webAppURL
 }
 
 func (s *Service) getBotUsername() string {

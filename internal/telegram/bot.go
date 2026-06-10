@@ -40,6 +40,13 @@ type editMessageReplyMarkupRequest struct {
 	ReplyMarkup *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
 }
 
+type editMessageTextRequest struct {
+	ChatID      int64                 `json:"chat_id"`
+	MessageID   int64                 `json:"message_id"`
+	Text        string                `json:"text"`
+	ReplyMarkup *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
+}
+
 type getUpdatesRequest struct {
 	Offset         int64    `json:"offset,omitempty"`
 	Timeout        int      `json:"timeout,omitempty"`
@@ -51,8 +58,15 @@ type InlineKeyboardMarkup struct {
 }
 
 type InlineKeyboardButton struct {
-	Text         string `json:"text"`
-	CallbackData string `json:"callback_data,omitempty"`
+	Text         string      `json:"text"`
+	CallbackData string      `json:"callback_data,omitempty"`
+	WebApp       *WebAppInfo `json:"web_app,omitempty"`
+}
+
+// WebAppInfo points an inline button or the chat menu button at a Telegram
+// Mini App URL (must be HTTPS).
+type WebAppInfo struct {
+	URL string `json:"url"`
 }
 
 // ReplyKeyboardMarkup is a persistent keyboard shown under the input field.
@@ -375,6 +389,42 @@ func (b *Bot) EditMessageReplyMarkup(ctx context.Context, chatID, messageID int6
 	return nil
 }
 
+// EditMessageText replaces both the text and the inline keyboard of an
+// existing message (keyboard nil = remove buttons).
+func (b *Bot) EditMessageText(ctx context.Context, chatID, messageID int64, text string, keyboard *InlineKeyboardMarkup) error {
+	payload := editMessageTextRequest{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		Text:        text,
+		ReplyMarkup: keyboard,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/editMessageText", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram edit message text: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("telegram edit message text failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+	var ar apiResponse
+	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
+		return fmt.Errorf("telegram edit message text not ok: %s", ar.Description)
+	}
+	return nil
+}
+
 // BotCommand is one entry in the bot's command menu (the "Menu" button and the
 // "/" autocomplete list).
 type BotCommand struct {
@@ -444,6 +494,43 @@ func (b *Bot) SetMyCommandsForChat(ctx context.Context, chatID int64, commands [
 	var ar apiResponse
 	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
 		return fmt.Errorf("telegram set my commands for chat not ok: %s", ar.Description)
+	}
+	return nil
+}
+
+// SetChatMenuButton sets the default menu button (left of the input field) to
+// open the Mini App at url with the given label, via the setChatMenuButton API.
+func (b *Bot) SetChatMenuButton(ctx context.Context, text, url string) error {
+	payload := map[string]any{
+		"menu_button": map[string]any{
+			"type":    "web_app",
+			"text":    text,
+			"web_app": WebAppInfo{URL: url},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/setChatMenuButton", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram set chat menu button: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("telegram set chat menu button failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+	var ar apiResponse
+	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
+		return fmt.Errorf("telegram set chat menu button not ok: %s", ar.Description)
 	}
 	return nil
 }

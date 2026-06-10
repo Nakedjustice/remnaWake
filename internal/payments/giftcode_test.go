@@ -219,7 +219,67 @@ func TestSendMyGiftsEmpty(t *testing.T) {
 	}
 }
 
-func TestSendMyGiftsShowsStatusesAndLinkButton(t *testing.T) {
+// mgCb builds a callback from chat owner chatID pressing a my-gifts button.
+func mgCb(chatID int64, data string) *tg.CallbackQuery {
+	return &tg.CallbackQuery{ID: "c", From: tg.User{ID: chatID},
+		Message: &tg.Message{MessageID: 9, Chat: tg.Chat{ID: chatID}}, Data: data}
+}
+
+// keyboardData flattens all callback datas of a keyboard.
+func keyboardData(kb *tg.InlineKeyboardMarkup) map[string]bool {
+	found := map[string]bool{}
+	if kb == nil {
+		return found
+	}
+	for _, row := range kb.InlineKeyboard {
+		for _, btn := range row {
+			found[btn.CallbackData] = true
+		}
+	}
+	return found
+}
+
+func TestSendMyGiftsShowsStatusMenu(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	seedBuyer(svc, 555)
+
+	buyGift(t, svc, st, 1)
+	issuedID := buyGift(t, svc, st, 1)
+	svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("gc_ok:%d", issuedID)))
+
+	bot.sent = nil
+	if !svc.SendMyGifts(ctx, 555) {
+		t.Fatal("should be handled")
+	}
+	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "Выберите статус") {
+		t.Fatalf("expected status menu: %+v", bot.sent)
+	}
+	found := keyboardData(bot.sent[0].Keyboard)
+	for _, st := range myGiftsStatuses {
+		if !found[fmt.Sprintf("mg:list:%s:0", st.status)] {
+			t.Fatalf("menu missing status button %s: %+v", st.status, found)
+		}
+	}
+	// Counts: 1 pending, 1 issued.
+	var labels []string
+	for _, row := range bot.sent[0].Keyboard.InlineKeyboard {
+		labels = append(labels, row[0].Text)
+	}
+	joined := strings.Join(labels, "|")
+	if !strings.Contains(joined, "Ожидают оплаты (1)") || !strings.Contains(joined, "Выданные (1)") {
+		t.Fatalf("menu buttons missing counts: %q", joined)
+	}
+
+	// Another user has no gifts at all.
+	bot.sent = nil
+	svc.SendMyGifts(ctx, 777)
+	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "не покупали") {
+		t.Fatalf("other user must get empty reply: %+v", bot.sent)
+	}
+}
+
+func TestMyGiftsListPageShowsGiftsAndLinkButtons(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	seedBuyer(svc, 555)
@@ -228,41 +288,126 @@ func TestSendMyGiftsShowsStatusesAndLinkButton(t *testing.T) {
 	issuedID := buyGift(t, svc, st, 1)
 	svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("gc_ok:%d", issuedID)))
 
-	bot.sent = nil
-	if !svc.SendMyGifts(ctx, 555) {
-		t.Fatal("should be handled")
+	bot.edits = nil
+	if !svc.HandleCallback(ctx, mgCb(555, "mg:list:issued:0")) {
+		t.Fatal("mg:list should be handled")
 	}
-	if len(bot.sent) != 1 {
-		t.Fatalf("expected one list message: %+v", bot.sent)
+	if len(bot.edits) != 1 {
+		t.Fatalf("expected message edit: %+v", bot.edits)
 	}
-	text := bot.sent[0].Text
-	if !strings.Contains(text, "Ожидает подтверждения оплаты") ||
-		!strings.Contains(text, "Выдан, ожидает активации") {
-		t.Fatalf("statuses missing from list: %q", text)
+	edit := bot.edits[0]
+	if !strings.Contains(edit.Text, "Выдан, ожидает активации") {
+		t.Fatalf("issued page missing status: %q", edit.Text)
 	}
-
-	kb := bot.sent[0].Keyboard
-	if kb == nil {
-		t.Fatalf("expected resend keyboard: %+v", bot.sent[0])
-	}
-	found := map[string]bool{}
-	for _, row := range kb.InlineKeyboard {
-		for _, btn := range row {
-			found[btn.CallbackData] = true
-		}
-	}
+	found := keyboardData(edit.Keyboard)
 	if !found[fmt.Sprintf("gc_link:%d", issuedID)] {
-		t.Fatalf("issued gift must have a link button: %+v", kb)
+		t.Fatalf("issued gift must have a link button: %+v", found)
 	}
 	if found[fmt.Sprintf("gc_link:%d", pendingID)] {
-		t.Fatalf("pending gift must not have a link button: %+v", kb)
+		t.Fatalf("pending gift must not appear on issued page: %+v", found)
+	}
+	if !found["mg:menu"] {
+		t.Fatalf("page must have a back-to-menu button: %+v", found)
 	}
 
-	// Another user sees nothing of buyer 555's gifts.
-	bot.sent = nil
-	svc.SendMyGifts(ctx, 777)
-	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "не покупали") {
-		t.Fatalf("other user must get empty list: %+v", bot.sent)
+	// Single page: no nav row.
+	if found["mg:noop"] {
+		t.Fatalf("single page must not show nav row: %+v", found)
+	}
+
+	// Empty status shows the empty text with a back button.
+	bot.edits = nil
+	svc.HandleCallback(ctx, mgCb(555, "mg:list:revoked:0"))
+	if len(bot.edits) != 1 || !strings.Contains(bot.edits[0].Text, "подарков нет") {
+		t.Fatalf("expected empty-status page: %+v", bot.edits)
+	}
+}
+
+func TestMyGiftsListPagination(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	seedBuyer(svc, 555)
+
+	// 7 pending gifts -> 2 pages (5 + 2).
+	for i := 0; i < 7; i++ {
+		buyGift(t, svc, st, 1)
+	}
+
+	bot.edits = nil
+	svc.HandleCallback(ctx, mgCb(555, "mg:list:pending:0"))
+	page1 := bot.edits[0]
+	if !strings.Contains(page1.Text, "стр. 1/2") {
+		t.Fatalf("expected page 1/2 header: %q", page1.Text)
+	}
+	if n := strings.Count(page1.Text, "заявка от"); n != 5 {
+		t.Fatalf("page 1 must show 5 gifts, got %d: %q", n, page1.Text)
+	}
+	found := keyboardData(page1.Keyboard)
+	if !found["mg:list:pending:1"] {
+		t.Fatalf("page 1 must have a next button: %+v", found)
+	}
+	if found["mg:list:pending:-1"] {
+		t.Fatalf("page 1 must not have a prev button: %+v", found)
+	}
+
+	bot.edits = nil
+	svc.HandleCallback(ctx, mgCb(555, "mg:list:pending:1"))
+	page2 := bot.edits[0]
+	if !strings.Contains(page2.Text, "стр. 2/2") {
+		t.Fatalf("expected page 2/2 header: %q", page2.Text)
+	}
+	if n := strings.Count(page2.Text, "заявка от"); n != 2 {
+		t.Fatalf("page 2 must show 2 gifts, got %d: %q", n, page2.Text)
+	}
+	found = keyboardData(page2.Keyboard)
+	if !found["mg:list:pending:0"] {
+		t.Fatalf("page 2 must have a prev button: %+v", found)
+	}
+
+	// Out-of-range page falls back to the first page.
+	bot.edits = nil
+	svc.HandleCallback(ctx, mgCb(555, "mg:list:pending:9"))
+	if !strings.Contains(bot.edits[0].Text, "стр. 1/2") {
+		t.Fatalf("out-of-range page must fall back to page 1: %q", bot.edits[0].Text)
+	}
+}
+
+func TestMyGiftsBackToMenuEditsMessage(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	seedBuyer(svc, 555)
+	buyGift(t, svc, st, 1)
+
+	svc.HandleCallback(ctx, mgCb(555, "mg:list:pending:0"))
+	bot.edits = nil
+	if !svc.HandleCallback(ctx, mgCb(555, "mg:menu")) {
+		t.Fatal("mg:menu should be handled")
+	}
+	if len(bot.edits) != 1 || !strings.Contains(bot.edits[0].Text, "Выберите статус") {
+		t.Fatalf("expected menu restored in-place: %+v", bot.edits)
+	}
+	found := keyboardData(bot.edits[0].Keyboard)
+	if !found["mg:list:pending:0"] {
+		t.Fatalf("menu must have status buttons: %+v", found)
+	}
+}
+
+func TestGiftCodePickEditsMessageWithConfirmation(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	ctx := context.Background()
+	seedBuyer(svc, 555)
+
+	svc.StartGiftCodeFlow(ctx, msg(555, "/gift"))
+	bot.edits = nil
+	svc.HandleCallback(ctx, &tg.CallbackQuery{ID: "c", From: tg.User{ID: 555},
+		Message: &tg.Message{MessageID: 5, Chat: tg.Chat{ID: 555}}, Data: "gc_pick:1"})
+	if len(bot.edits) != 1 {
+		t.Fatalf("expected tariff message edited: %+v", bot.edits)
+	}
+	e := bot.edits[0]
+	if e.ChatID != 555 || e.MessageID != 5 ||
+		!strings.Contains(e.Text, "отправлена администратору") || e.Keyboard != nil {
+		t.Fatalf("expected confirmation text without keyboard: %+v", e)
 	}
 }
 
