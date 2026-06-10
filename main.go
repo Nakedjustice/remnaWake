@@ -60,6 +60,12 @@ func main() {
 	rootCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	if me, err := bot.GetMe(rootCtx); err != nil {
+		logger.Warn("getMe failed, gift deep links will fall back to raw codes", "err", err.Error())
+	} else {
+		pay.SetBotUsername(me.Username)
+	}
+
 	if len(cfg.Telegram.AdminIDs) > 0 {
 		if err := bot.SetMyCommands(rootCtx, userBotCommands()); err != nil {
 			logger.Warn("set bot commands failed", "err", err.Error())
@@ -141,14 +147,21 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 				continue
 			}
 			if u.Message != nil && u.Message.Text != "" {
-				if strings.TrimSpace(u.Message.Text) == "/start" {
+				text := strings.TrimSpace(u.Message.Text)
+				if text == "/start" || strings.HasPrefix(text, "/start ") {
+					payload := strings.TrimSpace(strings.TrimPrefix(text, "/start"))
+					if code, ok := strings.CutPrefix(payload, "gift_"); ok && code != "" {
+						logger.Info("received gift deep link", "chat_id", u.Message.Chat.ID)
+						pay.StartGiftRedemption(ctx, u.Message.Chat.ID, code)
+						continue
+					}
 					logger.Info("received /start command", "chat_id", u.Message.Chat.ID)
 					if err := bot.SendWelcome(ctx, u.Message.Chat.ID); err != nil {
 						logger.Error("send welcome message failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
 					}
 					continue
 				}
-				switch strings.TrimSpace(u.Message.Text) {
+				switch text {
 				case "/menu", "/help":
 					pay.SendMenu(ctx, u.Message.Chat.ID)
 					continue
@@ -157,6 +170,10 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 					continue
 				case "/payff":
 					if pay.StartGiftFlow(ctx, u.Message) {
+						continue
+					}
+				case "/gift":
+					if pay.StartGiftCodeFlow(ctx, u.Message) {
 						continue
 					}
 				case "/invite":
@@ -194,6 +211,7 @@ func userBotCommands() []tgbot.BotCommand {
 		{Command: "menu", Description: "Открыть меню"},
 		{Command: "tariff", Description: "Посмотреть тарифы"},
 		{Command: "payff", Description: "Оплатить за другого пользователя"},
+		{Command: "gift", Description: "Подарить подписку"},
 		{Command: "invite", Description: "Пригласить нового пользователя"},
 		{Command: "register", Description: "Привязать свой Telegram к профилю"},
 		{Command: "cancel", Description: "Отменить текущее действие"},

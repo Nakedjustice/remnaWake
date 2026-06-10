@@ -19,13 +19,13 @@ func TestSendAdminMenu(t *testing.T) {
 	if m.ChatID != 1000 {
 		t.Fatalf("sent to %d, want adminID 1000", m.ChatID)
 	}
-	if m.Keyboard == nil || len(m.Keyboard.InlineKeyboard) != 5 {
-		t.Fatalf("expected 5 keyboard rows, got %+v", m.Keyboard)
+	if m.Keyboard == nil || len(m.Keyboard.InlineKeyboard) != 6 {
+		t.Fatalf("expected 6 keyboard rows, got %+v", m.Keyboard)
 	}
 	callbackData := func(row int) string {
 		return m.Keyboard.InlineKeyboard[row][0].CallbackData
 	}
-	for i, want := range []string{"adm:tariffs", "adm:addtariff", "adm:del_list", "adm:req", "adm:setreq"} {
+	for i, want := range []string{"adm:tariffs", "adm:addtariff", "adm:del_list", "adm:req", "adm:gifts", "adm:setreq"} {
 		if callbackData(i) != want {
 			t.Errorf("row %d: got %q, want %q", i, callbackData(i), want)
 		}

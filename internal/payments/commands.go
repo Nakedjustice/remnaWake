@@ -185,6 +185,7 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 			{{Text: "➕ Добавить тариф", CallbackData: "adm:addtariff"}},
 			{{Text: "❌ Удалить тариф", CallbackData: "adm:del_list"}},
 			{{Text: "💳 Посмотреть реквизиты", CallbackData: "adm:req"}},
+			{{Text: "🎁 Подарочные коды", CallbackData: "adm:gifts"}},
 			{{Text: "✏️ Изменить реквизиты", CallbackData: "adm:setreq"}},
 		},
 	}

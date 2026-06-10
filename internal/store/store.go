@@ -55,6 +55,20 @@ CREATE TABLE IF NOT EXISTS invite_requests (
   created_at          TEXT NOT NULL,
   resolved_at         TEXT
 );
+CREATE TABLE IF NOT EXISTS gift_codes (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  code                 TEXT NOT NULL UNIQUE,
+  buyer_telegram_id    INTEGER NOT NULL,
+  buyer_username       TEXT NOT NULL DEFAULT '',
+  months               INTEGER NOT NULL,
+  price                INTEGER NOT NULL DEFAULT 0,
+  status               TEXT NOT NULL,
+  redeemer_telegram_id INTEGER NOT NULL DEFAULT 0,
+  redeemed_username    TEXT NOT NULL DEFAULT '',
+  created_at           TEXT NOT NULL,
+  issued_at            TEXT,
+  resolved_at          TEXT
+);
 CREATE TABLE IF NOT EXISTS settings (
   key        TEXT PRIMARY KEY,
   value      TEXT NOT NULL,

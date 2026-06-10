@@ -94,6 +94,28 @@ type adminMsgRef struct {
 	messageID int64
 }
 
+// giftCodeState tracks a /gift purchase conversation: the buyer has been
+// prompted with the tariff keyboard and we are awaiting their pick.
+type giftCodeState struct {
+	buyerName string
+	buyerTGID int64
+	createdAt time.Time
+}
+
+// redeemState tracks a gift-code redemption conversation after the recipient
+// opened a deep link: either awaiting a profile choice (candidates) or a
+// desired username for a new profile (awaitingUsername).
+type redeemState struct {
+	giftID           int64
+	code             string
+	months           int
+	candidates       []Subscriber
+	awaitingUsername bool
+	createdAt        time.Time
+}
+
+const giftCodeTTL = 10 * time.Minute
+
 type Service struct {
 	store     *store.Store
 	bot       BotSender
@@ -111,6 +133,10 @@ type Service struct {
 	gifts     map[int64]*giftState
 	invites   map[int64]*inviteState
 	registers map[int64]*registerState
+	giftCodes map[int64]*giftCodeState
+	redeems   map[int64]*redeemState
+
+	botUsername string // protected by mu; empty = unknown, fall back to raw code
 
 	adminInput map[int64]adminInputState // protected by mu
 	// payMsgs/inviteMsgs map a request ID to the admin message copies of its
@@ -119,6 +145,7 @@ type Service struct {
 	// slowly until restart. TODO: add TTL-based eviction if this grows.
 	payMsgs    map[int64][]adminMsgRef // protected by mu
 	inviteMsgs map[int64][]adminMsgRef // protected by mu
+	giftMsgs   map[int64][]adminMsgRef // protected by mu
 	requisites string                    // protected by mu; empty = not set
 }
 
@@ -142,9 +169,12 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 		gifts:      make(map[int64]*giftState),
 		invites:    make(map[int64]*inviteState),
 		registers:  make(map[int64]*registerState),
+		giftCodes:  make(map[int64]*giftCodeState),
+		redeems:    make(map[int64]*redeemState),
 		adminInput: make(map[int64]adminInputState),
 		payMsgs:    make(map[int64][]adminMsgRef),
 		inviteMsgs: make(map[int64][]adminMsgRef),
+		giftMsgs:   make(map[int64][]adminMsgRef),
 	}
 	// Load persisted payment requisites into the in-memory cache so the user
 	// flow never needs a DB read on each button tap.
@@ -154,6 +184,21 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 		s.requisites = value
 	}
 	return s
+}
+
+// SetBotUsername stores the bot's own username (from getMe) used to build
+// t.me deep links for gift codes. Safe to leave unset: flows fall back to
+// sending the raw code with manual instructions.
+func (s *Service) SetBotUsername(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.botUsername = name
+}
+
+func (s *Service) getBotUsername() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.botUsername
 }
 
 func (s *Service) isAdmin(id int64) bool {
