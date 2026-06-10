@@ -404,6 +404,40 @@ func (b *Bot) SetMyCommandsForChat(ctx context.Context, chatID int64, commands [
 	return nil
 }
 
+type getMeResponse struct {
+	apiResponse
+	Result User `json:"result"`
+}
+
+// GetMe returns the bot's own account info via the getMe API. Used at startup
+// to learn the bot username for building deep links.
+func (b *Bot) GetMe(ctx context.Context) (*User, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.apiBase+"/getMe", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("telegram get me: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("telegram get me failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+
+	var ar getMeResponse
+	if err := json.Unmarshal(raw, &ar); err != nil {
+		return nil, fmt.Errorf("telegram get me decode: %w", err)
+	}
+	if !ar.OK {
+		return nil, fmt.Errorf("telegram get me not ok: %s", ar.Description)
+	}
+	return &ar.Result, nil
+}
+
 func (b *Bot) EndpointHost() string {
 	u, _ := url.Parse(b.apiBase)
 	return u.Host

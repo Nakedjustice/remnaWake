@@ -48,6 +48,20 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleRegisterConfirm(ctx, cb)
 	case cb.Data == "reg_cancel":
 		return s.handleRegisterCancel(ctx, cb)
+	case cb.Data == "menu:gift":
+		return s.handleMenuGift(ctx, cb)
+	case strings.HasPrefix(cb.Data, "gc_pick:"):
+		return s.handleGiftCodePick(ctx, cb)
+	case cb.Data == "gc_cancel":
+		return s.handleGiftCodeCancel(ctx, cb)
+	case strings.HasPrefix(cb.Data, "gc_ok:"):
+		return s.handleGiftCodeApprove(ctx, cb)
+	case strings.HasPrefix(cb.Data, "gc_rej:"):
+		return s.handleGiftCodeReject(ctx, cb)
+	case strings.HasPrefix(cb.Data, "gc_use:"):
+		return s.handleGiftUse(ctx, cb)
+	case cb.Data == "gc_redeem_cancel":
+		return s.handleGiftRedeemCancel(ctx, cb)
 	case strings.HasPrefix(cb.Data, "adm:"):
 		return s.handleAdminMenu(ctx, cb)
 	default:
@@ -293,6 +307,10 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.startSetRequisitesFlow(ctx, chatID)
 	case cb.Data == "adm:addtariff":
 		s.startAddTariffFlow(ctx, chatID)
+	case cb.Data == "adm:gifts":
+		s.sendAdminGiftList(ctx, chatID)
+	case strings.HasPrefix(cb.Data, "adm:grev:"):
+		s.handleAdminGiftRevoke(ctx, chatID, cb.Data)
 	}
 	return true
 }

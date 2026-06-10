@@ -21,6 +21,10 @@ the bot extends the subscription by the chosen number of months.
   admin involvement.
 - **`/invite`** — existing subscribers can request a new user to be created in the
   panel; admin approves and the new subscription URL is sent back to the inviter.
+- **`/gift`** — buy a subscription as a gift without naming the recipient: after
+  admin confirmation the buyer gets a unique one-time code and a `t.me` deep link
+  to forward; whoever opens it gets the months added to their profile (or a brand
+  new profile created on the spot).
 - Welcome message on the `/start` command, with a **🔗 Привязать аккаунт** button
   that walks new users through linking (and warns that without it no notifications arrive).
 - Structured logs to stdout (`log/slog` JSON).
@@ -71,9 +75,10 @@ externally and you confirm manually.
 | `/menu`      | Open the menu with inline buttons                                     |
 | `/tariff`    | Show the current tariffs/prices                                       |
 | `/payff`     | Pay for another user (subscribers only)                               |
+| `/gift`      | Buy a gift subscription and get a shareable code/link (subscribers only) |
 | `/invite`    | Invite a new user to the panel (subscribers only)                     |
 | `/register`  | Link your Telegram to an existing Remnawave profile                   |
-| `/cancel`    | Cancel the current `/payff`, `/invite`, or `/register` step           |
+| `/cancel`    | Cancel the current `/payff`, `/gift`, `/invite`, or `/register` step  |
 | `/help`      | Same as `/menu`                                                       |
 
 **Admin-only commands** (only the account whose ID equals `TELEGRAM_ADMIN_ID`;
@@ -87,17 +92,21 @@ silently ignored for everyone else):
 | `/setrequisites`             | Set the payment requisites shown to users after «Я оплатил» (two-step: send the command, then the text in the next message) |
 | `/requisites`                | Show the currently saved payment requisites |
 
+The `/admin` menu also has a **🎁 Подарочные коды** section listing all issued
+(not yet activated) gift codes, each with a one-tap revoke button.
+
 Tariffs and payment state are stored in SQLite (`DB_PATH`, default `/data/bot.db`,
 kept in the `botdata` Docker volume), so they survive restarts.
 
 ### Menu buttons
 
-When a user sends `/menu` (or `/help`), the bot replies with four inline buttons:
+When a user sends `/menu` (or `/help`), the bot replies with five inline buttons:
 
 | Button                       | Action                                |
 | ---------------------------- | ------------------------------------- |
 | 💵 Тарифы                   | Show current tariff prices            |
 | 💳 Оплатить за другого       | Start the pay-for-another-user flow   |
+| 🎁 Подарить подписку         | Start the gift-subscription flow      |
 | 👤 Пригласить пользователя   | Start the invite-new-user flow        |
 | 🔗 Привязать аккаунт         | Start the Telegram-linking flow       |
 
@@ -115,6 +124,30 @@ Any existing subscriber can pay for someone else:
 
 Only existing subscribers may start `/payff`; every request is still gated by
 admin confirmation.
+
+### Gifting a subscription (`/gift`)
+
+Unlike `/payff`, a gift does not require knowing the recipient in advance — the
+buyer gets a transferable code instead:
+
+1. Send `/gift` to the bot (or tap **🎁 Подарить подписку** in the menu). The bot
+   shows the payment requisites (if set) and the tariff buttons.
+2. Pick a period. The admin receives the request with **«✅ Подтвердить оплату»**
+   and **«❌ Отклонить»** buttons.
+3. On confirmation the buyer receives a unique one-time code and a deep link like
+   `https://t.me/<bot>?start=gift_<CODE>` to forward to anyone.
+4. The recipient opens the link (or sends `/start gift_<CODE>`):
+   - if they already have a profile linked to their Telegram, it is **extended**
+     by the gifted months (with a choice when several profiles are linked);
+   - if they have no profile, the bot asks for a desired username, **creates** a
+     new profile in the panel, links their Telegram ID and sends the subscription
+     URL. The subscription clock starts at activation, not at purchase.
+5. The buyer is notified when the gift is activated.
+
+Each code is strictly **single-use** (atomic claim in the database — concurrent
+attempts can't double-spend), survives bot restarts, and stays valid until
+activated or revoked by the admin. Only existing subscribers may start `/gift`;
+every purchase is gated by admin confirmation.
 
 ### Inviting a new user (`/invite`)
 
@@ -150,12 +183,13 @@ you to contact the admin. Session expires after 10 minutes of inactivity.
 
 **Discovering it:** the bot registers a command menu on startup (via
 `setMyCommands`), so users get the blue **Menu** button and `/` autocomplete for
-all commands listed above. Sending `/menu` (or `/help`) shows the four inline
+all commands listed above. Sending `/menu` (or `/help`) shows the five inline
 buttons.
 
 Safeguards:
 
-- Only the configured admin can confirm payments, approve invites, or manage tariffs.
+- Only the configured admin can confirm payments, approve invites/gifts, revoke
+  gift codes, or manage tariffs.
 - Payment confirmation is **idempotent**: repeated taps will not extend twice.
 - New expiry = `max(now, current expiry)` + chosen months, so a late confirmation
   never lands in the past.
