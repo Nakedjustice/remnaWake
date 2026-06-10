@@ -22,10 +22,10 @@ type Bot struct {
 }
 
 type sendMessageRequest struct {
-	ChatID      int64                 `json:"chat_id"`
-	Text        string                `json:"text"`
-	ParseMode   string                `json:"parse_mode,omitempty"`
-	ReplyMarkup *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
+	ChatID      int64  `json:"chat_id"`
+	Text        string `json:"text"`
+	ParseMode   string `json:"parse_mode,omitempty"`
+	ReplyMarkup any    `json:"reply_markup,omitempty"`
 }
 
 type answerCallbackQueryRequest struct {
@@ -53,6 +53,30 @@ type InlineKeyboardMarkup struct {
 type InlineKeyboardButton struct {
 	Text         string `json:"text"`
 	CallbackData string `json:"callback_data,omitempty"`
+}
+
+// ReplyKeyboardMarkup is a persistent keyboard shown under the input field.
+type ReplyKeyboardMarkup struct {
+	Keyboard       [][]KeyboardButton `json:"keyboard"`
+	ResizeKeyboard bool               `json:"resize_keyboard,omitempty"`
+	IsPersistent   bool               `json:"is_persistent,omitempty"`
+}
+
+type KeyboardButton struct {
+	Text string `json:"text"`
+}
+
+// CabinetButtonLabel is the reply-keyboard button text that opens the personal
+// cabinet; the poll loop matches incoming messages against it.
+const CabinetButtonLabel = "👤 Личный кабинет"
+
+// MainReplyKeyboard returns the persistent reply keyboard with the cabinet button.
+func MainReplyKeyboard() *ReplyKeyboardMarkup {
+	return &ReplyKeyboardMarkup{
+		Keyboard:       [][]KeyboardButton{{{Text: CabinetButtonLabel}}},
+		ResizeKeyboard: true,
+		IsPersistent:   true,
+	}
 }
 
 type Update struct {
@@ -136,19 +160,37 @@ func (b *Bot) SendPlain(ctx context.Context, chatID int64, text string) error {
 
 func (b *Bot) SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) (int64, error) {
 	payload := sendMessageRequest{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: keyboard,
+		ChatID: chatID,
+		Text:   text,
+	}
+	if keyboard != nil {
+		payload.ReplyMarkup = keyboard
 	}
 	return b.sendMessage(ctx, payload)
 }
 
+// SendPlainWithReplyKeyboard sends a plain message carrying a persistent reply
+// keyboard (the buttons shown under the input field).
+func (b *Bot) SendPlainWithReplyKeyboard(ctx context.Context, chatID int64, text string, keyboard *ReplyKeyboardMarkup) error {
+	payload := sendMessageRequest{
+		ChatID: chatID,
+		Text:   text,
+	}
+	if keyboard != nil {
+		payload.ReplyMarkup = keyboard
+	}
+	_, err := b.sendMessage(ctx, payload)
+	return err
+}
+
 func (b *Bot) SendWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) error {
 	payload := sendMessageRequest{
-		ChatID:      chatID,
-		Text:        text,
-		ParseMode:   b.parseMode,
-		ReplyMarkup: keyboard,
+		ChatID:    chatID,
+		Text:      text,
+		ParseMode: b.parseMode,
+	}
+	if keyboard != nil {
+		payload.ReplyMarkup = keyboard
 	}
 	_, err := b.sendMessage(ctx, payload)
 	return err
@@ -165,6 +207,7 @@ func (b *Bot) SendWelcome(ctx context.Context, chatID int64) error {
 3. Подтвердите привязку — и всё готово, уведомления включены.
 
 Меню и команды:
+/me — личный кабинет: статус подписки, ссылка, подарки
 /menu — открыть меню с кнопками
 /register — привязать свой Telegram к профилю
 /tariff — посмотреть текущие тарифы

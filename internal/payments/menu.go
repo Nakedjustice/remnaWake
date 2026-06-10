@@ -13,6 +13,7 @@ import (
 // invite flows.
 func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 	text := "Меню\n\n" +
+		"/me — личный кабинет\n" +
 		"/tariff — посмотреть тарифы\n" +
 		"/gift — подарить подписку\n" +
 		"/mygifts — мои подарочные подписки\n" +
@@ -25,6 +26,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 	}
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
+			{{Text: "👤 Личный кабинет", CallbackData: "menu:cabinet"}},
 			{{Text: "💵 Тарифы", CallbackData: "menu:tariffs"}},
 			{{Text: "🎁 Подарить подписку", CallbackData: "menu:gift"}},
 			{{Text: "📦 Мои подарки", CallbackData: "menu:mygifts"}},

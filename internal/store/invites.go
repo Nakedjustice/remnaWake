@@ -59,6 +59,41 @@ func (s *Store) GetInviteRequest(ctx context.Context, id int64) (*InviteRequest,
 	return &r, nil
 }
 
+// ListInviteRequestsByInviter returns every invite request created by the
+// given Telegram user, newest first.
+func (s *Store) ListInviteRequestsByInviter(ctx context.Context, inviterTGID int64) ([]InviteRequest, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, inviter_telegram_id, inviter_username, new_username, months, price,
+			status, created_at, resolved_at
+		FROM invite_requests WHERE inviter_telegram_id = ? ORDER BY id DESC
+	`, inviterTGID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []InviteRequest
+	for rows.Next() {
+		var (
+			r          InviteRequest
+			created    string
+			resolvedAt sql.NullString
+		)
+		if err := rows.Scan(&r.ID, &r.InviterTelegramID, &r.InviterUsername, &r.NewUsername,
+			&r.Months, &r.Price, &r.Status, &created, &resolvedAt); err != nil {
+			return nil, err
+		}
+		r.CreatedAt, _ = parseTime(created)
+		if resolvedAt.Valid {
+			if ts, e := parseTime(resolvedAt.String); e == nil {
+				r.ResolvedAt = &ts
+			}
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // ResolveInviteRequest transitions a pending request to approved or rejected exactly once.
 // Returns true only when the row was actually updated.
 func (s *Store) ResolveInviteRequest(ctx context.Context, id int64, status string, resolvedAt time.Time) (bool, error) {
