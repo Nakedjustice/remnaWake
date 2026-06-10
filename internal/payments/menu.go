@@ -15,6 +15,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 	text := "Меню\n\n" +
 		"/tariff — посмотреть тарифы\n" +
 		"/gift — подарить подписку\n" +
+		"/mygifts — мои подарочные подписки\n" +
 		"/invite — пригласить нового пользователя\n" +
 		"/register — привязать свой Telegram к профилю\n" +
 		"/cancel — отменить текущее действие"
@@ -26,6 +27,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
 			{{Text: "💵 Тарифы", CallbackData: "menu:tariffs"}},
 			{{Text: "🎁 Подарить подписку", CallbackData: "menu:gift"}},
+			{{Text: "📦 Мои подарки", CallbackData: "menu:mygifts"}},
 			{{Text: "👤 Пригласить пользователя", CallbackData: "menu:invite"}},
 			{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
 		},

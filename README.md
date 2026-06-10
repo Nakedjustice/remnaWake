@@ -25,6 +25,9 @@ the bot extends the subscription by the chosen number of months.
   admin confirmation the buyer gets a unique one-time code and a `t.me` deep link
   to forward; whoever opens it gets the months added to their profile (or a brand
   new profile created on the spot).
+- **`/mygifts`** — list the gift codes you bought with their current status
+  (pending / issued / activated / rejected / revoked) and re-request the message
+  with the redemption link if the original one was lost.
 - Welcome message on the `/start` command, with a **🔗 Привязать аккаунт** button
   that walks new users through linking (and warns that without it no notifications arrive).
 - Structured logs to stdout (`log/slog` JSON).
@@ -75,6 +78,7 @@ externally and you confirm manually.
 | `/menu`      | Open the menu with inline buttons                                     |
 | `/tariff`    | Show the current tariffs/prices                                       |
 | `/gift`      | Buy a gift subscription and get a shareable code/link (subscribers only) |
+| `/mygifts`   | List your purchased gift codes, their status, and re-send the link    |
 | `/invite`    | Invite a new user to the panel (subscribers only)                     |
 | `/register`  | Link your Telegram to an existing Remnawave profile                   |
 | `/cancel`    | Cancel the current `/gift`, `/invite`, or `/register` step            |
@@ -99,12 +103,13 @@ kept in the `botdata` Docker volume), so they survive restarts.
 
 ### Menu buttons
 
-When a user sends `/menu` (or `/help`), the bot replies with four inline buttons:
+When a user sends `/menu` (or `/help`), the bot replies with five inline buttons:
 
 | Button                       | Action                                |
 | ---------------------------- | ------------------------------------- |
 | 💵 Тарифы                   | Show current tariff prices            |
 | 🎁 Подарить подписку         | Start the gift-subscription flow      |
+| 📦 Мои подарки               | List your gift codes and their status |
 | 👤 Пригласить пользователя   | Start the invite-new-user flow        |
 | 🔗 Привязать аккаунт         | Start the Telegram-linking flow       |
 
@@ -132,6 +137,13 @@ Each code is strictly **single-use** (atomic claim in the database — concurren
 attempts can't double-spend), survives bot restarts, and stays valid until
 activated or revoked by the admin. Only existing subscribers may start `/gift`;
 every purchase is gated by admin confirmation.
+
+The buyer can check their gifts at any time with `/mygifts` (or the **📦 Мои
+подарки** menu button): the bot lists every purchased code with its status —
+awaiting payment confirmation, issued/awaiting activation, activated (with the
+recipient's profile name), rejected, or revoked. Issued codes get a **🔗** button
+that re-sends the message with the redemption link, in case the original one was
+lost. Only the buyer can request their own links.
 
 ### Inviting a new user (`/invite`)
 
@@ -199,6 +211,7 @@ and **why it matters** (no link = no notifications), plus a **🔗 Привяз�
 /register — привязать свой Telegram к профилю
 /tariff — посмотреть текущие тарифы
 /gift — подарить подписку
+/mygifts — мои подарочные подписки и их статус
 /cancel — отменить текущее действие
 
 После оплаты нажмите «Я оплатил» — администратор получит уведомление и подтвердит продление.

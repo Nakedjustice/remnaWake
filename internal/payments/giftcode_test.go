@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/store"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
@@ -194,6 +195,113 @@ func TestGiftCodeReject(t *testing.T) {
 	}
 	if !buyerTold {
 		t.Fatalf("buyer not told about rejection: %+v", bot.sent)
+	}
+}
+
+// buyGift runs the purchase flow for buyer 555 and returns the gift ID.
+func buyGift(t *testing.T, svc *Service, st *store.Store, months int) int64 {
+	t.Helper()
+	ctx := context.Background()
+	svc.StartGiftCodeFlow(ctx, msg(555, "/gift"))
+	svc.HandleCallback(ctx, &tg.CallbackQuery{ID: "c", From: tg.User{ID: 555},
+		Message: &tg.Message{MessageID: 5, Chat: tg.Chat{ID: 555}}, Data: fmt.Sprintf("gc_pick:%d", months)})
+	gifts, _ := st.ListGiftCodesByStatus(ctx, "pending")
+	return gifts[len(gifts)-1].ID
+}
+
+func TestSendMyGiftsEmpty(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	if !svc.SendMyGifts(context.Background(), 555) {
+		t.Fatal("should be handled")
+	}
+	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "не покупали") {
+		t.Fatalf("expected empty-list reply: %+v", bot.sent)
+	}
+}
+
+func TestSendMyGiftsShowsStatusesAndLinkButton(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	seedBuyer(svc, 555)
+
+	pendingID := buyGift(t, svc, st, 1)
+	issuedID := buyGift(t, svc, st, 1)
+	svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("gc_ok:%d", issuedID)))
+
+	bot.sent = nil
+	if !svc.SendMyGifts(ctx, 555) {
+		t.Fatal("should be handled")
+	}
+	if len(bot.sent) != 1 {
+		t.Fatalf("expected one list message: %+v", bot.sent)
+	}
+	text := bot.sent[0].Text
+	if !strings.Contains(text, "Ожидает подтверждения оплаты") ||
+		!strings.Contains(text, "Выдан, ожидает активации") {
+		t.Fatalf("statuses missing from list: %q", text)
+	}
+
+	kb := bot.sent[0].Keyboard
+	if kb == nil {
+		t.Fatalf("expected resend keyboard: %+v", bot.sent[0])
+	}
+	found := map[string]bool{}
+	for _, row := range kb.InlineKeyboard {
+		for _, btn := range row {
+			found[btn.CallbackData] = true
+		}
+	}
+	if !found[fmt.Sprintf("gc_link:%d", issuedID)] {
+		t.Fatalf("issued gift must have a link button: %+v", kb)
+	}
+	if found[fmt.Sprintf("gc_link:%d", pendingID)] {
+		t.Fatalf("pending gift must not have a link button: %+v", kb)
+	}
+
+	// Another user sees nothing of buyer 555's gifts.
+	bot.sent = nil
+	svc.SendMyGifts(ctx, 777)
+	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "не покупали") {
+		t.Fatalf("other user must get empty list: %+v", bot.sent)
+	}
+}
+
+func TestGiftCodeResendLink(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	seedBuyer(svc, 555)
+	svc.SetBotUsername("testbot")
+
+	giftID := buyGift(t, svc, st, 3)
+
+	// Pending gift: link not available yet.
+	bot.sent = nil
+	if !svc.HandleCallback(ctx, cbq(555, fmt.Sprintf("gc_link:%d", giftID))) {
+		t.Fatal("gc_link should be handled")
+	}
+	if len(bot.sent) != 0 {
+		t.Fatalf("pending gift must not be resent: %+v", bot.sent)
+	}
+
+	svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("gc_ok:%d", giftID)))
+	g, _ := st.GetGiftCode(ctx, giftID)
+
+	// Someone other than the buyer must be refused.
+	bot.sent = nil
+	if !svc.HandleCallback(ctx, cbq(777, fmt.Sprintf("gc_link:%d", giftID))) {
+		t.Fatal("gc_link should be handled")
+	}
+	if len(bot.sent) != 0 {
+		t.Fatalf("non-buyer must not receive the link: %+v", bot.sent)
+	}
+
+	// Buyer gets the deep link again.
+	if !svc.HandleCallback(ctx, cbq(555, fmt.Sprintf("gc_link:%d", giftID))) {
+		t.Fatal("gc_link should be handled")
+	}
+	if len(bot.sent) != 1 || bot.sent[0].ChatID != 555 ||
+		!strings.Contains(bot.sent[0].Text, "https://t.me/testbot?start=gift_"+g.Code) {
+		t.Fatalf("buyer must get the deep link again: %+v", bot.sent)
 	}
 }
 
