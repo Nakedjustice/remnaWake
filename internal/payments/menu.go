@@ -24,15 +24,28 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 		_ = s.bot.SendPlain(ctx, chatID, text)
 		return true
 	}
-	kb := &tg.InlineKeyboardMarkup{
-		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: "👤 Личный кабинет", CallbackData: "menu:cabinet"}},
-			{{Text: "💵 Тарифы", CallbackData: "menu:tariffs"}},
-			{{Text: "🎁 Подарить подписку", CallbackData: "menu:gift"}},
-			{{Text: "📦 Мои подарки", CallbackData: "menu:mygifts"}},
-			{{Text: "👤 Пригласить пользователя", CallbackData: "menu:invite"}},
-			{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
-		},
+	var kb *tg.InlineKeyboardMarkup
+	if url := s.getWebAppURL(); url != "" {
+		// Cabinet, tariffs, gifts and invites live in the mini app, so their
+		// inline buttons would duplicate it — keep only profile linking, which
+		// stays a chat flow.
+		kb = &tg.InlineKeyboardMarkup{
+			InlineKeyboard: [][]tg.InlineKeyboardButton{
+				{{Text: "🖥 Открыть мини-приложение", WebApp: &tg.WebAppInfo{URL: url}}},
+				{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
+			},
+		}
+	} else {
+		kb = &tg.InlineKeyboardMarkup{
+			InlineKeyboard: [][]tg.InlineKeyboardButton{
+				{{Text: "👤 Личный кабинет", CallbackData: "menu:cabinet"}},
+				{{Text: "💵 Тарифы", CallbackData: "menu:tariffs"}},
+				{{Text: "🎁 Подарить подписку", CallbackData: "menu:gift"}},
+				{{Text: "📦 Мои подарки", CallbackData: "menu:mygifts"}},
+				{{Text: "👤 Пригласить пользователя", CallbackData: "menu:invite"}},
+				{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
+			},
+		}
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
 	return true

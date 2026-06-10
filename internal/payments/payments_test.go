@@ -31,9 +31,14 @@ type fakeBot struct {
 	answers  []string
 	edits    []editCall
 	msgIDSeq int64
+	// sendErrs makes SendPlain fail for specific chat IDs.
+	sendErrs map[int64]error
 }
 
 func (f *fakeBot) SendPlain(_ context.Context, chatID int64, text string) error {
+	if err := f.sendErrs[chatID]; err != nil {
+		return err
+	}
 	f.sent = append(f.sent, sentMsg{ChatID: chatID, Text: text})
 	return nil
 }
@@ -69,8 +74,10 @@ func (f *fakeExtender) ExtendSubscriptionByUUID(_ context.Context, uuid string, 
 }
 
 type fakeFinder struct {
-	byTG   map[int64][]Subscriber
-	byName map[string]*Subscriber
+	byTG    map[int64][]Subscriber
+	byName  map[string]*Subscriber
+	all     []Subscriber
+	listErr error
 }
 
 func (f *fakeFinder) FindByTelegramID(_ context.Context, id int64) ([]Subscriber, error) {
@@ -78,6 +85,9 @@ func (f *fakeFinder) FindByTelegramID(_ context.Context, id int64) ([]Subscriber
 }
 func (f *fakeFinder) FindByUsername(_ context.Context, name string) (*Subscriber, error) {
 	return f.byName[name], nil
+}
+func (f *fakeFinder) ListAll(_ context.Context) ([]Subscriber, error) {
+	return f.all, f.listErr
 }
 
 type fakeCreator struct {

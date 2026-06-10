@@ -193,6 +193,14 @@ func (s *Service) handleInviteSubmit(ctx context.Context, cb *tg.CallbackQuery) 
 	_ = s.bot.EditMessageReplyMarkup(ctx, chatID, cb.Message.MessageID, nil)
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отправлена администратору.")
 
+	s.notifyAdminsInviteRequest(ctx, reqID, inviterName, inviterTGID, newUsername, price)
+	return true
+}
+
+// notifyAdminsInviteRequest sends every admin the pending invite request with
+// approve/reject buttons and remembers the message refs so resolving clears
+// the buttons in all admin chats. Shared by the chat flow and the mini app.
+func (s *Service) notifyAdminsInviteRequest(ctx context.Context, reqID int64, inviterName string, inviterTGID int64, newUsername string, price int) {
 	priceStr := "бесплатно"
 	if price > 0 {
 		priceStr = s.priceLabel(price)
@@ -219,7 +227,6 @@ func (s *Service) handleInviteSubmit(ctx context.Context, cb *tg.CallbackQuery) 
 	s.mu.Lock()
 	s.inviteMsgs[reqID] = refs
 	s.mu.Unlock()
-	return true
 }
 
 // handleInviteApprove processes admin's "Одобрить" button.

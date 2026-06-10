@@ -112,6 +112,9 @@
   .gift:first-of-type { border-top: 0; }
   .gift .code { font-family: ui-monospace, monospace; }
   .gift .st { color: var(--hint); font-size: 13px; }
+  details { border-top: 1px solid var(--secondary-bg); }
+  details:first-of-type { border-top: 0; }
+  summary { cursor: pointer; padding: 8px 0; font-size: 15px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -238,6 +241,128 @@ function renderRenew(p, data) {
   return wrap;
 }
 
+// renderGiftBuy mirrors the chat /gift flow: pick a period, the request goes
+// to the admins, the code and link arrive after payment confirmation.
+function renderGiftBuy(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '🎁 Подарить подписку'));
+  card.appendChild(el('div', 'hint',
+    'Выберите период. После подтверждения оплаты администратором вы получите код и ссылку для подарка.'));
+  let months = 0;
+  const tariffs = (data.tariffs || []).length ? data.tariffs : [{ months: 1, price: 0 }];
+  const grid = el('div', 'tariffs');
+  tariffs.forEach(t => {
+    const label = t.price > 0 ? `${t.months} мес. — ${t.price_label}` : `${t.months} мес.`;
+    const b = el('button', 'secondary', label);
+    b.onclick = () => {
+      months = t.months;
+      grid.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
+      b.classList.add('selected');
+      send.disabled = false;
+    };
+    grid.appendChild(b);
+  });
+  card.appendChild(grid);
+  const send = el('button', null, '🎁 Отправить заявку');
+  send.disabled = true;
+  send.onclick = async () => {
+    if (!(await confirmDialog(`Оформить подарочную подписку на ${months} мес.?`))) return;
+    send.disabled = true;
+    send.textContent = 'Отправка…';
+    try {
+      await api('/api/gift', { method: 'POST', body: JSON.stringify({ months }) });
+      tg.showAlert('Заявка отправлена администратору. После подтверждения оплаты вы получите код и ссылку.');
+      await showCabinet();
+    } catch (e) {
+      tg.showAlert(e.message);
+      send.disabled = false;
+      send.textContent = '🎁 Отправить заявку';
+    }
+  };
+  card.appendChild(send);
+  return card;
+}
+
+// renderInvite mirrors the chat /invite flow: enter a username, the request
+// goes to the admins for approval.
+function renderInvite() {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '👥 Пригласить пользователя'));
+  card.appendChild(el('div', 'hint',
+    'Имя нового пользователя: буквы, цифры и «_», от 3 до 32 символов. Заявку рассмотрит администратор.'));
+  const input = Object.assign(el('input'), { placeholder: 'Имя пользователя' });
+  card.appendChild(input);
+  const send = el('button', null, '👥 Отправить заявку');
+  send.onclick = async () => {
+    const name = input.value.trim();
+    if (!/^[\p{L}\p{N}_]{3,32}$/u.test(name)) {
+      tg.showAlert('Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов.');
+      return;
+    }
+    if (!(await confirmDialog(`Отправить заявку на пользователя «${name}»?`))) return;
+    send.disabled = true;
+    send.textContent = 'Отправка…';
+    try {
+      await api('/api/invite', { method: 'POST', body: JSON.stringify({ username: name }) });
+      tg.showAlert('Заявка отправлена администратору.');
+      input.value = '';
+      await showCabinet();
+      return;
+    } catch (e) { tg.showAlert(e.message); }
+    send.disabled = false;
+    send.textContent = '👥 Отправить заявку';
+  };
+  card.appendChild(send);
+  return card;
+}
+
+// giftStatuses mirrors the order and labels of the bot's /mygifts status picker.
+const giftStatuses = [
+  ['pending', '⏳ Ожидают оплаты'],
+  ['issued', '📨 Выданные'],
+  ['redeemed', '✅ Активированные'],
+  ['rejected', '❌ Отклонённые'],
+  ['revoked', '🚫 Отозванные'],
+];
+
+// renderMyGifts groups the user's gifts by status, like the bot's /mygifts
+// menu; issued gifts expose their redemption link with a copy button.
+function renderMyGifts(data) {
+  const gifts = data.gifts || [];
+  if (!gifts.length) return null;
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '📦 Мои подарки'));
+  giftStatuses.forEach(([status, label]) => {
+    const list = gifts.filter(g => g.status === status);
+    if (!list.length) return;
+    const det = el('details');
+    det.appendChild(el('summary', null, `${label} (${list.length})`));
+    list.forEach(g => {
+      const d = el('div', 'gift');
+      d.appendChild(el('div', 'code', `${g.code} — ${g.months} мес. (${g.created_at})`));
+      d.appendChild(el('div', 'st', g.status_label));
+      if (g.link) {
+        const a = el('a', 'sub-link', g.link);
+        a.href = g.link;
+        a.target = '_blank';
+        d.appendChild(a);
+        const copy = el('button', 'secondary', '📋 Скопировать ссылку');
+        copy.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(g.link);
+            copy.textContent = '✅ Скопировано';
+            setTimeout(() => copy.textContent = '📋 Скопировать ссылку', 1500);
+          } catch { tg.showAlert('Не удалось скопировать, выделите ссылку вручную.'); }
+        };
+        d.appendChild(copy);
+      }
+      det.appendChild(d);
+    });
+    card.appendChild(det);
+  });
+  return card;
+}
+
 function renderUnlinked() {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, 'Аккаунт не привязан'));
@@ -252,6 +377,16 @@ function renderUnlinked() {
 function render(data) {
   appEl.textContent = '';
 
+  if (data.is_admin) {
+    const card = el('div', 'card');
+    card.appendChild(el('h2', null, '⚙️ Администрирование'));
+    card.appendChild(el('div', 'hint', 'Тарифы, реквизиты, подарочные коды и заявки на оплату.'));
+    const open = el('button', null, '⚙️ Открыть админ-панель');
+    open.onclick = showAdmin;
+    card.appendChild(open);
+    appEl.appendChild(card);
+  }
+
   if (!data.linked) {
     appEl.appendChild(renderUnlinked());
   } else {
@@ -265,17 +400,13 @@ function render(data) {
     appEl.appendChild(card);
   }
 
-  if ((data.gifts || []).length) {
-    const card = el('div', 'card');
-    card.appendChild(el('h2', null, '🎁 Мои подарки'));
-    data.gifts.forEach(g => {
-      const d = el('div', 'gift');
-      d.appendChild(el('div', 'code', `${g.code} — ${g.months} мес. (${g.created_at})`));
-      d.appendChild(el('div', 'st', g.status_label));
-      card.appendChild(d);
-    });
-    appEl.appendChild(card);
+  if (data.linked) {
+    appEl.appendChild(renderGiftBuy(data));
+    appEl.appendChild(renderInvite());
   }
+
+  const myGifts = renderMyGifts(data);
+  if (myGifts) appEl.appendChild(myGifts);
 
   if (data.invites) {
     const card = el('div', 'card');
@@ -286,19 +417,9 @@ function render(data) {
     appEl.appendChild(card);
   }
 
-  if (data.is_admin) {
-    const card = el('div', 'card');
-    card.appendChild(el('h2', null, '⚙️ Администрирование'));
-    card.appendChild(el('div', 'hint', 'Тарифы, реквизиты, подарочные коды и заявки на оплату.'));
-    const open = el('button', null, '⚙️ Открыть админ-панель');
-    open.onclick = showAdmin;
-    card.appendChild(open);
-    appEl.appendChild(card);
-  }
-
   const actions = el('div', 'card');
   actions.appendChild(el('h2', null, 'Действия в чате'));
-  actions.appendChild(el('div', 'hint', 'Подарки, приглашения и привязка профиля оформляются в диалоге с ботом.'));
+  actions.appendChild(el('div', 'hint', 'Привязка профиля и активация подарочных кодов оформляются в диалоге с ботом.'));
   const back = el('button', 'secondary', '💬 Вернуться в чат');
   back.onclick = () => tg.close();
   actions.appendChild(back);
@@ -386,6 +507,33 @@ function renderAdminRequisites(data) {
   return card;
 }
 
+function renderAdminBroadcast() {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '📢 Рассылка'));
+  card.appendChild(el('div', 'hint', 'Сообщение получат все пользователи с привязанным Telegram.'));
+  const text = Object.assign(el('textarea'), { placeholder: 'Текст сообщения' });
+  card.appendChild(text);
+  const send = el('button', null, '📢 Отправить всем');
+  send.onclick = async () => {
+    if (!text.value.trim()) { tg.showAlert('Текст рассылки не может быть пустым.'); return; }
+    if (!(await confirmDialog('Отправить сообщение всем пользователям?'))) return;
+    send.disabled = true;
+    send.textContent = 'Отправка…';
+    try {
+      const res = await api('/api/admin/broadcast', {
+        method: 'POST',
+        body: JSON.stringify({ message: text.value }),
+      });
+      text.value = '';
+      tg.showAlert(`Рассылка завершена: отправлено ${res.sent}, ошибок ${res.failed}.`);
+    } catch (e) { tg.showAlert(e.message); }
+    send.disabled = false;
+    send.textContent = '📢 Отправить всем';
+  };
+  card.appendChild(send);
+  return card;
+}
+
 function renderAdminGifts(data) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, '🎁 Активные подарочные коды'));
@@ -454,6 +602,7 @@ function renderAdmin(data) {
   appEl.appendChild(renderAdminTariffs(data));
   appEl.appendChild(renderAdminRequisites(data));
   appEl.appendChild(renderAdminGifts(data));
+  appEl.appendChild(renderAdminBroadcast());
 
   statusEl.hidden = true;
   appEl.hidden = false;

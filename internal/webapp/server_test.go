@@ -13,9 +13,13 @@ import (
 )
 
 type fakeCabinet struct {
-	data     *payments.WebCabinet
-	renewErr error
-	renewed  []int64
+	data      *payments.WebCabinet
+	renewErr  error
+	renewed   []int64
+	giftErr   error
+	gifted    []int
+	inviteErr error
+	invited   []string
 }
 
 func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabinet, error) {
@@ -25,6 +29,16 @@ func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabi
 func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int) error {
 	f.renewed = append(f.renewed, remnawaveID)
 	return f.renewErr
+}
+
+func (f *fakeCabinet) CreateGiftRequest(_ context.Context, _ int64, months int) error {
+	f.gifted = append(f.gifted, months)
+	return f.giftErr
+}
+
+func (f *fakeCabinet) CreateInviteRequest(_ context.Context, _ int64, username string) error {
+	f.invited = append(f.invited, username)
+	return f.inviteErr
 }
 
 type adminCall struct {
@@ -66,6 +80,13 @@ func (f *fakeAdmin) AdminConfirmRequest(_ context.Context, tgID, reqID int64) er
 func (f *fakeAdmin) AdminRejectRequest(_ context.Context, tgID, reqID int64) error {
 	f.calls = append(f.calls, adminCall{Name: "reject", A: reqID})
 	return f.err
+}
+func (f *fakeAdmin) AdminBroadcast(_ context.Context, tgID int64, text string) (*payments.WebBroadcastResult, error) {
+	f.calls = append(f.calls, adminCall{Name: "broadcast", A: tgID, Text: text})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &payments.WebBroadcastResult{Sent: 3, Failed: 1}, nil
 }
 
 func newTestServer(cab *fakeCabinet) *Server {
@@ -147,6 +168,59 @@ func TestHandleRenewErrorMapping(t *testing.T) {
 	}
 }
 
+func TestHandleGift(t *testing.T) {
+	cases := []struct {
+		err  error
+		want int
+	}{
+		{nil, 200},
+		{payments.ErrNotLinked, 403},
+		{payments.ErrTariffUnknown, 400},
+		{payments.ErrBadInput, 400},
+		{payments.ErrPaymentsDisabled, 503},
+	}
+	for _, tc := range cases {
+		cab := &fakeCabinet{giftErr: tc.err}
+		srv := newTestServer(cab)
+		req := httptest.NewRequest("POST", "/api/gift", strings.NewReader(`{"months":3}`))
+		req.Header.Set("Authorization", validAuth(t))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Errorf("err=%v: status = %d, want %d", tc.err, w.Code, tc.want)
+		}
+		if len(cab.gifted) != 1 || cab.gifted[0] != 3 {
+			t.Errorf("err=%v: service calls = %v", tc.err, cab.gifted)
+		}
+	}
+}
+
+func TestHandleInvite(t *testing.T) {
+	cab := &fakeCabinet{}
+	srv := newTestServer(cab)
+	req := httptest.NewRequest("POST", "/api/invite", strings.NewReader(`{"username":"newbie"}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if len(cab.invited) != 1 || cab.invited[0] != "newbie" {
+		t.Fatalf("service calls = %v", cab.invited)
+	}
+
+	// Invalid username → 400 via ErrBadInput mapping.
+	cab2 := &fakeCabinet{inviteErr: payments.ErrBadInput}
+	srv = newTestServer(cab2)
+	req = httptest.NewRequest("POST", "/api/invite", strings.NewReader(`{"username":"x"}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 400 {
+		t.Fatalf("bad username: status = %d, want 400", w.Code)
+	}
+}
+
 func TestHandleAdminAuth(t *testing.T) {
 	adm := &fakeAdmin{err: payments.ErrNotAdmin}
 	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
@@ -216,6 +290,7 @@ func TestHandleAdminMutations(t *testing.T) {
 		{"/api/admin/gift/revoke", `{"id":5}`, "revoke", 5, 0, ""},
 		{"/api/admin/request/confirm", `{"id":7}`, "confirm", 7, 0, ""},
 		{"/api/admin/request/reject", `{"id":8}`, "reject", 8, 0, ""},
+		{"/api/admin/broadcast", `{"message":"hello"}`, "broadcast", 42, 0, "hello"},
 	}
 	for i, tc := range cases {
 		if code := post(tc.path, tc.body); code != 200 {
@@ -258,6 +333,29 @@ func TestHandleAdminErrorMapping(t *testing.T) {
 		if w.Code != tc.want {
 			t.Errorf("err=%v: status = %d, want %d", tc.err, w.Code, tc.want)
 		}
+	}
+}
+
+func TestHandleAdminBroadcastReturnsCounts(t *testing.T) {
+	srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{})
+
+	req := httptest.NewRequest("POST", "/api/admin/broadcast", strings.NewReader(`{"message":"hello"}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var got struct {
+		OK     bool `json:"ok"`
+		Sent   int  `json:"sent"`
+		Failed int  `json:"failed"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !got.OK || got.Sent != 3 || got.Failed != 1 {
+		t.Fatalf("unexpected payload: %+v", got)
 	}
 }
 

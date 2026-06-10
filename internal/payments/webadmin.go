@@ -155,6 +155,30 @@ func (s *Service) AdminSetRequisites(ctx context.Context, telegramID int64, text
 	return nil
 }
 
+// WebBroadcastResult reports broadcast delivery counts to the mini app.
+type WebBroadcastResult struct {
+	Sent   int `json:"sent"`
+	Failed int `json:"failed"`
+}
+
+// AdminBroadcast sends text to every panel user with a linked Telegram ID
+// from the mini app admin panel. Runs synchronously: the HTTP caller waits
+// and gets delivery counts back.
+func (s *Service) AdminBroadcast(ctx context.Context, telegramID int64, text string) (*WebBroadcastResult, error) {
+	if err := s.adminGuard(telegramID); err != nil {
+		return nil, err
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, ErrBadInput
+	}
+	sent, failed, err := s.broadcastMessage(ctx, text)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	return &WebBroadcastResult{Sent: sent, Failed: failed}, nil
+}
+
 // AdminRevokeGiftCode revokes an issued gift code from the mini app admin
 // panel and notifies the buyer, mirroring the chat revoke flow.
 func (s *Service) AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error {

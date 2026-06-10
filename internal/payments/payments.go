@@ -55,10 +55,11 @@ type Subscriber struct {
 }
 
 // Finder resolves a target subscriber by Telegram ID (may match several) or by
-// username (at most one).
+// username (at most one), and can list every subscriber for broadcasts.
 type Finder interface {
 	FindByTelegramID(ctx context.Context, telegramID int64) ([]Subscriber, error)
 	FindByUsername(ctx context.Context, username string) (*Subscriber, error)
+	ListAll(ctx context.Context) ([]Subscriber, error)
 }
 
 type adminInputStep int
@@ -68,11 +69,17 @@ const (
 	adminInputRequisites
 	adminInputTariffMonths
 	adminInputTariffPrice
+	adminInputBroadcast
 )
 
 type adminInputState struct {
-	step          adminInputStep
+	step adminInputStep
+
 	pendingMonths int
+	// pendingBroadcast holds the broadcast text between the preview message and
+	// the admin pressing the confirm button (step is back to adminInputNone by
+	// then, so regular chat keeps working while the confirmation is pending).
+	pendingBroadcast string
 }
 
 type adminMsgRef struct {

@@ -24,6 +24,8 @@ const initDataMaxAge = 24 * time.Hour
 type Cabinet interface {
 	CabinetData(ctx context.Context, telegramID int64) (*payments.WebCabinet, error)
 	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int) error
+	CreateGiftRequest(ctx context.Context, telegramID int64, months int) error
+	CreateInviteRequest(ctx context.Context, telegramID int64, username string) error
 }
 
 // Admin is the subset of *payments.Service the mini app admin API needs.
@@ -37,6 +39,7 @@ type Admin interface {
 	AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error
 	AdminConfirmRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminRejectRequest(ctx context.Context, telegramID, reqID int64) error
+	AdminBroadcast(ctx context.Context, telegramID int64, text string) (*payments.WebBroadcastResult, error)
 }
 
 // Server hosts the Telegram Mini App: embedded static frontend plus the JSON
@@ -60,10 +63,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/", http.FileServer(http.FS(static)))
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("POST /api/renew", s.handleRenew)
+	mux.HandleFunc("POST /api/gift", s.handleGift)
+	mux.HandleFunc("POST /api/invite", s.handleInvite)
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
 	mux.HandleFunc("POST /api/admin/tariff", s.handleAdminSetTariff)
 	mux.HandleFunc("POST /api/admin/tariff/delete", s.handleAdminDeleteTariff)
 	mux.HandleFunc("POST /api/admin/requisites", s.handleAdminSetRequisites)
+	mux.HandleFunc("POST /api/admin/broadcast", s.handleAdminBroadcast)
 	mux.HandleFunc("POST /api/admin/gift/revoke", s.adminIDAction("revoke gift", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminRevokeGiftCode(ctx, tgID, id)
 	}))
@@ -143,21 +149,66 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months)
+	if err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months); err != nil {
+		s.writeCabinetError(w, "renew", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// writeCabinetError maps user-facing cabinet service errors to HTTP statuses.
+func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegramID int64, err error) {
 	switch {
-	case err == nil:
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	case errors.Is(err, payments.ErrNotLinked),
-		errors.Is(err, payments.ErrProfileUnknown):
+	case errors.Is(err, payments.ErrNotLinked), errors.Is(err, payments.ErrProfileUnknown):
 		writeJSONError(w, http.StatusForbidden, "profile is not linked to this account")
 	case errors.Is(err, payments.ErrTariffUnknown):
 		writeJSONError(w, http.StatusBadRequest, "tariff not found")
+	case errors.Is(err, payments.ErrBadInput):
+		writeJSONError(w, http.StatusBadRequest, "invalid input")
 	case errors.Is(err, payments.ErrPaymentsDisabled):
 		writeJSONError(w, http.StatusServiceUnavailable, "payments are disabled")
 	default:
-		s.logger.Error("webapp: renew failed", "err", err.Error(), "telegram_id", userID)
+		s.logger.Error("webapp: "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusInternalServerError, "internal error, try again later")
 	}
+}
+
+func (s *Server) handleGift(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Months int `json:"months"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.cabinet.CreateGiftRequest(r.Context(), userID, req.Months); err != nil {
+		s.writeCabinetError(w, "gift", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleInvite(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.cabinet.CreateInviteRequest(r.Context(), userID, req.Username); err != nil {
+		s.writeCabinetError(w, "invite", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // writeAdminError maps admin service errors to HTTP statuses.
@@ -246,6 +297,26 @@ func (s *Server) handleAdminSetRequisites(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminBroadcast(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	res, err := s.admin.AdminBroadcast(r.Context(), userID, req.Message)
+	if err != nil {
+		s.writeAdminError(w, "broadcast", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sent": res.Sent, "failed": res.Failed})
 }
 
 // adminIDAction builds a handler for admin mutations whose body is a single

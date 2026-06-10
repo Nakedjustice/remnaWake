@@ -72,8 +72,9 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 
 	rows := make([][]tg.InlineKeyboardButton, 0, len(subs)+5)
 	if url := s.getWebAppURL(); url != "" {
-		// Renewal lives in the mini app, so the inline «Продлить» buttons
-		// would duplicate it — show one or the other.
+		// Renewal, gifts and invites live in the mini app, so their inline
+		// buttons would duplicate it — keep only the mini app entry and
+		// profile linking, which stays a chat flow.
 		rows = append(rows, []tg.InlineKeyboardButton{{
 			Text:   "🖥 Открыть мини-приложение",
 			WebApp: &tg.WebAppInfo{URL: url},
@@ -89,11 +90,13 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 				CallbackData: fmt.Sprintf("cab:pay:%d", subs[i].RemnawaveID),
 			}})
 		}
+		rows = append(rows,
+			[]tg.InlineKeyboardButton{{Text: "🎁 Подарить подписку", CallbackData: "menu:gift"}},
+			[]tg.InlineKeyboardButton{{Text: "📦 Мои подарки", CallbackData: "menu:mygifts"}},
+			[]tg.InlineKeyboardButton{{Text: "👥 Пригласить пользователя", CallbackData: "menu:invite"}},
+		)
 	}
 	rows = append(rows,
-		[]tg.InlineKeyboardButton{{Text: "🎁 Подарить подписку", CallbackData: "menu:gift"}},
-		[]tg.InlineKeyboardButton{{Text: "📦 Мои подарки", CallbackData: "menu:mygifts"}},
-		[]tg.InlineKeyboardButton{{Text: "👥 Пригласить пользователя", CallbackData: "menu:invite"}},
 		[]tg.InlineKeyboardButton{{Text: "🔁 Привязать другой профиль", CallbackData: "menu:register"}},
 	)
 
