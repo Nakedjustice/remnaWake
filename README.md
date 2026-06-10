@@ -269,6 +269,55 @@ Example with the bundled compose file: uncomment the `ports` section, then
 proxy `https://bot.example.com` → `127.0.0.1:8080` and set
 `WEBAPP_URL=https://bot.example.com`.
 
+### Reverse proxy templates
+
+Replace `bot.example.com` with your domain in either template.
+
+**Caddy** (`/etc/caddy/Caddyfile`) — TLS certificates are obtained and renewed
+automatically:
+
+```caddyfile
+bot.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+**nginx** (`/etc/nginx/sites-available/remnawake-webapp`) — assumes
+certificates from certbot (`certbot --nginx -d bot.example.com` can also add
+the TLS bits for you):
+
+```nginx
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name bot.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/bot.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/bot.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 80;
+    server_name bot.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+Enable and reload:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/remnawake-webapp /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
 ## Running
 
 ### Install on your server (recommended)
