@@ -323,6 +323,68 @@ sudo ln -s /etc/nginx/sites-available/remnawake-webapp /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+### Запуск рядом с remnawave (Caddy в контейнере)
+
+Если у вас уже работает [remnawave](https://remna.st) со своим Caddy **в
+контейнере**, не используйте пример с `127.0.0.1:8080` выше. Внутри контейнера
+Caddy адрес `127.0.0.1` указывает на сам Caddy, а не на хост — поэтому, как и
+панель remnawave и страница подписки, бот должен быть доступен по **имени
+контейнера** через общую docker-сеть.
+
+**1. Подключите бота к сети remnawave.** В `docker-compose.yml` бота добавьте
+внешнюю сеть (и не указывайте блок `ports:` — Caddy достучится до бота по
+docker-сети, порт 8080 не нужно публиковать на хост):
+
+```yaml
+services:
+  bot:
+    image: ghcr.io/nakedjustice/remnawake:main
+    pull_policy: always
+    container_name: remnaWake-bot
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      DB_PATH: /data/bot.db
+    volumes:
+      - botdata:/data
+    networks:
+      - remnawave-network
+
+networks:
+  remnawave-network:
+    name: remnawave-network
+    external: true
+
+volumes:
+  botdata:
+```
+
+**2. Добавьте сайт в существующий `Caddyfile`** рядом с записями remnawave,
+проксируя на имя контейнера и порт бота:
+
+```caddyfile
+https://bot.example.com {
+    reverse_proxy remnaWake-bot:8080
+}
+```
+
+**3. Укажите этот адрес в `WEBAPP_URL`** в `.env`:
+
+```
+WEBAPP_URL=https://bot.example.com
+```
+
+Затем поднимите бота и перезагрузите Caddy:
+
+```bash
+docker compose up -d            # в каталоге remnaWake
+docker compose restart caddy    # в каталоге caddy
+```
+
+Убедитесь, что `bot.example.com` указывает на этот сервер в DNS до перезагрузки,
+иначе Caddy не сможет выпустить сертификат.
+
 ## Запуск
 
 ### Установка на сервер (рекомендуется)
