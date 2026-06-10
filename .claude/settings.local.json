@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//usr/local/go/bin/**)",
+      "Bash(flatpak list *)"
+    ]
+  }
+}

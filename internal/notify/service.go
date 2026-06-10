@@ -80,8 +80,8 @@ func (s *Service) Run(ctx context.Context) error {
 			continue
 		}
 
-		text := fmt.Sprintf("⏰ Подписка истекает через %d %s. Для продления оплатите подписку.",
-			days, pluralDays(days))
+		text := fmt.Sprintf("⏰ %s, ваша подписка истекает %s — через %d %s.\nДля продления оплатите подписку.",
+			u.Username, u.ExpireAt.Format("02.01.2006"), days, pluralDays(days))
 
 		chatID := *u.TelegramID
 		// Persist a snapshot so the «Я оплатил» flow works (even after a restart).
