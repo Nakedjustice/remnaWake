@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Nakedjustice/remnaWake/internal/store"
 )
@@ -41,7 +42,8 @@ type WebGift struct {
 	Months      int    `json:"months"`
 	Status      string `json:"status"`
 	StatusLabel string `json:"status_label"`
-	CreatedAt   string `json:"created_at"` // DD.MM.YYYY
+	CreatedAt   string `json:"created_at"`     // DD.MM.YYYY
+	Link        string `json:"link,omitempty"` // t.me redemption deep link, issued gifts only
 }
 
 // WebInvites is the invite-requests summary shown in the mini app.
@@ -120,13 +122,17 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 	}
 	for i := range gifts {
 		g := &gifts[i]
-		out.Gifts = append(out.Gifts, WebGift{
+		wg := WebGift{
 			Code:        g.Code,
 			Months:      g.Months,
 			Status:      g.Status,
 			StatusLabel: giftStatusLabel(g),
 			CreatedAt:   g.CreatedAt.Format("02.01.2006"),
-		})
+		}
+		if g.Status == "issued" {
+			wg.Link = s.giftDeepLink(g.Code)
+		}
+		out.Gifts = append(out.Gifts, wg)
 	}
 
 	invites, err := s.store.ListInviteRequestsByInviter(ctx, telegramID)
@@ -208,5 +214,93 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 	_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
 		"✅ Заявка на продление «%s» на %d мес. отправлена администратору. После подтверждения оплаты подписка будет продлена.",
 		sub.Username, months))
+	return nil
+}
+
+// giftDeepLink returns the t.me redemption link for a gift code, or "" when
+// the bot username is unknown (the chat flow then falls back to manual /start
+// instructions; the mini app simply hides the link).
+func (s *Service) giftDeepLink(code string) string {
+	bu := s.getBotUsername()
+	if bu == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://t.me/%s?start=%s%s", bu, giftDeepLinkPrefix, code)
+}
+
+// CreateGiftRequest creates a pending gift-code purchase from the mini app,
+// mirroring the chat /gift flow: subscribers only, tariff-priced, and the
+// admins get the same confirm/reject buttons (gc_ok/gc_rej) as in chat. The
+// buyer also gets a chat confirmation so the request has a visible trace
+// outside the mini app.
+func (s *Service) CreateGiftRequest(ctx context.Context, telegramID int64, months int) error {
+	if !s.isEnabled() {
+		return ErrPaymentsDisabled
+	}
+	if months < 1 {
+		return ErrBadInput
+	}
+	subs, err := s.finder.FindByTelegramID(ctx, telegramID)
+	if err != nil {
+		return fmt.Errorf("find by telegram id: %w", err)
+	}
+	if len(subs) == 0 {
+		return ErrNotLinked
+	}
+	price, err := s.giftPriceFor(ctx, months)
+	if err != nil {
+		return err
+	}
+	giftID, code, err := s.createGiftCodeRow(ctx, subs[0].Username, telegramID, months, price)
+	if err != nil {
+		return fmt.Errorf("create gift code: %w", err)
+	}
+	s.notifyAdminsGiftRequest(ctx, giftID, code, subs[0].Username, telegramID, months, price)
+	_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
+		"✅ Заявка на подарочную подписку (%d мес.) отправлена администратору. Ожидайте подтверждения оплаты.", months))
+	return nil
+}
+
+// CreateInviteRequest creates a pending invite from the mini app, mirroring
+// the chat /invite flow: subscribers only, the new user is priced at the
+// 1-month tariff, and the admins get the same approve/reject buttons
+// (inv_ok/inv_rej) as in chat.
+func (s *Service) CreateInviteRequest(ctx context.Context, telegramID int64, username string) error {
+	if !s.isEnabled() || s.creator == nil {
+		return ErrPaymentsDisabled
+	}
+	username = strings.TrimSpace(username)
+	if !isValidUsername(username) {
+		return ErrBadInput
+	}
+	subs, err := s.finder.FindByTelegramID(ctx, telegramID)
+	if err != nil {
+		return fmt.Errorf("find by telegram id: %w", err)
+	}
+	if len(subs) == 0 {
+		return ErrNotLinked
+	}
+	price := 0
+	tariff, err := s.store.GetTariff(ctx, 1)
+	if err != nil {
+		return fmt.Errorf("get tariff: %w", err)
+	}
+	if tariff != nil {
+		price = tariff.Price
+	}
+	reqID, err := s.store.CreateInviteRequest(ctx, store.InviteRequest{
+		InviterTelegramID: telegramID,
+		InviterUsername:   subs[0].Username,
+		NewUsername:       username,
+		Months:            1,
+		Price:             price,
+		Status:            "pending",
+	})
+	if err != nil {
+		return fmt.Errorf("create invite request: %w", err)
+	}
+	s.notifyAdminsInviteRequest(ctx, reqID, subs[0].Username, telegramID, username, price)
+	_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
+		"✅ Заявка на приглашение пользователя «%s» отправлена администратору.", username))
 	return nil
 }

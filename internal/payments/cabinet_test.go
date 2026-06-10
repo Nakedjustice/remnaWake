@@ -110,21 +110,10 @@ func TestSendCabinetWebAppHidesPayButtons(t *testing.T) {
 	if !hasWebApp {
 		t.Error("expected mini app button when webapp is enabled")
 	}
-	for _, cb := range callbacks {
-		if strings.HasPrefix(cb, "cab:pay:") {
-			t.Errorf("expected no renew buttons with webapp enabled, got %v", callbacks)
-		}
-	}
-	for _, want := range []string{"menu:gift", "menu:mygifts", "menu:invite", "menu:register"} {
-		found := false
-		for _, cb := range callbacks {
-			if cb == want {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("expected button %q, got %v", want, callbacks)
-		}
+	// Renewal, gifts and invites live in the mini app now; only profile
+	// linking stays as an inline button.
+	if len(callbacks) != 1 || callbacks[0] != "menu:register" {
+		t.Errorf("expected only menu:register with webapp enabled, got %v", callbacks)
 	}
 }
 

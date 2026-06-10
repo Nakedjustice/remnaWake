@@ -84,8 +84,31 @@ func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 		return s.consumeTariffMonths(ctx, chatID, text)
 	case adminInputTariffPrice:
 		return s.consumeTariffPrice(ctx, chatID, text)
+	case adminInputBroadcast:
+		return s.consumeBroadcastText(ctx, chatID, text)
 	}
 	return false
+}
+
+// consumeBroadcastText stores the broadcast draft and asks for confirmation.
+// The step goes back to adminInputNone so further chat is not intercepted; the
+// draft stays in pendingBroadcast until the admin presses a confirm button.
+func (s *Service) consumeBroadcastText(ctx context.Context, chatID int64, text string) bool {
+	s.mu.Lock()
+	state := s.adminInput[chatID]
+	state.step = adminInputNone
+	state.pendingBroadcast = text
+	s.adminInput[chatID] = state
+	s.mu.Unlock()
+	kb := &tg.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tg.InlineKeyboardButton{{
+			{Text: "✅ Отправить", CallbackData: "adm:bc_send"},
+			{Text: "❌ Отмена", CallbackData: "adm:bc_cancel"},
+		}},
+	}
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID,
+		"Текст рассылки:\n\n"+text+"\n\nОтправить всем пользователям?", kb)
+	return true
 }
 
 func (s *Service) consumeRequisitesText(ctx context.Context, chatID int64, text string) bool {
@@ -187,6 +210,7 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 			{{Text: "💳 Посмотреть реквизиты", CallbackData: "adm:req"}},
 			{{Text: "🎁 Подарочные коды", CallbackData: "adm:gifts"}},
 			{{Text: "✏️ Изменить реквизиты", CallbackData: "adm:setreq"}},
+			{{Text: "📢 Рассылка всем", CallbackData: "adm:bcast"}},
 		},
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, "Меню администратора", kb)

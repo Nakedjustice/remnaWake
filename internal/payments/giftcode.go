@@ -3,6 +3,7 @@ package payments
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -164,30 +165,18 @@ func (s *Service) handleGiftCodePick(ctx context.Context, cb *tg.CallbackQuery) 
 		return true
 	}
 
-	price := 0
-	tariff, err := s.store.GetTariff(ctx, months)
+	price, err := s.giftPriceFor(ctx, months)
+	if errors.Is(err, ErrTariffUnknown) {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Этот тариф больше недоступен.")
+		return true
+	}
 	if err != nil {
-		s.logger.Error("gift: get tariff failed", "err", err.Error())
+		s.logger.Error("gift: resolve price failed", "err", err.Error())
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
 		return true
 	}
-	if tariff != nil {
-		price = tariff.Price
-	} else {
-		// Only allowed when no tariffs are configured at all (the 1-month fallback).
-		all, lerr := s.store.ListTariffs(ctx)
-		if lerr != nil {
-			s.logger.Error("gift: list tariffs failed", "err", lerr.Error())
-			_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
-			return true
-		}
-		if len(all) > 0 {
-			_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Этот тариф больше недоступен.")
-			return true
-		}
-	}
 
-	giftID, code, err := s.createGiftCodeRow(ctx, g, months, price)
+	giftID, code, err := s.createGiftCodeRow(ctx, g.buyerName, g.buyerTGID, months, price)
 	if err != nil {
 		s.logger.Error("gift: create gift code failed", "err", err.Error())
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
@@ -201,6 +190,35 @@ func (s *Service) handleGiftCodePick(ctx context.Context, cb *tg.CallbackQuery) 
 		fmt.Sprintf("✅ Заявка на подарочную подписку (%d мес.) отправлена администратору. Ожидайте подтверждения оплаты.", months), nil)
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отправлена администратору.")
 
+	s.notifyAdminsGiftRequest(ctx, giftID, code, buyerName, buyerTGID, months, price)
+	return true
+}
+
+// giftPriceFor resolves the price of a gift of the given length: the tariff
+// price when configured, 0 in the no-tariffs fallback, ErrTariffUnknown when
+// tariffs exist but none matches the requested months.
+func (s *Service) giftPriceFor(ctx context.Context, months int) (int, error) {
+	tariff, err := s.store.GetTariff(ctx, months)
+	if err != nil {
+		return 0, fmt.Errorf("get tariff: %w", err)
+	}
+	if tariff != nil {
+		return tariff.Price, nil
+	}
+	all, err := s.store.ListTariffs(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("list tariffs: %w", err)
+	}
+	if len(all) > 0 {
+		return 0, ErrTariffUnknown
+	}
+	return 0, nil
+}
+
+// notifyAdminsGiftRequest sends every admin the pending gift purchase with
+// confirm/reject buttons and remembers the message refs so resolving clears
+// the buttons in all admin chats. Shared by the chat flow and the mini app.
+func (s *Service) notifyAdminsGiftRequest(ctx context.Context, giftID int64, code, buyerName string, buyerTGID int64, months, price int) {
 	priceStr := "бесплатно"
 	if price > 0 {
 		priceStr = s.priceLabel(price)
@@ -227,12 +245,11 @@ func (s *Service) handleGiftCodePick(ctx context.Context, cb *tg.CallbackQuery) 
 	s.mu.Lock()
 	s.giftMsgs[giftID] = refs
 	s.mu.Unlock()
-	return true
 }
 
 // createGiftCodeRow generates a unique code and inserts the pending row,
 // retrying on the (astronomically unlikely) UNIQUE collision.
-func (s *Service) createGiftCodeRow(ctx context.Context, g *giftCodeState, months, price int) (int64, string, error) {
+func (s *Service) createGiftCodeRow(ctx context.Context, buyerName string, buyerTGID int64, months, price int) (int64, string, error) {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		code, err := generateGiftCode()
@@ -241,8 +258,8 @@ func (s *Service) createGiftCodeRow(ctx context.Context, g *giftCodeState, month
 		}
 		id, err := s.store.CreateGiftCode(ctx, store.GiftCode{
 			Code:            code,
-			BuyerTelegramID: g.buyerTGID,
-			BuyerUsername:   g.buyerName,
+			BuyerTelegramID: buyerTGID,
+			BuyerUsername:   buyerName,
 			Months:          months,
 			Price:           price,
 		})

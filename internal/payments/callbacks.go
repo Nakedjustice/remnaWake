@@ -311,6 +311,12 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.sendAdminGiftList(ctx, chatID)
 	case strings.HasPrefix(cb.Data, "adm:grev:"):
 		s.handleAdminGiftRevoke(ctx, chatID, cb.Data)
+	case cb.Data == "adm:bcast":
+		s.startBroadcastFlow(ctx, chatID)
+	case cb.Data == "adm:bc_send":
+		s.handleBroadcastSend(ctx, chatID, cb)
+	case cb.Data == "adm:bc_cancel":
+		s.handleBroadcastCancel(ctx, chatID, cb)
 	}
 	return true
 }
@@ -405,6 +411,60 @@ func (s *Service) startSetRequisitesFlow(ctx context.Context, chatID int64) {
 	s.adminInput[chatID] = state
 	s.mu.Unlock()
 	_ = s.bot.SendPlain(ctx, chatID, "Отправьте новый текст реквизитов:")
+}
+
+func (s *Service) startBroadcastFlow(ctx context.Context, chatID int64) {
+	s.mu.Lock()
+	state := s.adminInput[chatID]
+	state.step = adminInputBroadcast
+	state.pendingBroadcast = ""
+	s.adminInput[chatID] = state
+	s.mu.Unlock()
+	_ = s.bot.SendPlain(ctx, chatID, "Отправьте текст рассылки следующим сообщением.")
+}
+
+func (s *Service) handleBroadcastSend(ctx context.Context, chatID int64, cb *tg.CallbackQuery) {
+	s.mu.Lock()
+	state := s.adminInput[chatID]
+	text := state.pendingBroadcast
+	state.pendingBroadcast = ""
+	s.adminInput[chatID] = state
+	s.mu.Unlock()
+	if cb.Message != nil {
+		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
+	}
+	if text == "" {
+		_ = s.bot.SendPlain(ctx, chatID, "Нет текста для рассылки. Начните заново через меню.")
+		return
+	}
+	_ = s.bot.SendPlain(ctx, chatID, "Рассылка запущена…")
+	// The update loop is sequential; a large broadcast paced at ~20 msg/s would
+	// block the bot for the whole run, so send in the background and report.
+	go func() {
+		sent, failed, err := s.broadcastMessage(ctx, text)
+		if err != nil {
+			s.logger.Error("broadcast: list users failed", "err", err.Error())
+			_ = s.bot.SendPlain(ctx, chatID, "Ошибка получения списка пользователей, рассылка не выполнена.")
+			return
+		}
+		_ = s.bot.SendPlain(ctx, chatID,
+			fmt.Sprintf("Рассылка завершена: отправлено %d, ошибок %d.", sent, failed))
+	}()
+}
+
+func (s *Service) handleBroadcastCancel(ctx context.Context, chatID int64, cb *tg.CallbackQuery) {
+	s.mu.Lock()
+	state := s.adminInput[chatID]
+	state.pendingBroadcast = ""
+	if state.step == adminInputBroadcast {
+		state.step = adminInputNone
+	}
+	s.adminInput[chatID] = state
+	s.mu.Unlock()
+	if cb.Message != nil {
+		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
+	}
+	_ = s.bot.SendPlain(ctx, chatID, "Рассылка отменена.")
 }
 
 func (s *Service) startAddTariffFlow(ctx context.Context, chatID int64) {

@@ -43,6 +43,24 @@ func TestSendMenuShowsTariffAndGiftButtons(t *testing.T) {
 	}
 }
 
+func TestSendMenuWithWebAppHidesAllButRegister(t *testing.T) {
+	svc, bot, _, _ := newMenuService(t)
+	svc.SetWebAppURL("https://app.example.com")
+	if !svc.SendMenu(context.Background(), 200) {
+		t.Fatal("menu should be sent")
+	}
+	kb := bot.sent[0].Keyboard
+	if kb == nil || len(kb.InlineKeyboard) != 2 {
+		t.Fatalf("expected 2 rows (mini app + register), got %+v", kb)
+	}
+	if kb.InlineKeyboard[0][0].WebApp == nil || kb.InlineKeyboard[0][0].WebApp.URL != "https://app.example.com" {
+		t.Fatalf("first row must open the mini app: %+v", kb.InlineKeyboard[0])
+	}
+	if kb.InlineKeyboard[1][0].CallbackData != "menu:register" {
+		t.Fatalf("second row must be register: %+v", kb.InlineKeyboard[1])
+	}
+}
+
 func TestSendTariffsListsPrices(t *testing.T) {
 	svc, bot, _, st := newMenuService(t)
 	ctx := context.Background()

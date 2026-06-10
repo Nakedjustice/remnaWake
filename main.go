@@ -281,6 +281,18 @@ func (f rwFinder) FindByUsername(ctx context.Context, username string) (*payment
 	return &s, nil
 }
 
+func (f rwFinder) ListAll(ctx context.Context) ([]payments.Subscriber, error) {
+	us, err := f.c.GetUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]payments.Subscriber, 0, len(us))
+	for i := range us {
+		out = append(out, toSubscriber(us[i]))
+	}
+	return out, nil
+}
+
 // rwCreator adapts *remnawave.Client to payments.Creator.
 type rwCreator struct{ c *remnawave.Client }
 
