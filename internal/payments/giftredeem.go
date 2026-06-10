@@ -106,9 +106,18 @@ func (s *Service) StartGiftRedemption(ctx context.Context, chatID int64, rawCode
 			"🎁 Вам подарили подписку на %d мес.!\n\nВведите желаемое имя пользователя для вашего профиля (буквы, цифры и «_», от 3 до 32 символов). /cancel — отмена.",
 			g.Months))
 	case 1:
-		// Existing subscriber: extend their profile right away.
+		// Existing subscriber: ask for confirmation so an accidental tap on
+		// the deep link doesn't consume the gift.
+		st.candidates = subs
 		s.setRedeem(chatID, st)
-		s.redeemExtend(ctx, chatID, st, subs[0])
+		kb := &tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{
+			{{Text: "✅ Активировать", CallbackData: "gc_use:0"}},
+			{{Text: "Отмена", CallbackData: "gc_redeem_cancel"}},
+		}}
+		_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID,
+			fmt.Sprintf("🎁 Вам подарили подписку на %d мес.\n\nАктивировать для профиля «%s» (подписка до %s)? Срок будет продлён на %d мес.",
+				g.Months, subs[0].Username, subs[0].ExpireAt.Format("02.01.2006"), g.Months),
+			kb)
 	default:
 		// Several profiles on this Telegram ID: let the user pick which to extend.
 		st.candidates = subs
