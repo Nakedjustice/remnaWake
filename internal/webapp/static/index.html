@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Личный кабинет</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --secondary-bg: var(--tg-theme-secondary-bg-color, #f1f1f4);
+    --text: var(--tg-theme-text-color, #000000);
+    --hint: var(--tg-theme-hint-color, #707579);
+    --link: var(--tg-theme-link-color, #2481cc);
+    --button: var(--tg-theme-button-color, #2481cc);
+    --button-text: var(--tg-theme-button-text-color, #ffffff);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 12px 12px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--secondary-bg);
+    color: var(--text);
+  }
+  h1 { font-size: 20px; margin: 8px 4px 16px; }
+  .card {
+    background: var(--bg);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 15px; }
+  .row .k { color: var(--hint); flex-shrink: 0; }
+  .row .v { text-align: right; word-break: break-word; }
+  .badge { font-weight: 600; }
+  .sub-link {
+    display: block;
+    font-size: 13px;
+    color: var(--link);
+    word-break: break-all;
+    margin: 6px 0 2px;
+    text-decoration: none;
+  }
+  button {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-radius: 12px;
+    padding: 12px;
+    margin-top: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    background: var(--button);
+    color: var(--button-text);
+    cursor: pointer;
+  }
+  button.secondary {
+    background: var(--secondary-bg);
+    color: var(--text);
+  }
+  button:disabled { opacity: .55; }
+  .tariffs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .tariffs button {
+    flex: 1 1 calc(50% - 4px);
+    width: auto;
+    margin-top: 0;
+    padding: 10px 6px;
+  }
+  .tariffs button.selected { outline: 3px solid var(--link); }
+  .hint { color: var(--hint); font-size: 13px; margin-top: 8px; }
+  pre.requisites {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: inherit;
+    font-size: 14px;
+    background: var(--secondary-bg);
+    border-radius: 10px;
+    padding: 10px;
+    margin: 8px 0 0;
+  }
+  #status { text-align: center; color: var(--hint); padding: 32px 8px; font-size: 15px; }
+  .gift { border-top: 1px solid var(--secondary-bg); padding: 8px 0; font-size: 14px; }
+  .gift:first-of-type { border-top: 0; }
+  .gift .code { font-family: ui-monospace, monospace; }
+  .gift .st { color: var(--hint); font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>👤 Личный кабинет</h1>
+<div id="status">Загрузка…</div>
+<div id="app" hidden></div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+const statusEl = document.getElementById('status');
+const appEl = document.getElementById('app');
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function row(parent, k, v) {
+  const r = el('div', 'row');
+  r.appendChild(el('span', 'k', k));
+  r.appendChild(el('span', 'v', v));
+  parent.appendChild(r);
+  return r;
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: {
+      'Authorization': 'tma ' + tg.initData,
+      'Content-Type': 'application/json',
+      ...(opts.headers || {}),
+    },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || ('Ошибка ' + res.status));
+  return body;
+}
+
+function daysWord(n) {
+  const last = n % 100;
+  if (last >= 11 && last <= 14) return 'дней';
+  switch (n % 10) {
+    case 1: return 'день';
+    case 2: case 3: case 4: return 'дня';
+    default: return 'дней';
+  }
+}
+
+function renderProfile(p, data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '📡 ' + p.username));
+  const st = row(card, 'Статус', p.status_label);
+  st.querySelector('.v').classList.add('badge');
+  if (p.expire_at) {
+    let v = p.expire_at;
+    if (p.days_left > 0) v += ` (осталось ${p.days_left} ${daysWord(p.days_left)})`;
+    row(card, 'Действует до', v);
+  }
+  if (p.subscription_url) {
+    const a = el('a', 'sub-link', p.subscription_url);
+    a.href = p.subscription_url;
+    a.target = '_blank';
+    card.appendChild(a);
+    const copy = el('button', 'secondary', '📋 Скопировать ссылку');
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(p.subscription_url);
+        copy.textContent = '✅ Скопировано';
+        setTimeout(() => copy.textContent = '📋 Скопировать ссылку', 1500);
+      } catch { tg.showAlert('Не удалось скопировать, выделите ссылку вручную.'); }
+    };
+    card.appendChild(copy);
+  }
+  card.appendChild(renderRenew(p, data));
+  return card;
+}
+
+function renderRenew(p, data) {
+  const wrap = el('div');
+  let months = 0;
+  const tariffs = data.tariffs || [];
+  if (tariffs.length) {
+    wrap.appendChild(el('div', 'hint', 'Продление — выберите период:'));
+    const grid = el('div', 'tariffs');
+    tariffs.forEach(t => {
+      const b = el('button', 'secondary', `${t.months} мес. — ${t.price_label}`);
+      b.onclick = () => {
+        months = t.months;
+        grid.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
+        b.classList.add('selected');
+        pay.disabled = false;
+      };
+      grid.appendChild(b);
+    });
+    wrap.appendChild(grid);
+  } else {
+    months = 1;
+  }
+  const pay = el('button', null, '💳 Оплатить / продлить');
+  pay.disabled = tariffs.length > 0;
+  pay.onclick = async () => {
+    pay.disabled = true;
+    pay.textContent = 'Отправка…';
+    try {
+      await api('/api/renew', {
+        method: 'POST',
+        body: JSON.stringify({ remnawave_id: p.remnawave_id, months }),
+      });
+      pay.textContent = '✅ Заявка отправлена';
+      tg.showAlert('Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.');
+    } catch (e) {
+      pay.disabled = false;
+      pay.textContent = '💳 Оплатить / продлить';
+      tg.showAlert(e.message);
+    }
+  };
+  wrap.appendChild(pay);
+  return wrap;
+}
+
+function renderUnlinked() {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, 'Аккаунт не привязан'));
+  card.appendChild(el('div', 'hint',
+    'Ваш Telegram пока не привязан к профилю подписки. Привяжите аккаунт в чате с ботом командой /register — и здесь появятся статус, дата окончания и ссылка.'));
+  const b = el('button', null, '🔗 Привязать в чате');
+  b.onclick = () => tg.close();
+  card.appendChild(b);
+  return card;
+}
+
+function render(data) {
+  appEl.textContent = '';
+
+  if (!data.linked) {
+    appEl.appendChild(renderUnlinked());
+  } else {
+    (data.profiles || []).forEach(p => appEl.appendChild(renderProfile(p, data)));
+  }
+
+  if (data.requisites) {
+    const card = el('div', 'card');
+    card.appendChild(el('h2', null, '💳 Реквизиты для оплаты'));
+    card.appendChild(Object.assign(el('pre', 'requisites'), { textContent: data.requisites }));
+    appEl.appendChild(card);
+  }
+
+  if ((data.gifts || []).length) {
+    const card = el('div', 'card');
+    card.appendChild(el('h2', null, '🎁 Мои подарки'));
+    data.gifts.forEach(g => {
+      const d = el('div', 'gift');
+      d.appendChild(el('div', 'code', `${g.code} — ${g.months} мес. (${g.created_at})`));
+      d.appendChild(el('div', 'st', g.status_label));
+      card.appendChild(d);
+    });
+    appEl.appendChild(card);
+  }
+
+  if (data.invites) {
+    const card = el('div', 'card');
+    card.appendChild(el('h2', null, '👥 Приглашения'));
+    let v = String(data.invites.total);
+    if (data.invites.pending > 0) v += ` (${data.invites.pending} на рассмотрении)`;
+    row(card, 'Всего', v);
+    appEl.appendChild(card);
+  }
+
+  const actions = el('div', 'card');
+  actions.appendChild(el('h2', null, 'Действия в чате'));
+  actions.appendChild(el('div', 'hint', 'Подарки, приглашения и привязка профиля оформляются в диалоге с ботом.'));
+  const back = el('button', 'secondary', '💬 Вернуться в чат');
+  back.onclick = () => tg.close();
+  actions.appendChild(back);
+  appEl.appendChild(actions);
+
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+(async () => {
+  if (!tg.initData) {
+    statusEl.textContent = 'Откройте это приложение из Telegram.';
+    return;
+  }
+  try {
+    render(await api('/api/me'));
+  } catch (e) {
+    statusEl.textContent = '⚠️ ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>

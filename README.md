@@ -34,6 +34,9 @@ the bot extends the subscription by the chosen number of months.
   reply button installed on `/start`; unlinked users are offered the linking flow.
 - Welcome message on the `/start` command, with a **🔗 Привязать аккаунт** button
   that walks new users through linking (and warns that without it no notifications arrive).
+- **Telegram Mini App** — a web version of the personal cabinet (profiles,
+  expiry, subscription link, tariffs with a renew button, gifts) opened from
+  the chat menu button; enabled by setting `WEBAPP_URL` (see below).
 - Structured logs to stdout (`log/slog` JSON).
 - Multi-stage Docker image based on `distroless/static`, `restart: unless-stopped`.
 
@@ -241,6 +244,30 @@ and **why it matters** (no link = no notifications), plus a **🔗 Привяз�
 | `RUN_ON_START`         | no       | `true`           | Run the job immediately on start                             |
 | `DB_PATH`              | no       | `/data/bot.db`   | SQLite database file path                                    |
 | `CURRENCY`             | no       | `₽`              | Currency label shown next to tariff prices                   |
+| `WEBAPP_URL`           | no       | —                | Public HTTPS URL of the Telegram Mini App (empty = mini app off) |
+| `WEBAPP_LISTEN`        | no       | `:8080`          | Local bind address for the mini app server (behind your reverse proxy) |
+
+## Telegram Mini App
+
+When `WEBAPP_URL` is set, the bot serves a Mini App version of the personal
+cabinet and registers it as the chat **menu button** (plus an
+«🖥 Открыть мини-приложение» button inside `/me`). The app shows linked
+profiles with status and expiry, the subscription link with one-tap copy,
+payment requisites, gift/invite summaries, and lets the user pick a tariff and
+send a renewal request straight to the admin.
+
+Requirements:
+
+- The mini app is served by the bot itself on `WEBAPP_LISTEN` (default `:8080`).
+  Telegram only opens Mini Apps over **HTTPS**, so put a reverse proxy
+  (nginx / Caddy / Traefik) in front and point `WEBAPP_URL` at the public
+  HTTPS address that forwards to the container's port 8080.
+- Requests are authenticated by validating Telegram `initData` (HMAC signed
+  with the bot token) — no extra secrets or logins needed.
+
+Example with the bundled compose file: uncomment the `ports` section, then
+proxy `https://bot.example.com` → `127.0.0.1:8080` and set
+`WEBAPP_URL=https://bot.example.com`.
 
 ## Running
 

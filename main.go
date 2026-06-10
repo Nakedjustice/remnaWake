@@ -16,6 +16,7 @@ import (
 	"github.com/Nakedjustice/remnaWake/internal/scheduler"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 	tgbot "github.com/Nakedjustice/remnaWake/internal/telegram"
+	"github.com/Nakedjustice/remnaWake/internal/webapp"
 )
 
 func main() {
@@ -37,6 +38,7 @@ func main() {
 		"dry_run", cfg.DryRun,
 		"run_on_start", cfg.RunOnStart,
 		"payment_notifications_enabled", len(cfg.Telegram.AdminIDs) > 0,
+		"webapp_enabled", cfg.WebApp.Enabled(),
 	)
 
 	rwClient, err := remnawave.NewClient(cfg.Remnawave.BaseURL, cfg.Remnawave.APIToken, cfg.HTTP.Timeout)
@@ -76,6 +78,19 @@ func main() {
 			}
 		}
 		go pollTelegramCallbacks(rootCtx, bot, pay, logger)
+	}
+
+	if cfg.WebApp.Enabled() {
+		pay.SetWebAppURL(cfg.WebApp.PublicURL)
+		if err := bot.SetChatMenuButton(rootCtx, "Кабинет", cfg.WebApp.PublicURL); err != nil {
+			logger.Warn("set chat menu button failed", "err", err.Error())
+		}
+		srv := webapp.NewServer(pay, cfg.Telegram.BotToken, logger)
+		go func() {
+			if err := srv.Run(rootCtx, cfg.WebApp.Listen); err != nil {
+				logger.Error("mini app server failed", "err", err.Error())
+			}
+		}()
 	}
 
 	if cfg.RunOnStart {

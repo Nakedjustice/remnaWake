@@ -16,6 +16,7 @@ type Config struct {
 	Telegram   TelegramConfig
 	Scheduler  SchedulerConfig
 	HTTP       HTTPConfig
+	WebApp     WebAppConfig
 	LogLevel   slog.Level
 	DryRun     bool
 	RunOnStart bool
@@ -43,6 +44,19 @@ type HTTPConfig struct {
 	Timeout time.Duration
 }
 
+// WebAppConfig configures the embedded Telegram Mini App server. The mini app
+// is enabled only when PublicURL is set; Listen is the local bind address that
+// a reverse proxy (providing HTTPS at PublicURL) forwards to.
+type WebAppConfig struct {
+	PublicURL string
+	Listen    string
+}
+
+// Enabled reports whether the mini app server should be started.
+func (w WebAppConfig) Enabled() bool {
+	return w.PublicURL != ""
+}
+
 func Load() (*Config, error) {
 	adminIDs, err := parseAdminIDs(os.Getenv("TELEGRAM_ADMIN_ID"))
 	if err != nil {
@@ -62,6 +76,10 @@ func Load() (*Config, error) {
 		Scheduler: SchedulerConfig{
 			Timezone: getenv("TZ", "Europe/Moscow"),
 			RunAt:    getenv("RUN_AT", "09:00"),
+		},
+		WebApp: WebAppConfig{
+			PublicURL: strings.TrimRight(strings.TrimSpace(os.Getenv("WEBAPP_URL")), "/"),
+			Listen:    getenv("WEBAPP_LISTEN", ":8080"),
 		},
 		LogLevel:   parseLogLevel(getenv("LOG_LEVEL", "info")),
 		DryRun:     getenvBool("DRY_RUN", false),
@@ -95,6 +113,12 @@ func (c *Config) validate() error {
 	}
 	if c.Telegram.BotToken == "" {
 		return errors.New("TELEGRAM_BOT_TOKEN is required")
+	}
+	if c.WebApp.Enabled() {
+		u, err := url.Parse(c.WebApp.PublicURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" {
+			return fmt.Errorf("invalid WEBAPP_URL (Telegram Mini Apps require an https URL): %q", c.WebApp.PublicURL)
+		}
 	}
 	if _, err := time.Parse("15:04", c.Scheduler.RunAt); err != nil {
 		return fmt.Errorf("invalid RUN_AT (expected HH:MM): %q", c.Scheduler.RunAt)

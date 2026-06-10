@@ -70,7 +70,13 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 		b.WriteString(line + "\n")
 	}
 
-	rows := make([][]tg.InlineKeyboardButton, 0, len(subs)+4)
+	rows := make([][]tg.InlineKeyboardButton, 0, len(subs)+5)
+	if url := s.getWebAppURL(); url != "" {
+		rows = append(rows, []tg.InlineKeyboardButton{{
+			Text:   "🖥 Открыть мини-приложение",
+			WebApp: &tg.WebAppInfo{URL: url},
+		}})
+	}
 	for i := range subs {
 		label := "💳 Оплатить / продлить"
 		if len(subs) > 1 {
