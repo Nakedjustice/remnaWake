@@ -31,6 +31,17 @@ func issueGift(t *testing.T, st *store.Store, buyerTGID int64, months int) *stor
 	return g
 }
 
+// confirmRedeem presses the "Активировать" button on the single-profile
+// confirmation prompt.
+func confirmRedeem(t *testing.T, svc *Service, chatID int64) {
+	t.Helper()
+	cb := &tg.CallbackQuery{ID: "c", From: tg.User{ID: chatID},
+		Message: &tg.Message{MessageID: 9, Chat: tg.Chat{ID: chatID}}, Data: "gc_use:0"}
+	if !svc.HandleCallback(context.Background(), cb) {
+		t.Fatal("gc_use:0 should be handled")
+	}
+}
+
 func TestRedeemUnknownCode(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
 	svc.StartGiftRedemption(context.Background(), 700, "WRONGFORMAT")
@@ -63,6 +74,14 @@ func TestRedeemExtendsExistingProfile(t *testing.T) {
 	g := issueGift(t, st, 555, 3)
 
 	svc.StartGiftRedemption(ctx, 700, g.Code)
+	if ext.calls != 0 {
+		t.Fatal("must not extend before confirmation")
+	}
+	last := bot.sent[len(bot.sent)-1]
+	if last.Keyboard == nil || last.Keyboard.InlineKeyboard[0][0].CallbackData != "gc_use:0" {
+		t.Fatalf("expected confirmation keyboard: %+v", last)
+	}
+	confirmRedeem(t, svc, 700)
 
 	if ext.calls != 1 || ext.uuid != "u-700" {
 		t.Fatalf("extend not called: calls=%d uuid=%s", ext.calls, ext.uuid)
@@ -197,6 +216,7 @@ func TestRedeemSelfSuppressesBuyerNotification(t *testing.T) {
 	g := issueGift(t, st, 555, 1)
 
 	svc.StartGiftRedemption(ctx, 555, g.Code)
+	confirmRedeem(t, svc, 555)
 	for _, m := range bot.sent {
 		if strings.Contains(m.Text, "Ваш подарочный код") {
 			t.Fatalf("buyer notification must be suppressed on self-redeem: %+v", bot.sent)
@@ -218,14 +238,55 @@ func TestRedeemDryRunMarksRedeemedWithoutPanelCalls(t *testing.T) {
 	g := issueGift(t, st, 555, 1)
 
 	svc.StartGiftRedemption(ctx, 700, g.Code)
+	confirmRedeem(t, svc, 700)
 	if ext.calls != 0 {
 		t.Fatal("dry-run must not call the panel")
 	}
 	if got, _ := st.GetGiftCode(ctx, g.ID); got.Status != "redeemed" {
 		t.Fatalf("dry-run must still mark redeemed: %+v", got)
 	}
-	if !strings.Contains(bot.sent[0].Text, "dry-run") {
+	var dryRunTold bool
+	for _, m := range bot.sent {
+		if m.ChatID == 700 && strings.Contains(m.Text, "dry-run") {
+			dryRunTold = true
+		}
+	}
+	if !dryRunTold {
 		t.Fatalf("expected dry-run confirmation: %+v", bot.sent)
+	}
+}
+
+func TestRedeemSingleProfileCancelKeepsCodeIssued(t *testing.T) {
+	svc, bot, ext, st := newTestService(t)
+	ctx := context.Background()
+	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
+		700: {{RemnawaveID: 7, UUID: "u-700", Username: "bob", TelegramID: 700,
+			ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
+	}}
+	g := issueGift(t, st, 555, 1)
+
+	svc.StartGiftRedemption(ctx, 700, g.Code)
+	cancel := &tg.CallbackQuery{ID: "c", From: tg.User{ID: 700},
+		Message: &tg.Message{MessageID: 9, Chat: tg.Chat{ID: 700}}, Data: "gc_redeem_cancel"}
+	if !svc.HandleCallback(ctx, cancel) {
+		t.Fatal("gc_redeem_cancel should be handled")
+	}
+	if ext.calls != 0 {
+		t.Fatal("cancel must not extend")
+	}
+	if svc.getRedeem(700) != nil {
+		t.Fatal("redeem state must be cleared")
+	}
+	if got, _ := st.GetGiftCode(ctx, g.ID); got.Status != "issued" {
+		t.Fatalf("code must stay issued after cancel: %+v", got)
+	}
+
+	// The link still works: opening it again shows the confirmation anew.
+	bot.sent = nil
+	svc.StartGiftRedemption(ctx, 700, g.Code)
+	last := bot.sent[len(bot.sent)-1]
+	if last.Keyboard == nil || last.Keyboard.InlineKeyboard[0][0].CallbackData != "gc_use:0" {
+		t.Fatalf("expected confirmation keyboard again: %+v", last)
 	}
 }
 
