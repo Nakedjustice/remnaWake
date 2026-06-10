@@ -27,8 +27,53 @@ func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64
 	return f.renewErr
 }
 
+type adminCall struct {
+	Name string
+	A, B int64
+	Text string
+}
+
+type fakeAdmin struct {
+	panel *payments.WebAdminPanel
+	err   error
+	calls []adminCall
+}
+
+func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.WebAdminPanel, error) {
+	f.calls = append(f.calls, adminCall{Name: "panel", A: tgID})
+	return f.panel, f.err
+}
+func (f *fakeAdmin) AdminSetTariff(_ context.Context, tgID int64, months, price int) error {
+	f.calls = append(f.calls, adminCall{Name: "settariff", A: int64(months), B: int64(price)})
+	return f.err
+}
+func (f *fakeAdmin) AdminDeleteTariff(_ context.Context, tgID int64, months int) error {
+	f.calls = append(f.calls, adminCall{Name: "deltariff", A: int64(months)})
+	return f.err
+}
+func (f *fakeAdmin) AdminSetRequisites(_ context.Context, tgID int64, text string) error {
+	f.calls = append(f.calls, adminCall{Name: "setreq", Text: text})
+	return f.err
+}
+func (f *fakeAdmin) AdminRevokeGiftCode(_ context.Context, tgID, giftID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "revoke", A: giftID})
+	return f.err
+}
+func (f *fakeAdmin) AdminConfirmRequest(_ context.Context, tgID, reqID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "confirm", A: reqID})
+	return f.err
+}
+func (f *fakeAdmin) AdminRejectRequest(_ context.Context, tgID, reqID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "reject", A: reqID})
+	return f.err
+}
+
 func newTestServer(cab *fakeCabinet) *Server {
-	s := NewServer(cab, testToken, slog.New(slog.DiscardHandler))
+	return newTestServerWithAdmin(cab, &fakeAdmin{})
+}
+
+func newTestServerWithAdmin(cab *fakeCabinet, adm *fakeAdmin) *Server {
+	s := NewServer(cab, adm, testToken, slog.New(slog.DiscardHandler))
 	s.now = func() time.Time { return time.Unix(1700000000, 0) }
 	return s
 }
@@ -99,6 +144,138 @@ func TestHandleRenewErrorMapping(t *testing.T) {
 		if w.Code != tc.want {
 			t.Errorf("err=%v: status = %d, want %d", tc.err, w.Code, tc.want)
 		}
+	}
+}
+
+func TestHandleAdminAuth(t *testing.T) {
+	adm := &fakeAdmin{err: payments.ErrNotAdmin}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	// No initData at all → 401.
+	req := httptest.NewRequest("GET", "/api/admin", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 401 {
+		t.Fatalf("unauthenticated: status = %d, want 401", w.Code)
+	}
+
+	// Valid initData but not an admin → 403.
+	req = httptest.NewRequest("GET", "/api/admin", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 403 {
+		t.Fatalf("non-admin: status = %d, want 403; body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleAdminOK(t *testing.T) {
+	adm := &fakeAdmin{panel: &payments.WebAdminPanel{
+		Requisites: "card 1234",
+		Tariffs:    []payments.WebTariff{{Months: 3, Price: 450}},
+		Requests:   []payments.WebAdminRequest{{ID: 7, Username: "alice", Months: 3}},
+	}}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	req := httptest.NewRequest("GET", "/api/admin", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var got payments.WebAdminPanel
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Requisites != "card 1234" || len(got.Tariffs) != 1 || len(got.Requests) != 1 {
+		t.Fatalf("unexpected payload: %+v", got)
+	}
+}
+
+func TestHandleAdminMutations(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	post := func(path, body string) int {
+		req := httptest.NewRequest("POST", path, strings.NewReader(body))
+		req.Header.Set("Authorization", validAuth(t))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		return w.Code
+	}
+
+	cases := []struct {
+		path, body, call string
+		a, b             int64
+		text             string
+	}{
+		{"/api/admin/tariff", `{"months":3,"price":450}`, "settariff", 3, 450, ""},
+		{"/api/admin/tariff/delete", `{"months":3}`, "deltariff", 3, 0, ""},
+		{"/api/admin/requisites", `{"text":"card 1"}`, "setreq", 0, 0, "card 1"},
+		{"/api/admin/gift/revoke", `{"id":5}`, "revoke", 5, 0, ""},
+		{"/api/admin/request/confirm", `{"id":7}`, "confirm", 7, 0, ""},
+		{"/api/admin/request/reject", `{"id":8}`, "reject", 8, 0, ""},
+	}
+	for i, tc := range cases {
+		if code := post(tc.path, tc.body); code != 200 {
+			t.Fatalf("%s: status = %d, want 200", tc.path, code)
+		}
+		c := adm.calls[i]
+		if c.Name != tc.call || c.A != tc.a || (tc.b != 0 && c.B != tc.b) || c.Text != tc.text {
+			t.Fatalf("%s: call = %+v", tc.path, c)
+		}
+	}
+
+	// Malformed body → 400 without reaching the service.
+	before := len(adm.calls)
+	if code := post("/api/admin/tariff", `not json`); code != 400 {
+		t.Fatalf("malformed: status = %d, want 400", code)
+	}
+	if len(adm.calls) != before {
+		t.Fatal("service called on malformed body")
+	}
+}
+
+func TestHandleAdminErrorMapping(t *testing.T) {
+	cases := []struct {
+		err  error
+		want int
+	}{
+		{payments.ErrNotAdmin, 403},
+		{payments.ErrPaymentsDisabled, 403},
+		{payments.ErrBadInput, 400},
+		{payments.ErrTariffUnknown, 404},
+		{payments.ErrRequestNotFound, 404},
+		{payments.ErrRequestResolved, 409},
+	}
+	for _, tc := range cases {
+		srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: tc.err})
+		req := httptest.NewRequest("POST", "/api/admin/request/confirm", strings.NewReader(`{"id":7}`))
+		req.Header.Set("Authorization", validAuth(t))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Errorf("err=%v: status = %d, want %d", tc.err, w.Code, tc.want)
+		}
+	}
+}
+
+func TestHandleMeCarriesIsAdmin(t *testing.T) {
+	cab := &fakeCabinet{data: &payments.WebCabinet{IsAdmin: true}}
+	srv := newTestServer(cab)
+
+	req := httptest.NewRequest("GET", "/api/me", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["is_admin"] != true {
+		t.Fatalf("is_admin missing: %v", got)
 	}
 }
 

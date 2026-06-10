@@ -2,6 +2,7 @@ package payments
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -231,46 +232,25 @@ func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool 
 		return true
 	}
 
-	req, err := s.store.GetPaymentRequest(ctx, reqID)
-	if err != nil {
-		s.logger.Error("get payment request failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
-		return true
-	}
-	if req == nil {
+	req, newExpireAt, err := s.confirmPaymentRequest(ctx, reqID)
+	switch {
+	case errors.Is(err, ErrRequestNotFound):
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка не найдена.")
 		return true
-	}
-	if req.Status == "confirmed" {
+	case errors.Is(err, ErrRequestResolved):
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подписка уже была продлена.")
 		return true
-	}
-
-	base := req.ExpireAt
-	if now := s.now(); base.Before(now) {
-		base = now
-	}
-	newExpireAt := base.AddDate(0, req.Months, 0)
-
-	if s.dryRun {
-		s.logger.Info("dry-run: would extend", "uuid", req.UUID, "months", req.Months, "new_expire", newExpireAt.Format("2006-01-02"))
-		_, _ = s.store.ConfirmPaymentRequest(ctx, reqID, s.now())
-		s.clearPayButtons(ctx, reqID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подписка продлена (dry-run).")
-		return true
-	}
-
-	if err := s.extender.ExtendSubscriptionByUUID(ctx, req.UUID, newExpireAt); err != nil {
-		s.logger.Error("extend subscription failed", "uuid", req.UUID, "err", err.Error())
+	case err != nil:
+		s.logger.Error("confirm payment request failed", "err", err.Error())
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка продления подписки. Проверьте логи.")
 		return true
 	}
 
-	if _, err := s.store.ConfirmPaymentRequest(ctx, reqID, s.now()); err != nil {
-		s.logger.Error("mark confirmed failed", "err", err.Error())
+	if s.dryRun {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подписка продлена (dry-run).")
+		return true
 	}
 
-	s.clearPayButtons(ctx, reqID)
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Подписка продлена!")
 	_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf("✅ Подписка для %s продлена на %d мес. до %s",
 		req.Username, req.Months, newExpireAt.Format("02.01.2006")))

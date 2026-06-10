@@ -81,6 +81,33 @@
     margin: 8px 0 0;
   }
   #status { text-align: center; color: var(--hint); padding: 32px 8px; font-size: 15px; }
+  input, textarea {
+    width: 100%;
+    border: 1px solid var(--secondary-bg);
+    border-radius: 10px;
+    padding: 10px;
+    margin-top: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    background: var(--secondary-bg);
+    color: var(--text);
+  }
+  textarea { min-height: 90px; resize: vertical; }
+  .item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid var(--secondary-bg);
+    padding: 8px 0;
+    font-size: 14px;
+  }
+  .item:first-of-type { border-top: 0; }
+  .item .info { word-break: break-word; }
+  .item .st { color: var(--hint); font-size: 13px; }
+  .item button { width: auto; margin: 0; padding: 7px 12px; font-size: 13px; flex-shrink: 0; }
+  .item .btns { display: flex; gap: 6px; flex-shrink: 0; }
+  .pair { display: flex; gap: 8px; }
   .gift { border-top: 1px solid var(--secondary-bg); padding: 8px 0; font-size: 14px; }
   .gift:first-of-type { border-top: 0; }
   .gift .code { font-family: ui-monospace, monospace; }
@@ -259,6 +286,16 @@ function render(data) {
     appEl.appendChild(card);
   }
 
+  if (data.is_admin) {
+    const card = el('div', 'card');
+    card.appendChild(el('h2', null, '⚙️ Администрирование'));
+    card.appendChild(el('div', 'hint', 'Тарифы, реквизиты, подарочные коды и заявки на оплату.'));
+    const open = el('button', null, '⚙️ Открыть админ-панель');
+    open.onclick = showAdmin;
+    card.appendChild(open);
+    appEl.appendChild(card);
+  }
+
   const actions = el('div', 'card');
   actions.appendChild(el('h2', null, 'Действия в чате'));
   actions.appendChild(el('div', 'hint', 'Подарки, приглашения и привязка профиля оформляются в диалоге с ботом.'));
@@ -266,6 +303,157 @@ function render(data) {
   back.onclick = () => tg.close();
   actions.appendChild(back);
   appEl.appendChild(actions);
+
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+// --- Admin panel (the server re-checks admin rights on every /api/admin call) ---
+
+function confirmDialog(message) {
+  return new Promise(resolve => {
+    if (tg.showConfirm) tg.showConfirm(message, ok => resolve(ok));
+    else resolve(window.confirm(message));
+  });
+}
+
+async function showCabinet() {
+  try {
+    render(await api('/api/me'));
+  } catch (e) { tg.showAlert(e.message); }
+}
+
+async function showAdmin() {
+  try {
+    renderAdmin(await api('/api/admin'));
+  } catch (e) { tg.showAlert(e.message); }
+}
+
+// adminAction posts a mutation (optionally after a confirm dialog) and
+// re-renders the panel from fresh data.
+async function adminAction(path, payload, message) {
+  if (message && !(await confirmDialog(message))) return;
+  try {
+    await api(path, { method: 'POST', body: JSON.stringify(payload) });
+    await showAdmin();
+  } catch (e) { tg.showAlert(e.message); }
+}
+
+function renderAdminTariffs(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '📋 Тарифы'));
+  if ((data.tariffs || []).length) {
+    data.tariffs.forEach(t => {
+      const item = el('div', 'item');
+      item.appendChild(el('div', 'info', `${t.months} мес. — ${t.price_label}`));
+      const del = el('button', 'secondary', '🗑 Удалить');
+      del.onclick = () => adminAction('/api/admin/tariff/delete', { months: t.months },
+        `Удалить тариф на ${t.months} мес.?`);
+      item.appendChild(del);
+      card.appendChild(item);
+    });
+  } else {
+    card.appendChild(el('div', 'hint', 'Тарифы не заданы.'));
+  }
+  card.appendChild(el('div', 'hint', 'Добавить или обновить тариф:'));
+  const pair = el('div', 'pair');
+  const months = Object.assign(el('input'), { type: 'number', min: '1', placeholder: 'Месяцев' });
+  const price = Object.assign(el('input'), { type: 'number', min: '1', placeholder: 'Цена' });
+  pair.appendChild(months);
+  pair.appendChild(price);
+  card.appendChild(pair);
+  const save = el('button', null, '💾 Сохранить тариф');
+  save.onclick = () => {
+    const m = parseInt(months.value, 10), p = parseInt(price.value, 10);
+    if (!(m >= 1) || !(p >= 1)) { tg.showAlert('Введите количество месяцев и цену (целые ≥ 1).'); return; }
+    adminAction('/api/admin/tariff', { months: m, price: p });
+  };
+  card.appendChild(save);
+  return card;
+}
+
+function renderAdminRequisites(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '💳 Реквизиты'));
+  const text = Object.assign(el('textarea'), { value: data.requisites || '', placeholder: 'Текст реквизитов' });
+  card.appendChild(text);
+  const save = el('button', null, '💾 Сохранить реквизиты');
+  save.onclick = () => {
+    if (!text.value.trim()) { tg.showAlert('Текст реквизитов не может быть пустым.'); return; }
+    adminAction('/api/admin/requisites', { text: text.value });
+  };
+  card.appendChild(save);
+  return card;
+}
+
+function renderAdminGifts(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '🎁 Активные подарочные коды'));
+  if (!(data.gifts || []).length) {
+    card.appendChild(el('div', 'hint', 'Активных подарочных кодов нет.'));
+    return card;
+  }
+  data.gifts.forEach(g => {
+    const item = el('div', 'item');
+    const info = el('div', 'info');
+    info.appendChild(el('div', 'code', `${g.code} — ${g.months} мес.`));
+    info.appendChild(el('div', 'st', `от ${g.buyer} (${g.created_at})`));
+    item.appendChild(info);
+    const revoke = el('button', 'secondary', '🚫 Отозвать');
+    revoke.onclick = () => adminAction('/api/admin/gift/revoke', { id: g.id },
+      `Отозвать код ${g.code}?`);
+    item.appendChild(revoke);
+    card.appendChild(item);
+  });
+  return card;
+}
+
+function renderAdminRequests(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '💰 Заявки на оплату'));
+  if (!(data.requests || []).length) {
+    card.appendChild(el('div', 'hint', 'Ожидающих заявок нет.'));
+    return card;
+  }
+  data.requests.forEach(r => {
+    const item = el('div', 'item');
+    const info = el('div', 'info');
+    let line = `${r.username} — ${r.months} мес.`;
+    if (r.price_label) line += ` (${r.price_label})`;
+    info.appendChild(el('div', null, line));
+    let st = `заявка от ${r.created_at}`;
+    if (r.expire_at) st += `, подписка до ${r.expire_at}`;
+    info.appendChild(el('div', 'st', st));
+    item.appendChild(info);
+    const btns = el('div', 'btns');
+    const ok = el('button', null, '✅');
+    ok.onclick = () => adminAction('/api/admin/request/confirm', { id: r.id },
+      `Подтвердить оплату «${r.username}» на ${r.months} мес.?`);
+    const rej = el('button', 'secondary', '❌');
+    rej.onclick = () => adminAction('/api/admin/request/reject', { id: r.id },
+      `Отклонить заявку «${r.username}»?`);
+    btns.appendChild(ok);
+    btns.appendChild(rej);
+    item.appendChild(btns);
+    card.appendChild(item);
+  });
+  return card;
+}
+
+function renderAdmin(data) {
+  appEl.textContent = '';
+
+  const top = el('div', 'card');
+  top.appendChild(el('h2', null, '⚙️ Админ-панель'));
+  const back = el('button', 'secondary', '← Назад в кабинет');
+  back.onclick = showCabinet;
+  top.appendChild(back);
+  appEl.appendChild(top);
+
+  appEl.appendChild(renderAdminRequests(data));
+  appEl.appendChild(renderAdminTariffs(data));
+  appEl.appendChild(renderAdminRequisites(data));
+  appEl.appendChild(renderAdminGifts(data));
 
   statusEl.hidden = true;
   appEl.hidden = false;

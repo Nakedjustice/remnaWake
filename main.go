@@ -85,7 +85,7 @@ func main() {
 		if err := bot.SetChatMenuButton(rootCtx, "Кабинет", cfg.WebApp.PublicURL); err != nil {
 			logger.Warn("set chat menu button failed", "err", err.Error())
 		}
-		srv := webapp.NewServer(pay, cfg.Telegram.BotToken, logger)
+		srv := webapp.NewServer(pay, pay, cfg.Telegram.BotToken, logger)
 		go func() {
 			if err := srv.Run(rootCtx, cfg.WebApp.Listen); err != nil {
 				logger.Error("mini app server failed", "err", err.Error())
