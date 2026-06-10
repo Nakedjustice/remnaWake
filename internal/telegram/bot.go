@@ -157,15 +157,30 @@ func (b *Bot) SendWithKeyboard(ctx context.Context, chatID int64, text string, k
 func (b *Bot) SendWelcome(ctx context.Context, chatID int64) error {
 	text := `⏰ Привет! Я бот-напоминалка: если ваша подписка на КВН скоро закончится, я сообщу об этом заранее — за 7, 3 или 1 день до окончания.
 
+❗️ Чтобы получать уведомления, сначала привяжите свой Telegram к профилю подписки. Без привязки я не смогу понять, какая подписка ваша, и напоминания приходить не будут.
+
+Как привязать:
+1. Нажмите кнопку «🔗 Привязать аккаунт» ниже (или команду /register).
+2. Введите имя вашего профиля — его можно посмотреть в приложении.
+3. Подтвердите привязку — и всё готово, уведомления включены.
+
 Меню и команды:
 /menu — открыть меню с кнопками
+/register — привязать свой Telegram к профилю
 /tariff — посмотреть текущие тарифы
 /payff — оплатить подписку за другого пользователя
 /cancel — отменить текущее действие
 
 После оплаты нажмите «Я оплатил» — администратор получит уведомление и подтвердит продление.`
 
-	return b.SendPlain(ctx, chatID, text)
+	keyboard := &InlineKeyboardMarkup{
+		InlineKeyboard: [][]InlineKeyboardButton{
+			{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
+		},
+	}
+
+	_, err := b.SendPlainWithKeyboard(ctx, chatID, text, keyboard)
+	return err
 }
 
 func (b *Bot) sendMessage(ctx context.Context, payload sendMessageRequest) (int64, error) {
