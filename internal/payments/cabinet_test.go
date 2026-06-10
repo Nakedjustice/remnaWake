@@ -83,6 +83,51 @@ func TestSendCabinetLinkedShowsProfileAndActions(t *testing.T) {
 	}
 }
 
+func TestSendCabinetWebAppHidesPayButtons(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	svc.SetWebAppURL("https://app.example")
+	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
+		555: {{RemnawaveID: 42, UUID: "u", Username: "ivan", TelegramID: 555, ExpireAt: time.Now().Add(time.Hour), Status: "ACTIVE"}},
+	}}
+
+	if !svc.SendCabinet(context.Background(), 555) {
+		t.Fatal("expected handled")
+	}
+	msg := bot.sent[len(bot.sent)-1]
+
+	hasWebApp := false
+	var callbacks []string
+	for _, row := range msg.Keyboard.InlineKeyboard {
+		for _, btn := range row {
+			if btn.WebApp != nil {
+				hasWebApp = true
+			}
+			if btn.CallbackData != "" {
+				callbacks = append(callbacks, btn.CallbackData)
+			}
+		}
+	}
+	if !hasWebApp {
+		t.Error("expected mini app button when webapp is enabled")
+	}
+	for _, cb := range callbacks {
+		if strings.HasPrefix(cb, "cab:pay:") {
+			t.Errorf("expected no renew buttons with webapp enabled, got %v", callbacks)
+		}
+	}
+	for _, want := range []string{"menu:gift", "menu:mygifts", "menu:invite", "menu:register"} {
+		found := false
+		for _, cb := range callbacks {
+			if cb == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected button %q, got %v", want, callbacks)
+		}
+	}
+}
+
 func TestSendCabinetShowsGiftAndInviteSummary(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
