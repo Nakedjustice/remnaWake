@@ -40,6 +40,13 @@ type editMessageReplyMarkupRequest struct {
 	ReplyMarkup *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
 }
 
+type editMessageTextRequest struct {
+	ChatID      int64                 `json:"chat_id"`
+	MessageID   int64                 `json:"message_id"`
+	Text        string                `json:"text"`
+	ReplyMarkup *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
+}
+
 type getUpdatesRequest struct {
 	Offset         int64    `json:"offset,omitempty"`
 	Timeout        int      `json:"timeout,omitempty"`
@@ -378,6 +385,42 @@ func (b *Bot) EditMessageReplyMarkup(ctx context.Context, chatID, messageID int6
 	var ar apiResponse
 	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
 		return fmt.Errorf("telegram edit reply markup not ok: %s", ar.Description)
+	}
+	return nil
+}
+
+// EditMessageText replaces both the text and the inline keyboard of an
+// existing message (keyboard nil = remove buttons).
+func (b *Bot) EditMessageText(ctx context.Context, chatID, messageID int64, text string, keyboard *InlineKeyboardMarkup) error {
+	payload := editMessageTextRequest{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		Text:        text,
+		ReplyMarkup: keyboard,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/editMessageText", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram edit message text: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("telegram edit message text failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+	var ar apiResponse
+	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
+		return fmt.Errorf("telegram edit message text not ok: %s", ar.Description)
 	}
 	return nil
 }

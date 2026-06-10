@@ -23,6 +23,7 @@ type sentMsg struct {
 }
 type editCall struct {
 	ChatID, MessageID int64
+	Text              string
 	Keyboard          *tg.InlineKeyboardMarkup
 }
 type fakeBot struct {
@@ -47,6 +48,10 @@ func (f *fakeBot) AnswerCallbackQuery(_ context.Context, _ string, text string) 
 }
 func (f *fakeBot) EditMessageReplyMarkup(_ context.Context, chatID, messageID int64, kb *tg.InlineKeyboardMarkup) error {
 	f.edits = append(f.edits, editCall{ChatID: chatID, MessageID: messageID, Keyboard: kb})
+	return nil
+}
+func (f *fakeBot) EditMessageText(_ context.Context, chatID, messageID int64, text string, kb *tg.InlineKeyboardMarkup) error {
+	f.edits = append(f.edits, editCall{ChatID: chatID, MessageID: messageID, Text: text, Keyboard: kb})
 	return nil
 }
 

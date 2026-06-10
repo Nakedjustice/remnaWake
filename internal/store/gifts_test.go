@@ -183,3 +183,55 @@ func TestListGiftCodesByBuyer(t *testing.T) {
 		t.Fatalf("unknown buyer must get empty list: %v %+v", err, none)
 	}
 }
+
+func TestGiftCodesByBuyerStatusPagingAndCounts(t *testing.T) {
+	st := newGiftStore(t)
+	ctx := context.Background()
+
+	codes := []string{"P1", "P2", "P3", "I1", "I2", "X1"}
+	ids := map[string]int64{}
+	for _, c := range codes {
+		buyer := int64(111)
+		if c == "X1" {
+			buyer = 222
+		}
+		id, err := st.CreateGiftCode(ctx, GiftCode{Code: c, BuyerTelegramID: buyer, Months: 1})
+		if err != nil {
+			t.Fatalf("create %s: %v", c, err)
+		}
+		ids[c] = id
+	}
+	now := time.Now()
+	for _, c := range []string{"I1", "I2"} {
+		if ok, err := st.IssueGiftCode(ctx, ids[c], now); err != nil || !ok {
+			t.Fatalf("issue %s: %v %v", c, ok, err)
+		}
+	}
+
+	counts, err := st.CountGiftCodesByBuyer(ctx, 111)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if counts["pending"] != 3 || counts["issued"] != 2 || len(counts) != 2 {
+		t.Fatalf("counts mismatch: %+v", counts)
+	}
+
+	// Newest first, limit/offset.
+	page, err := st.ListGiftCodesByBuyerStatus(ctx, 111, "pending", 2, 0)
+	if err != nil || len(page) != 2 || page[0].Code != "P3" || page[1].Code != "P2" {
+		t.Fatalf("page 1 mismatch: %v %+v", err, page)
+	}
+	page, err = st.ListGiftCodesByBuyerStatus(ctx, 111, "pending", 2, 2)
+	if err != nil || len(page) != 1 || page[0].Code != "P1" {
+		t.Fatalf("page 2 mismatch: %v %+v", err, page)
+	}
+
+	// Another buyer's gifts stay invisible.
+	page, err = st.ListGiftCodesByBuyerStatus(ctx, 222, "pending", 10, 0)
+	if err != nil || len(page) != 1 || page[0].Code != "X1" {
+		t.Fatalf("other buyer mismatch: %v %+v", err, page)
+	}
+	if c, err := st.CountGiftCodesByBuyer(ctx, 999); err != nil || len(c) != 0 {
+		t.Fatalf("unknown buyer must have empty counts: %v %+v", err, c)
+	}
+}

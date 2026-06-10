@@ -17,6 +17,7 @@ type BotSender interface {
 	SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error)
 	AnswerCallbackQuery(ctx context.Context, id, text string) error
 	EditMessageReplyMarkup(ctx context.Context, chatID, messageID int64, kb *tg.InlineKeyboardMarkup) error
+	EditMessageText(ctx context.Context, chatID, messageID int64, text string, kb *tg.InlineKeyboardMarkup) error
 }
 
 // Extender is the subset of *remnawave.Client that payments needs.

@@ -52,6 +52,13 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleMenuGift(ctx, cb)
 	case cb.Data == "menu:mygifts":
 		return s.handleMenuMyGifts(ctx, cb)
+	case cb.Data == "mg:menu":
+		return s.handleMyGiftsMenu(ctx, cb)
+	case strings.HasPrefix(cb.Data, "mg:list:"):
+		return s.handleMyGiftsList(ctx, cb)
+	case cb.Data == "mg:noop":
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+		return true
 	case strings.HasPrefix(cb.Data, "gc_link:"):
 		return s.handleGiftCodeResend(ctx, cb)
 	case strings.HasPrefix(cb.Data, "gc_pick:"):
