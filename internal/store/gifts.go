@@ -132,6 +132,18 @@ func (s *Store) transitionGift(ctx context.Context, query string, args ...any) (
 	return n > 0, err
 }
 
+// DeleteResolvedGiftCodes removes gifts the admin rejected or revoked.
+// Returns the number of deleted rows.
+func (s *Store) DeleteResolvedGiftCodes(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM gift_codes WHERE status IN ('rejected', 'revoked')
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (s *Store) ListGiftCodesByStatus(ctx context.Context, status string) ([]GiftCode, error) {
 	return s.listGiftCodes(ctx, `WHERE status = ? ORDER BY id`, status)
 }

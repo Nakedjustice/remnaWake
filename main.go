@@ -101,7 +101,18 @@ func main() {
 		}()
 	}
 
-	job := scheduler.New(func(ctx context.Context) { _ = svc.Run(ctx) }, logger, cfg.Scheduler.Timezone, cfg.Scheduler.RunAt)
+	job := scheduler.New(func(ctx context.Context) {
+		_ = svc.Run(ctx)
+		if cfg.DryRun {
+			logger.Info("gift cleanup skipped (dry run)")
+			return
+		}
+		if n, err := db.DeleteResolvedGiftCodes(ctx); err != nil {
+			logger.Error("gift cleanup failed", "err", err.Error())
+		} else if n > 0 {
+			logger.Info("gift cleanup done", "deleted", n)
+		}
+	}, logger, cfg.Scheduler.Timezone, cfg.Scheduler.RunAt)
 	sched, err := job.Start(rootCtx)
 	if err != nil {
 		logger.Error("scheduler start failed", "err", err.Error())

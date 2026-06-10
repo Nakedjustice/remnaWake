@@ -138,6 +138,52 @@ func TestGiftCodeRejectAndRevoke(t *testing.T) {
 	}
 }
 
+func TestDeleteResolvedGiftCodes(t *testing.T) {
+	st := newGiftStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	pendID, _ := st.CreateGiftCode(ctx, GiftCode{Code: "PEND", BuyerTelegramID: 1, Months: 1})
+
+	issID, _ := st.CreateGiftCode(ctx, GiftCode{Code: "ISS", BuyerTelegramID: 1, Months: 1})
+	_, _ = st.IssueGiftCode(ctx, issID, now)
+
+	redID, _ := st.CreateGiftCode(ctx, GiftCode{Code: "RED", BuyerTelegramID: 1, Months: 1})
+	_, _ = st.IssueGiftCode(ctx, redID, now)
+	_, _ = st.RedeemGiftCode(ctx, "RED", 2, "bob", now)
+
+	rejID, _ := st.CreateGiftCode(ctx, GiftCode{Code: "REJ", BuyerTelegramID: 1, Months: 1})
+	_, _ = st.RejectGiftCode(ctx, rejID, now)
+
+	revID, _ := st.CreateGiftCode(ctx, GiftCode{Code: "REV", BuyerTelegramID: 1, Months: 1})
+	_, _ = st.IssueGiftCode(ctx, revID, now)
+	_, _ = st.RevokeGiftCode(ctx, revID, now)
+
+	n, err := st.DeleteResolvedGiftCodes(ctx)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 deleted rows, got %d", n)
+	}
+
+	for _, id := range []int64{rejID, revID} {
+		if g, err := st.GetGiftCode(ctx, id); err != nil || g != nil {
+			t.Fatalf("gift %d must be deleted: %v %+v", id, err, g)
+		}
+	}
+	for _, id := range []int64{pendID, issID, redID} {
+		if g, err := st.GetGiftCode(ctx, id); err != nil || g == nil {
+			t.Fatalf("gift %d must survive cleanup: %v %+v", id, err, g)
+		}
+	}
+
+	// Nothing left to delete on the next run.
+	if n, err := st.DeleteResolvedGiftCodes(ctx); err != nil || n != 0 {
+		t.Fatalf("second run must delete nothing: %v %d", err, n)
+	}
+}
+
 func TestListGiftCodesByStatus(t *testing.T) {
 	st := newGiftStore(t)
 	ctx := context.Background()
