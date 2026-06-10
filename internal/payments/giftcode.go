@@ -76,7 +76,7 @@ func (s *Service) StartGiftCodeFlow(ctx context.Context, m *tg.Message) bool {
 	return true
 }
 
-// beginGiftCodeFlow checks buyer eligibility (subscribers only, like /payff)
+// beginGiftCodeFlow checks buyer eligibility (subscribers only)
 // and prompts for the tariff. chatID is the buyer's private chat = Telegram ID.
 func (s *Service) beginGiftCodeFlow(ctx context.Context, chatID int64) {
 	if !s.isEnabled() {

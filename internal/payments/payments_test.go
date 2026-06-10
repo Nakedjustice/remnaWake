@@ -424,8 +424,8 @@ func TestMenuFlowsInertWhenDisabled(t *testing.T) {
 	ctx := context.Background()
 
 	// Menu-button entry points must be inert when no admins are configured.
-	svc.beginGiftFlow(ctx, 555)
-	if svc.getGift(555) != nil {
+	svc.beginGiftCodeFlow(ctx, 555)
+	if svc.getGiftCode(555) != nil {
 		t.Fatal("gift flow must not start when disabled")
 	}
 	svc.beginInviteFlow(ctx, 555)
