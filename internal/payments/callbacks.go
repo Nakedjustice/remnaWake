@@ -26,6 +26,8 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleBack(ctx, cb)
 	case strings.HasPrefix(cb.Data, "ok:"):
 		return s.handleConfirm(ctx, cb)
+	case strings.HasPrefix(cb.Data, "rej:"):
+		return s.handleReject(ctx, cb)
 	case cb.Data == "menu:tariffs":
 		return s.handleMenuTariffs(ctx, cb)
 	case cb.Data == "menu:cabinet":
@@ -201,9 +203,10 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 	// Notify all admins with details + confirm button.
 	text := s.formatAdminRequest(u, months, price)
 	kb := &tg.InlineKeyboardMarkup{
-		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: i18n.T("Подтвердить оплату"), CallbackData: fmt.Sprintf("ok:%d", reqID)}},
-		},
+		InlineKeyboard: [][]tg.InlineKeyboardButton{{
+			{Text: i18n.T("✅ Подтвердить оплату"), CallbackData: fmt.Sprintf("ok:%d", reqID)},
+			{Text: i18n.T("❌ Отклонить"), CallbackData: fmt.Sprintf("rej:%d", reqID)},
+		}},
 	}
 	var refs []adminMsgRef
 	for _, adminID := range s.adminIDs {
@@ -265,6 +268,29 @@ func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool 
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("✅ Подписка продлена!"))
 	_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(i18n.T("✅ Подписка для %s продлена на %d мес. до %s"),
 		req.Username, req.Months, newExpireAt.Format("02.01.2006")))
+	return true
+}
+
+// handleReject processes admin's "Отклонить" button on a payment request.
+func (s *Service) handleReject(ctx context.Context, cb *tg.CallbackQuery) bool {
+	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
+		s.logger.Warn("unauthorized reject attempt", "from_id", cb.From.ID)
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+		return true
+	}
+
+	reqID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "rej:"), 10, 64)
+	if err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать заявку."))
+		return true
+	}
+
+	if err := s.rejectPaymentRequest(ctx, reqID); err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, resolveErrorText(err))
+		return true
+	}
+
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка отклонена."))
 	return true
 }
 

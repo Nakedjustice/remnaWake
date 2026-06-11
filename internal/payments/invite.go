@@ -245,7 +245,7 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 
 	req, created, expireAt, err := s.approveInviteRequest(ctx, reqID)
 	if errors.Is(err, ErrPanelCreateFailed) {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка создания пользователя. Проверьте логи.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка создания пользователя. Проверьте логи."))
 		return true
 	}
 	if err != nil {
@@ -254,16 +254,16 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 	}
 
 	if created == nil { // dry-run
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Пользователь создан (dry-run).")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Пользователь создан (dry-run)."))
 		_ = s.bot.SendPlain(ctx, cb.From.ID,
-			fmt.Sprintf("✅ (dry-run) Пользователь «%s» создан, подписка до %s.",
+			fmt.Sprintf(i18n.T("✅ (dry-run) Пользователь «%s» создан, подписка до %s."),
 				req.NewUsername, expireAt.Format("02.01.2006")))
 		return true
 	}
 
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Пользователь создан!")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("✅ Пользователь создан!"))
 	_ = s.bot.SendPlain(ctx, cb.From.ID,
-		fmt.Sprintf("✅ Пользователь «%s» создан (UUID: %s), подписка до %s.",
+		fmt.Sprintf(i18n.T("✅ Пользователь «%s» создан (UUID: %s), подписка до %s."),
 			created.Username, created.UUID, expireAt.Format("02.01.2006")))
 	return true
 }
@@ -277,16 +277,13 @@ func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store
 	req, err := s.store.GetInviteRequest(ctx, reqID)
 	if err != nil {
 		s.logger.Error("invite: get request failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
-		return true
+		return nil, nil, time.Time{}, fmt.Errorf("get invite request: %w", err)
 	}
 	if req == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка не найдена."))
-		return true
+		return nil, nil, time.Time{}, ErrRequestNotFound
 	}
 	if req.Status != "pending" {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка уже обработана."))
-		return true
+		return nil, nil, time.Time{}, ErrRequestResolved
 	}
 
 	expireAt := s.now().AddDate(0, req.Months, 0)
@@ -295,10 +292,6 @@ func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store
 		s.logger.Info("dry-run: would create user", "username", req.NewUsername, "expire_at", expireAt.Format("2006-01-02"))
 		_, _ = s.store.ResolveInviteRequest(ctx, reqID, "approved", s.now())
 		s.clearInviteButtons(ctx, reqID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Пользователь создан (dry-run)."))
-		_ = s.bot.SendPlain(ctx, cb.From.ID,
-			fmt.Sprintf(i18n.T("✅ (dry-run) Пользователь «%s» создан, подписка до %s."),
-				req.NewUsername, expireAt.Format("02.01.2006")))
 		if req.InviterTelegramID != 0 {
 			_ = s.bot.SendPlain(ctx, req.InviterTelegramID,
 				fmt.Sprintf(i18n.T("✅ Ваша заявка одобрена! Пользователь «%s» создан (dry-run)."), req.NewUsername))
@@ -309,8 +302,7 @@ func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store
 	created, err := s.creator.CreateUser(ctx, req.NewUsername, expireAt)
 	if err != nil {
 		s.logger.Error("invite: create user in panel failed", "username", req.NewUsername, "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка создания пользователя. Проверьте логи."))
-		return true
+		return req, nil, expireAt, fmt.Errorf("%w: %v", ErrPanelCreateFailed, err)
 	}
 
 	if _, err := s.store.ResolveInviteRequest(ctx, reqID, "approved", s.now()); err != nil {
@@ -318,11 +310,6 @@ func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store
 	}
 
 	s.clearInviteButtons(ctx, reqID)
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("✅ Пользователь создан!"))
-	_ = s.bot.SendPlain(ctx, cb.From.ID,
-		fmt.Sprintf(i18n.T("✅ Пользователь «%s» создан (UUID: %s), подписка до %s."),
-			created.Username, created.UUID, expireAt.Format("02.01.2006")))
-
 	if req.InviterTelegramID != 0 {
 		msg := fmt.Sprintf(i18n.T("✅ Заявка одобрена! Пользователь «%s» создан, подписка до %s."),
 			created.Username, expireAt.Format("02.01.2006"))
@@ -354,9 +341,9 @@ func (s *Service) handleInviteReject(ctx context.Context, cb *tg.CallbackQuery) 
 		return true
 	}
 
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отклонена.")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка отклонена."))
 	_ = s.bot.SendPlain(ctx, cb.From.ID,
-		fmt.Sprintf("❌ Заявка на пользователя «%s» отклонена.", req.NewUsername))
+		fmt.Sprintf(i18n.T("❌ Заявка на пользователя «%s» отклонена."), req.NewUsername))
 	return true
 }
 
@@ -367,16 +354,13 @@ func (s *Service) rejectInviteRequest(ctx context.Context, reqID int64) (*store.
 	req, err := s.store.GetInviteRequest(ctx, reqID)
 	if err != nil {
 		s.logger.Error("invite: get request failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
-		return true
+		return nil, fmt.Errorf("get invite request: %w", err)
 	}
 	if req == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка не найдена."))
-		return true
+		return nil, ErrRequestNotFound
 	}
 	if req.Status != "pending" {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка уже обработана."))
-		return true
+		return nil, ErrRequestResolved
 	}
 
 	if _, err := s.store.ResolveInviteRequest(ctx, reqID, "rejected", s.now()); err != nil {
@@ -384,10 +368,6 @@ func (s *Service) rejectInviteRequest(ctx context.Context, reqID int64) (*store.
 	}
 
 	s.clearInviteButtons(ctx, reqID)
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка отклонена."))
-	_ = s.bot.SendPlain(ctx, cb.From.ID,
-		fmt.Sprintf(i18n.T("❌ Заявка на пользователя «%s» отклонена."), req.NewUsername))
-
 	if req.InviterTelegramID != 0 {
 		_ = s.bot.SendPlain(ctx, req.InviterTelegramID,
 			fmt.Sprintf(i18n.T("❌ Ваша заявка на пользователя «%s» отклонена администратором."), req.NewUsername))
