@@ -10,7 +10,7 @@ var en = map[string]string{
 	// --- telegram (welcome / shared buttons) ---
 	"👤 Личный кабинет":    "👤 My account",
 	"🔗 Привязать аккаунт": "🔗 Link account",
-	welcomeRU:             welcomeEN,
+	WelcomeRU:             welcomeEN,
 
 	// --- main (command menu / reply keyboard) ---
 	"Кнопка «%s» теперь всегда под полем ввода 👇": "The “%s” button is now always under the input field 👇",
@@ -29,42 +29,64 @@ var en = map[string]string{
 }
 
 // The welcome message is kept as named constants so the map stays readable.
-const welcomeRU = `⏰ Привет! Я бот-напоминалка: если ваша подписка на КВН скоро закончится, я сообщу об этом заранее — за 7, 3 или 1 день до окончания.
+// WelcomeRU is exported so the telegram package can reference the same string
+// that serves as the translation key — they must match byte-for-byte.
+const WelcomeRU = `👋 Привет! Я бот для управления вашей подпиской. Вот что я умею:
 
-❗️ Чтобы получать уведомления, сначала привяжите свой Telegram к профилю подписки. Без привязки я не смогу понять, какая подписка ваша, и напоминания приходить не будут.
+⏰ Напоминания — предупрежу об окончании подписки за 7, 3 и 1 день.
+💳 Продление — после оплаты нажмите «Я оплатил» под напоминанием, и администратор подтвердит продление.
+👤 Личный кабинет — статус подписки, ссылка и подарки: /me.
+🎁 Подарок (/gift) — подарить подписку человеку, у которого есть Telegram: он сам активирует подарок в этом боте.
+➕ Приглашение (/invite) — оформить подписку тому, у кого нет Telegram или кто не может им пользоваться: вы получите готовую ссылку и передадите её сами.
 
-Как привязать:
-1. Нажмите кнопку «🔗 Привязать аккаунт» ниже (или команду /register).
-2. Введите имя вашего профиля — его можно посмотреть в приложении.
-3. Подтвердите привязку — и всё готово, уведомления включены.
+❗️ Сначала привяжите свой Telegram к профилю подписки — без привязки я не узнаю, какая подписка ваша, и напоминания приходить не будут.
 
-Меню и команды:
+Как привязать аккаунт — по шагам:
+1. Нажмите кнопку «🔗 Привязать аккаунт» под этим сообщением (или отправьте команду /register).
+2. Бот попросит ввести имя вашего профиля. Откройте приложение, в котором вы пользуетесь подпиской, — имя профиля написано там (например, ivan_petrov).
+3. Наберите это имя в чате обычным сообщением и отправьте — точно так, как оно написано в приложении.
+4. Бот спросит «Привязать ваш Telegram к профилю …?» — нажмите кнопку «Привязать».
+5. Когда придёт сообщение «✅ Готово!», привязка завершена и напоминания включены.
+
+Если ошиблись или передумали — отправьте /cancel и начните заново.
+
+Все команды:
 /me — личный кабинет: статус подписки, ссылка, подарки
 /menu — открыть меню с кнопками
 /register — привязать свой Telegram к профилю
 /tariff — посмотреть текущие тарифы
-/gift — подарить подписку
+/gift — подарить подписку (получателю с Telegram)
 /mygifts — мои подарочные подписки и их статус
+/invite — оформить подписку человеку без Telegram
 /cancel — отменить текущее действие
+/help — помощь`
 
-После оплаты нажмите «Я оплатил» — администратор получит уведомление и подтвердит продление.`
+const welcomeEN = `👋 Hi! I'm a bot for managing your subscription. Here's what I can do:
 
-const welcomeEN = `⏰ Hi! I'm a reminder bot: if your subscription is about to end, I'll let you know in advance — 7, 3 and 1 day before it expires.
+⏰ Reminders — I'll warn you 7, 3 and 1 day before your subscription expires.
+💳 Renewal — after paying, tap “I paid” under the reminder and the administrator will confirm the renewal.
+👤 My account — subscription status, link and gifts: /me.
+🎁 Gift (/gift) — gift a subscription to someone who has Telegram: they activate the gift in this bot themselves.
+➕ Invite (/invite) — get a subscription for someone who has no Telegram or can't use it: you'll receive a ready link to pass along yourself.
 
-❗️ To receive notifications, first link your Telegram to your subscription profile. Without the link I can't tell which subscription is yours, and no reminders will arrive.
+❗️ First, link your Telegram to your subscription profile — without the link I can't tell which subscription is yours, and no reminders will arrive.
 
-How to link:
-1. Tap the “🔗 Link account” button below (or use /register).
-2. Enter your profile name — you can find it in the app.
-3. Confirm the link — that's it, notifications are on.
+How to link your account — step by step:
+1. Tap the “🔗 Link account” button under this message (or send the /register command).
+2. The bot will ask for your profile name. Open the app you use your subscription in — the profile name is shown there (for example, ivan_petrov).
+3. Type that name in the chat as a regular message and send it — exactly as it appears in the app.
+4. The bot will ask “Link your Telegram to profile …?” — tap the “Привязать” (Link) button.
+5. When you receive the “✅ Done!” message, the link is complete and reminders are on.
 
-Menu and commands:
+If you make a mistake or change your mind — send /cancel and start over.
+
+All commands:
 /me — my account: subscription status, link, gifts
 /menu — open the button menu
 /register — link your Telegram to a profile
 /tariff — show current plans
-/gift — gift a subscription
+/gift — gift a subscription (recipient has Telegram)
 /mygifts — my gift subscriptions and their status
+/invite — get a subscription for someone without Telegram
 /cancel — cancel the current action
-
-After paying, tap “I paid” — the administrator will be notified and confirm the renewal.`
+/help — help`
