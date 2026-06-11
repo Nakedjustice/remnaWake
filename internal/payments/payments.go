@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
@@ -239,7 +240,7 @@ func (s *Service) PaymentButton(userID int64) *tg.InlineKeyboardMarkup {
 	}
 	return &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: "Я оплатил", CallbackData: fmt.Sprintf("pay:%d", userID)}},
+			{{Text: i18n.T("Я оплатил"), CallbackData: fmt.Sprintf("pay:%d", userID)}},
 		},
 	}
 }

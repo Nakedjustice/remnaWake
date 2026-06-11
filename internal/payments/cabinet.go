@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
@@ -22,7 +23,7 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 	subs, err := s.finder.FindByTelegramID(ctx, chatID)
 	if err != nil {
 		s.logger.Error("cabinet: find by telegram id failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 
@@ -33,21 +34,21 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 
 	now := s.now()
 	var b strings.Builder
-	b.WriteString("👤 Личный кабинет\n")
+	b.WriteString(i18n.T("👤 Личный кабинет\n"))
 	for i := range subs {
 		sub := &subs[i]
-		b.WriteString("\n📡 Профиль: " + sub.Username + "\n")
-		b.WriteString("Статус: " + subStatusLabel(sub.Status) + "\n")
+		b.WriteString(i18n.T("\n📡 Профиль: ") + sub.Username + "\n")
+		b.WriteString(i18n.T("Статус: ") + subStatusLabel(sub.Status) + "\n")
 		if !sub.ExpireAt.IsZero() {
-			b.WriteString("Действует до: " + sub.ExpireAt.Format("02.01.2006"))
+			b.WriteString(i18n.T("Действует до: ") + sub.ExpireAt.Format("02.01.2006"))
 			if sub.ExpireAt.After(now) {
 				d := daysLeft(now, sub.ExpireAt)
-				b.WriteString(fmt.Sprintf(" (осталось %d %s)", d, pluralRu(d, "день", "дня", "дней")))
+				b.WriteString(fmt.Sprintf(i18n.T(" (осталось %d %s)"), d, pluralRu(d, i18n.T("день"), i18n.T("дня"), i18n.T("дней"))))
 			}
 			b.WriteString("\n")
 		}
 		if sub.SubscriptionURL != "" {
-			b.WriteString("🔗 Ссылка на подписку:\n" + sub.SubscriptionURL + "\n")
+			b.WriteString(i18n.T("🔗 Ссылка на подписку:\n") + sub.SubscriptionURL + "\n")
 		}
 
 		// Refresh the snapshot so the payment flow started from the cabinet
@@ -76,14 +77,14 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 		// buttons would duplicate it — keep only the mini app entry and
 		// profile linking, which stays a chat flow.
 		rows = append(rows, []tg.InlineKeyboardButton{{
-			Text:   "🖥 Открыть мини-приложение",
+			Text:   i18n.T("🖥 Открыть мини-приложение"),
 			WebApp: &tg.WebAppInfo{URL: url},
 		}})
 	} else {
 		for i := range subs {
-			label := "💳 Оплатить / продлить"
+			label := i18n.T("💳 Оплатить / продлить")
 			if len(subs) > 1 {
-				label = fmt.Sprintf("💳 Продлить «%s»", subs[i].Username)
+				label = fmt.Sprintf(i18n.T("💳 Продлить «%s»"), subs[i].Username)
 			}
 			rows = append(rows, []tg.InlineKeyboardButton{{
 				Text:         label,
@@ -91,13 +92,13 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 			}})
 		}
 		rows = append(rows,
-			[]tg.InlineKeyboardButton{{Text: "🎁 Подарить подписку", CallbackData: "menu:gift"}},
-			[]tg.InlineKeyboardButton{{Text: "📦 Мои подарки", CallbackData: "menu:mygifts"}},
-			[]tg.InlineKeyboardButton{{Text: "👥 Пригласить пользователя", CallbackData: "menu:invite"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("🎁 Подарить подписку"), CallbackData: "menu:gift"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("📦 Мои подарки"), CallbackData: "menu:mygifts"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("👥 Пригласить пользователя"), CallbackData: "menu:invite"}},
 		)
 	}
 	rows = append(rows,
-		[]tg.InlineKeyboardButton{{Text: "🔁 Привязать другой профиль", CallbackData: "menu:register"}},
+		[]tg.InlineKeyboardButton{{Text: i18n.T("🔁 Привязать другой профиль"), CallbackData: "menu:register"}},
 	)
 
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, strings.TrimRight(b.String(), "\n"),
@@ -106,12 +107,12 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 }
 
 func (s *Service) sendCabinetUnlinked(ctx context.Context, chatID int64) {
-	text := "👤 Личный кабинет\n\n" +
-		"Ваш Telegram пока не привязан к профилю подписки, поэтому здесь пусто.\n" +
-		"Привяжите аккаунт — и тут появятся статус подписки, дата окончания и ссылка."
+	text := i18n.T("👤 Личный кабинет\n\n") +
+		i18n.T("Ваш Telegram пока не привязан к профилю подписки, поэтому здесь пусто.\n") +
+		i18n.T("Привяжите аккаунт — и тут появятся статус подписки, дата окончания и ссылка.")
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
+			{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
 		},
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
@@ -137,13 +138,13 @@ func (s *Service) giftsSummaryLine(ctx context.Context, chatID int64) string {
 			issued++
 		}
 	}
-	line := fmt.Sprintf("🎁 Подарки: %d", len(gifts))
+	line := fmt.Sprintf(i18n.T("🎁 Подарки: %d"), len(gifts))
 	var parts []string
 	if pending > 0 {
-		parts = append(parts, fmt.Sprintf("%d ждёт оплаты", pending))
+		parts = append(parts, fmt.Sprintf(i18n.T("%d ждёт оплаты"), pending))
 	}
 	if issued > 0 {
-		parts = append(parts, fmt.Sprintf("%d ждёт активации", issued))
+		parts = append(parts, fmt.Sprintf(i18n.T("%d ждёт активации"), issued))
 	}
 	if len(parts) > 0 {
 		line += " (" + strings.Join(parts, ", ") + ")"
@@ -168,9 +169,9 @@ func (s *Service) invitesSummaryLine(ctx context.Context, chatID int64) string {
 			pending++
 		}
 	}
-	line := fmt.Sprintf("👥 Приглашения: %d", len(invites))
+	line := fmt.Sprintf(i18n.T("👥 Приглашения: %d"), len(invites))
 	if pending > 0 {
-		line += fmt.Sprintf(" (%d на рассмотрении)", pending)
+		line += fmt.Sprintf(i18n.T(" (%d на рассмотрении)"), pending)
 	}
 	return line
 }
@@ -190,11 +191,11 @@ func (s *Service) handleMenuCabinet(ctx context.Context, cb *tg.CallbackQuery) b
 func (s *Service) handleCabinetPay(ctx context.Context, cb *tg.CallbackQuery) bool {
 	userID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "cab:pay:"), 10, 64)
 	if err != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать профиль.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать профиль."))
 		return true
 	}
 	if cb.Message == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка."))
 		return true
 	}
 	chatID := cb.Message.Chat.ID
@@ -203,13 +204,13 @@ func (s *Service) handleCabinetPay(ctx context.Context, cb *tg.CallbackQuery) bo
 	req := s.requisites
 	s.mu.Unlock()
 	if req != "" {
-		_ = s.bot.SendPlain(ctx, chatID, "Реквизиты для оплаты:\n\n"+req)
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Реквизиты для оплаты:\n\n")+req)
 	}
 
 	tariffs, err := s.store.ListTariffs(ctx)
 	if err != nil {
 		s.logger.Error("cabinet: list tariffs failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	if len(tariffs) == 0 {
@@ -221,14 +222,14 @@ func (s *Service) handleCabinetPay(ctx context.Context, cb *tg.CallbackQuery) bo
 	rows := make([][]tg.InlineKeyboardButton, 0, len(tariffs)+1)
 	for _, t := range tariffs {
 		rows = append(rows, []tg.InlineKeyboardButton{{
-			Text:         fmt.Sprintf("%d мес. — %s", t.Months, s.priceLabel(t.Price)),
+			Text:         fmt.Sprintf(i18n.T("%d мес. — %s"), t.Months, s.priceLabel(t.Price)),
 			CallbackData: fmt.Sprintf("pick:%d:%d", userID, t.Months),
 		}})
 	}
-	rows = append(rows, []tg.InlineKeyboardButton{{Text: "Отмена", CallbackData: "cab:cancel"}})
+	rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("Отмена"), CallbackData: "cab:cancel"}})
 
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID,
-		"💳 Продление подписки. Выберите период, после оплаты заявка уйдёт администратору:",
+		i18n.T("💳 Продление подписки. Выберите период, после оплаты заявка уйдёт администратору:"),
 		&tg.InlineKeyboardMarkup{InlineKeyboard: rows})
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
 	return true
@@ -239,20 +240,20 @@ func (s *Service) handleCabinetCancel(ctx context.Context, cb *tg.CallbackQuery)
 	if cb.Message != nil {
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Отменено.")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Отменено."))
 	return true
 }
 
 func subStatusLabel(status string) string {
 	switch status {
 	case "ACTIVE":
-		return "✅ Активна"
+		return i18n.T("✅ Активна")
 	case "EXPIRED":
-		return "⛔ Истекла"
+		return i18n.T("⛔ Истекла")
 	case "DISABLED":
-		return "🚫 Отключена"
+		return i18n.T("🚫 Отключена")
 	case "LIMITED":
-		return "⚠️ Превышен лимит трафика"
+		return i18n.T("⚠️ Превышен лимит трафика")
 	}
 	if status == "" {
 		return "—"

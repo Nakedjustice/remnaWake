@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 )
 
@@ -212,7 +213,7 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 	}
 
 	_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
-		"✅ Заявка на продление «%s» на %d мес. отправлена администратору. После подтверждения оплаты подписка будет продлена.",
+		i18n.T("✅ Заявка на продление «%s» на %d мес. отправлена администратору. После подтверждения оплаты подписка будет продлена."),
 		sub.Username, months))
 	return nil
 }
@@ -257,7 +258,7 @@ func (s *Service) CreateGiftRequest(ctx context.Context, telegramID int64, month
 	}
 	s.notifyAdminsGiftRequest(ctx, giftID, code, subs[0].Username, telegramID, months, price)
 	_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
-		"✅ Заявка на подарочную подписку (%d мес.) отправлена администратору. Ожидайте подтверждения оплаты.", months))
+		i18n.T("✅ Заявка на подарочную подписку (%d мес.) отправлена администратору. Ожидайте подтверждения оплаты."), months))
 	return nil
 }
 
@@ -301,6 +302,6 @@ func (s *Service) CreateInviteRequest(ctx context.Context, telegramID int64, use
 	}
 	s.notifyAdminsInviteRequest(ctx, reqID, subs[0].Username, telegramID, username, price)
 	_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
-		"✅ Заявка на приглашение пользователя «%s» отправлена администратору.", username))
+		i18n.T("✅ Заявка на приглашение пользователя «%s» отправлена администратору."), username))
 	return nil
 }

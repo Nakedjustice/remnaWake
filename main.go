@@ -92,7 +92,7 @@ func main() {
 
 	if cfg.WebApp.Enabled() {
 		pay.SetWebAppURL(cfg.WebApp.PublicURL)
-		if err := bot.SetChatMenuButton(rootCtx, "Кабинет", cfg.WebApp.PublicURL); err != nil {
+		if err := bot.SetChatMenuButton(rootCtx, i18n.T("Кабинет"), cfg.WebApp.PublicURL); err != nil {
 			logger.Warn("set chat menu button failed", "err", err.Error())
 		}
 		srv := webapp.NewServer(pay, pay, cfg.Telegram.BotToken, logger)

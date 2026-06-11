@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
@@ -86,11 +87,11 @@ func (s *Service) beginGiftCodeFlow(ctx context.Context, chatID int64) {
 	subs, err := s.finder.FindByTelegramID(ctx, chatID)
 	if err != nil {
 		s.logger.Error("gift: find buyer failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
 	if len(subs) == 0 {
-		_ = s.bot.SendPlain(ctx, chatID, "Эта команда доступна только подписчикам.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Эта команда доступна только подписчикам."))
 		return
 	}
 
@@ -104,28 +105,28 @@ func (s *Service) beginGiftCodeFlow(ctx context.Context, chatID int64) {
 	req := s.requisites
 	s.mu.Unlock()
 	if req != "" {
-		_ = s.bot.SendPlain(ctx, chatID, "Реквизиты для оплаты:\n\n"+req)
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Реквизиты для оплаты:\n\n")+req)
 	}
 
 	tariffs, err := s.store.ListTariffs(ctx)
 	if err != nil {
 		s.logger.Error("gift: list tariffs failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
 	if len(tariffs) == 0 {
 		tariffs = []store.Tariff{{Months: 1, Price: 0}} // fallback: single 1-month option
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID,
-		"🎁 Подарочная подписка. Выберите период:", s.giftCodeTariffKeyboard(tariffs))
+		i18n.T("🎁 Подарочная подписка. Выберите период:"), s.giftCodeTariffKeyboard(tariffs))
 }
 
 func (s *Service) giftCodeTariffKeyboard(tariffs []store.Tariff) *tg.InlineKeyboardMarkup {
 	rows := make([][]tg.InlineKeyboardButton, 0, len(tariffs)+1)
 	for _, t := range tariffs {
-		label := fmt.Sprintf("%d мес.", t.Months)
+		label := fmt.Sprintf(i18n.T("%d мес."), t.Months)
 		if t.Price > 0 {
-			label = fmt.Sprintf("%d мес. — %s", t.Months, s.priceLabel(t.Price))
+			label = fmt.Sprintf(i18n.T("%d мес. — %s"), t.Months, s.priceLabel(t.Price))
 		}
 		rows = append(rows, []tg.InlineKeyboardButton{{
 			Text:         label,
@@ -133,7 +134,7 @@ func (s *Service) giftCodeTariffKeyboard(tariffs []store.Tariff) *tg.InlineKeybo
 		}})
 	}
 	rows = append(rows, []tg.InlineKeyboardButton{{
-		Text: "Отмена", CallbackData: "gc_cancel",
+		Text: i18n.T("Отмена"), CallbackData: "gc_cancel",
 	}})
 	return &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
@@ -149,37 +150,37 @@ func (s *Service) handleMenuGift(ctx context.Context, cb *tg.CallbackQuery) bool
 
 func (s *Service) handleGiftCodePick(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if cb.Message == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка."))
 		return true
 	}
 	chatID := cb.Message.Chat.ID
 	g := s.getGiftCode(chatID)
 	if g == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Сессия истекла. Запустите /gift заново.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Сессия истекла. Запустите /gift заново."))
 		return true
 	}
 
 	months, err := strconv.Atoi(strings.TrimPrefix(cb.Data, "gc_pick:"))
 	if err != nil || months < 1 {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать выбор.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
 
 	price, err := s.giftPriceFor(ctx, months)
 	if errors.Is(err, ErrTariffUnknown) {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Этот тариф больше недоступен.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
 		return true
 	}
 	if err != nil {
 		s.logger.Error("gift: resolve price failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 
 	giftID, code, err := s.createGiftCodeRow(ctx, g.buyerName, g.buyerTGID, months, price)
 	if err != nil {
 		s.logger.Error("gift: create gift code failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 
@@ -187,8 +188,8 @@ func (s *Service) handleGiftCodePick(ctx context.Context, cb *tg.CallbackQuery) 
 	buyerTGID := g.buyerTGID
 	s.clearGiftCode(chatID)
 	_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID,
-		fmt.Sprintf("✅ Заявка на подарочную подписку (%d мес.) отправлена администратору. Ожидайте подтверждения оплаты.", months), nil)
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отправлена администратору.")
+		fmt.Sprintf(i18n.T("✅ Заявка на подарочную подписку (%d мес.) отправлена администратору. Ожидайте подтверждения оплаты."), months), nil)
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка отправлена администратору."))
 
 	s.notifyAdminsGiftRequest(ctx, giftID, code, buyerName, buyerTGID, months, price)
 	return true
@@ -219,18 +220,18 @@ func (s *Service) giftPriceFor(ctx context.Context, months int) (int, error) {
 // confirm/reject buttons and remembers the message refs so resolving clears
 // the buttons in all admin chats. Shared by the chat flow and the mini app.
 func (s *Service) notifyAdminsGiftRequest(ctx context.Context, giftID int64, code, buyerName string, buyerTGID int64, months, price int) {
-	priceStr := "бесплатно"
+	priceStr := i18n.T("бесплатно")
 	if price > 0 {
 		priceStr = s.priceLabel(price)
 	}
 	text := fmt.Sprintf(
-		"🎁 Заявка на подарочную подписку\n\nПокупатель: %s (TG %d)\nПериод: %d мес. — %s\nКод: %s",
+		i18n.T("🎁 Заявка на подарочную подписку\n\nПокупатель: %s (TG %d)\nПериод: %d мес. — %s\nКод: %s"),
 		buyerName, buyerTGID, months, priceStr, code,
 	)
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{{
-			{Text: "✅ Подтвердить оплату", CallbackData: fmt.Sprintf("gc_ok:%d", giftID)},
-			{Text: "❌ Отклонить", CallbackData: fmt.Sprintf("gc_rej:%d", giftID)},
+			{Text: i18n.T("✅ Подтвердить оплату"), CallbackData: fmt.Sprintf("gc_ok:%d", giftID)},
+			{Text: i18n.T("❌ Отклонить"), CallbackData: fmt.Sprintf("gc_rej:%d", giftID)},
 		}},
 	}
 	var refs []adminMsgRef
@@ -274,7 +275,7 @@ func (s *Service) handleGiftCodeCancel(ctx context.Context, cb *tg.CallbackQuery
 		s.clearGiftCode(cb.Message.Chat.ID)
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Отменено.")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Отменено."))
 	return true
 }
 
@@ -284,48 +285,48 @@ func (s *Service) handleGiftCodeCancel(ctx context.Context, cb *tg.CallbackQuery
 func (s *Service) handleGiftCodeApprove(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
 		s.logger.Warn("unauthorized gift approve attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Недостаточно прав.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
 		return true
 	}
 
 	giftID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "gc_ok:"), 10, 64)
 	if err != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать заявку.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать заявку."))
 		return true
 	}
 
 	g, err := s.store.GetGiftCode(ctx, giftID)
 	if err != nil {
 		s.logger.Error("gift: get gift code failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	if g == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка не найдена.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка не найдена."))
 		return true
 	}
 	if g.Status != "pending" {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка уже обработана.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка уже обработана."))
 		return true
 	}
 
 	ok, err := s.store.IssueGiftCode(ctx, giftID, s.now())
 	if err != nil {
 		s.logger.Error("gift: issue failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	if !ok {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка уже обработана.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка уже обработана."))
 		return true
 	}
 
 	s.clearGiftButtons(ctx, giftID)
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Код выдан покупателю.")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("✅ Код выдан покупателю."))
 	_ = s.bot.SendPlain(ctx, cb.From.ID,
-		fmt.Sprintf("✅ Подарочный код %s выдан покупателю %s.", g.Code, g.BuyerUsername))
+		fmt.Sprintf(i18n.T("✅ Подарочный код %s выдан покупателю %s."), g.Code, g.BuyerUsername))
 
-	msg := fmt.Sprintf("🎁 Оплата подтверждена! Подарочная подписка на %d мес.\n\n%s", g.Months, s.giftLinkMessage(g))
+	msg := fmt.Sprintf(i18n.T("🎁 Оплата подтверждена! Подарочная подписка на %d мес.\n\n%s"), g.Months, s.giftLinkMessage(g))
 	_ = s.bot.SendPlain(ctx, g.BuyerTelegramID, msg)
 	return true
 }
@@ -334,12 +335,12 @@ func (s *Service) handleGiftCodeApprove(ctx context.Context, cb *tg.CallbackQuer
 // buyer, falling back to manual /start instructions when the bot username is
 // unknown.
 func (s *Service) giftLinkMessage(g *store.GiftCode) string {
-	msg := fmt.Sprintf("Код: %s\n", g.Code)
+	msg := fmt.Sprintf(i18n.T("Код: %s\n"), g.Code)
 	if bu := s.getBotUsername(); bu != "" {
-		msg += fmt.Sprintf("Ссылка: https://t.me/%s?start=%s%s\n\nОтправьте ссылку тому, кому дарите подписку. Подарок активируется при переходе по ней.",
+		msg += fmt.Sprintf(i18n.T("Ссылка: https://t.me/%s?start=%s%s\n\nОтправьте ссылку тому, кому дарите подписку. Подарок активируется при переходе по ней."),
 			bu, giftDeepLinkPrefix, g.Code)
 	} else {
-		msg += fmt.Sprintf("\nПередайте код тому, кому дарите подписку: для активации нужно отправить боту команду /start %s%s",
+		msg += fmt.Sprintf(i18n.T("\nПередайте код тому, кому дарите подписку: для активации нужно отправить боту команду /start %s%s"),
 			giftDeepLinkPrefix, g.Code)
 	}
 	return msg
@@ -349,28 +350,28 @@ func (s *Service) giftLinkMessage(g *store.GiftCode) string {
 func (s *Service) handleGiftCodeReject(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
 		s.logger.Warn("unauthorized gift reject attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Недостаточно прав.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
 		return true
 	}
 
 	giftID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "gc_rej:"), 10, 64)
 	if err != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать заявку.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать заявку."))
 		return true
 	}
 
 	g, err := s.store.GetGiftCode(ctx, giftID)
 	if err != nil {
 		s.logger.Error("gift: get gift code failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	if g == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка не найдена.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка не найдена."))
 		return true
 	}
 	if g.Status != "pending" {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка уже обработана.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка уже обработана."))
 		return true
 	}
 
@@ -379,9 +380,9 @@ func (s *Service) handleGiftCodeReject(ctx context.Context, cb *tg.CallbackQuery
 	}
 
 	s.clearGiftButtons(ctx, giftID)
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отклонена.")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка отклонена."))
 	_ = s.bot.SendPlain(ctx, g.BuyerTelegramID,
-		"❌ Ваша заявка на подарочную подписку отклонена администратором.")
+		i18n.T("❌ Ваша заявка на подарочную подписку отклонена администратором."))
 	return true
 }
 
@@ -404,11 +405,11 @@ var myGiftsStatuses = []struct {
 	status string
 	label  string
 }{
-	{"pending", "⏳ Ожидают оплаты"},
-	{"issued", "📨 Выданные"},
-	{"redeemed", "✅ Активированные"},
-	{"rejected", "❌ Отклонённые"},
-	{"revoked", "🚫 Отозванные"},
+	{"pending", i18n.T("⏳ Ожидают оплаты")},
+	{"issued", i18n.T("📨 Выданные")},
+	{"redeemed", i18n.T("✅ Активированные")},
+	{"rejected", i18n.T("❌ Отклонённые")},
+	{"revoked", i18n.T("🚫 Отозванные")},
 }
 
 // SendMyGifts opens the gift list: a status-picker menu the user navigates
@@ -418,18 +419,21 @@ func (s *Service) SendMyGifts(ctx context.Context, chatID int64) bool {
 	counts, err := s.store.CountGiftCodesByBuyer(ctx, chatID)
 	if err != nil {
 		s.logger.Error("gift: count by buyer failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	if len(counts) == 0 {
-		_ = s.bot.SendPlain(ctx, chatID, "Вы ещё не покупали подарочных подписок.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Вы ещё не покупали подарочных подписок."))
 		return true
 	}
-	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, myGiftsMenuText, s.myGiftsMenuKeyboard(counts))
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, myGiftsMenuText(), s.myGiftsMenuKeyboard(counts))
 	return true
 }
 
-const myGiftsMenuText = "🎁 Мои подарки\n\nВыберите статус подарков:"
+// myGiftsMenuText is localized at send time, so it can't stay a const.
+func myGiftsMenuText() string {
+	return i18n.T("🎁 Мои подарки\n\nВыберите статус подарков:")
+}
 
 func (s *Service) myGiftsMenuKeyboard(counts map[string]int) *tg.InlineKeyboardMarkup {
 	rows := make([][]tg.InlineKeyboardButton, 0, len(myGiftsStatuses))
@@ -453,10 +457,10 @@ func (s *Service) handleMyGiftsMenu(ctx context.Context, cb *tg.CallbackQuery) b
 	counts, err := s.store.CountGiftCodesByBuyer(ctx, chatID)
 	if err != nil {
 		s.logger.Error("gift: count by buyer failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
-	_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID, myGiftsMenuText, s.myGiftsMenuKeyboard(counts))
+	_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID, myGiftsMenuText(), s.myGiftsMenuKeyboard(counts))
 	return true
 }
 
@@ -464,7 +468,7 @@ func (s *Service) handleMyGiftsMenu(ctx context.Context, cb *tg.CallbackQuery) b
 // status ("mg:list:<status>:<page>"), editing the menu message in place.
 func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if cb.Message == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка."))
 		return true
 	}
 	parts := strings.Split(strings.TrimPrefix(cb.Data, "mg:list:"), ":")
@@ -480,7 +484,7 @@ func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) b
 		}
 	}
 	if label == "" || page < 0 {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать запрос.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать запрос."))
 		return true
 	}
 	chatID := cb.Message.Chat.ID
@@ -488,7 +492,7 @@ func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) b
 	counts, err := s.store.CountGiftCodesByBuyer(ctx, chatID)
 	if err != nil {
 		s.logger.Error("gift: count by buyer failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	total := counts[status]
@@ -499,11 +503,11 @@ func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) b
 		page = 0
 	}
 
-	backRow := []tg.InlineKeyboardButton{{Text: "← К статусам", CallbackData: "mg:menu"}}
+	backRow := []tg.InlineKeyboardButton{{Text: i18n.T("← К статусам"), CallbackData: "mg:menu"}}
 	if total == 0 {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
 		_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID,
-			fmt.Sprintf("🎁 %s: подарков нет.", label),
+			fmt.Sprintf(i18n.T("🎁 %s: подарков нет."), label),
 			&tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{backRow}})
 		return true
 	}
@@ -511,19 +515,19 @@ func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) b
 	gifts, err := s.store.ListGiftCodesByBuyerStatus(ctx, chatID, status, myGiftsPageSize, page*myGiftsPageSize)
 	if err != nil {
 		s.logger.Error("gift: list by buyer failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("🎁 %s — стр. %d/%d:\n", label, page+1, pages))
+	b.WriteString(fmt.Sprintf(i18n.T("🎁 %s — стр. %d/%d:\n"), label, page+1, pages))
 	var rows [][]tg.InlineKeyboardButton
 	for _, g := range gifts {
-		b.WriteString(fmt.Sprintf("\n%s — %d мес. (заявка от %s)\n%s\n",
+		b.WriteString(fmt.Sprintf(i18n.T("\n%s — %d мес. (заявка от %s)\n%s\n"),
 			g.Code, g.Months, g.CreatedAt.Format("02.01.2006"), giftStatusLabel(&g)))
 		if g.Status == "issued" {
 			rows = append(rows, []tg.InlineKeyboardButton{{
-				Text:         fmt.Sprintf("🔗 Ссылка для %s", g.Code),
+				Text:         fmt.Sprintf(i18n.T("🔗 Ссылка для %s"), g.Code),
 				CallbackData: fmt.Sprintf("gc_link:%d", g.ID),
 			}})
 		}
@@ -533,7 +537,7 @@ func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) b
 		if page > 0 {
 			nav = append(nav, tg.InlineKeyboardButton{Text: "◀️", CallbackData: fmt.Sprintf("mg:list:%s:%d", status, page-1)})
 		}
-		nav = append(nav, tg.InlineKeyboardButton{Text: fmt.Sprintf("стр. %d/%d", page+1, pages), CallbackData: "mg:noop"})
+		nav = append(nav, tg.InlineKeyboardButton{Text: fmt.Sprintf(i18n.T("стр. %d/%d"), page+1, pages), CallbackData: "mg:noop"})
 		if page < pages-1 {
 			nav = append(nav, tg.InlineKeyboardButton{Text: "▶️", CallbackData: fmt.Sprintf("mg:list:%s:%d", status, page+1)})
 		}
@@ -550,18 +554,18 @@ func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) b
 func giftStatusLabel(g *store.GiftCode) string {
 	switch g.Status {
 	case "pending":
-		return "⏳ Ожидает подтверждения оплаты"
+		return i18n.T("⏳ Ожидает подтверждения оплаты")
 	case "issued":
-		return "📨 Выдан, ожидает активации"
+		return i18n.T("📨 Выдан, ожидает активации")
 	case "redeemed":
 		if g.RedeemedUsername != "" {
-			return "✅ Активирован (" + g.RedeemedUsername + ")"
+			return i18n.T("✅ Активирован (") + g.RedeemedUsername + ")"
 		}
-		return "✅ Активирован"
+		return i18n.T("✅ Активирован")
 	case "rejected":
-		return "❌ Отклонён"
+		return i18n.T("❌ Отклонён")
 	case "revoked":
-		return "🚫 Отозван"
+		return i18n.T("🚫 Отозван")
 	}
 	return g.Status
 }
@@ -580,27 +584,27 @@ func (s *Service) handleMenuMyGifts(ctx context.Context, cb *tg.CallbackQuery) b
 func (s *Service) handleGiftCodeResend(ctx context.Context, cb *tg.CallbackQuery) bool {
 	giftID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "gc_link:"), 10, 64)
 	if err != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать подарок.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать подарок."))
 		return true
 	}
 	g, err := s.store.GetGiftCode(ctx, giftID)
 	if err != nil {
 		s.logger.Error("gift: get gift code failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	// Only the buyer may request the link again.
 	if g == nil || g.BuyerTelegramID != cb.From.ID {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подарок не найден.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Подарок не найден."))
 		return true
 	}
 	if g.Status != "issued" {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Этот подарок уже активирован, отклонён или отозван.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот подарок уже активирован, отклонён или отозван."))
 		return true
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
 	_ = s.bot.SendPlain(ctx, g.BuyerTelegramID,
-		fmt.Sprintf("🎁 Подарочная подписка на %d мес.\n\n%s", g.Months, s.giftLinkMessage(g)))
+		fmt.Sprintf(i18n.T("🎁 Подарочная подписка на %d мес.\n\n%s"), g.Months, s.giftLinkMessage(g)))
 	return true
 }
 
@@ -609,20 +613,20 @@ func (s *Service) sendAdminGiftList(ctx context.Context, chatID int64) {
 	codes, err := s.store.ListGiftCodesByStatus(ctx, "issued")
 	if err != nil {
 		s.logger.Error("admin: list gift codes failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка чтения подарочных кодов.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения подарочных кодов."))
 		return
 	}
 	rows := make([][]tg.InlineKeyboardButton, 0, len(codes)+1)
 	for _, c := range codes {
 		rows = append(rows, []tg.InlineKeyboardButton{{
-			Text:         fmt.Sprintf("🚫 %s — %d мес. (от %s)", c.Code, c.Months, c.BuyerUsername),
+			Text:         fmt.Sprintf(i18n.T("🚫 %s — %d мес. (от %s)"), c.Code, c.Months, c.BuyerUsername),
 			CallbackData: fmt.Sprintf("adm:grev:%d", c.ID),
 		}})
 	}
-	rows = append(rows, []tg.InlineKeyboardButton{{Text: "← Меню", CallbackData: "adm:menu"}})
-	text := "Активные подарочные коды (нажмите, чтобы отозвать):"
+	rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}})
+	text := i18n.T("Активные подарочные коды (нажмите, чтобы отозвать):")
 	if len(codes) == 0 {
-		text = "Активных подарочных кодов нет."
+		text = i18n.T("Активных подарочных кодов нет.")
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
 }
@@ -631,22 +635,22 @@ func (s *Service) sendAdminGiftList(ctx context.Context, chatID int64) {
 func (s *Service) handleAdminGiftRevoke(ctx context.Context, chatID int64, data string) {
 	giftID, err := strconv.ParseInt(strings.TrimPrefix(data, "adm:grev:"), 10, 64)
 	if err != nil {
-		_ = s.bot.SendPlain(ctx, chatID, "Не удалось распознать код.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось распознать код."))
 		return
 	}
 	ok, err := s.store.RevokeGiftCode(ctx, giftID, s.now())
 	if err != nil {
 		s.logger.Error("admin: revoke gift code failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка отзыва кода.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка отзыва кода."))
 		return
 	}
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, "Код уже использован или отозван.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Код уже использован или отозван."))
 	} else {
-		_ = s.bot.SendPlain(ctx, chatID, "Код отозван.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Код отозван."))
 		if g, gerr := s.store.GetGiftCode(ctx, giftID); gerr == nil && g != nil && g.BuyerTelegramID != 0 {
 			_ = s.bot.SendPlain(ctx, g.BuyerTelegramID,
-				fmt.Sprintf("🚫 Ваш подарочный код %s отозван администратором.", g.Code))
+				fmt.Sprintf(i18n.T("🚫 Ваш подарочный код %s отозван администратором."), g.Code))
 		}
 	}
 	s.sendAdminGiftList(ctx, chatID)

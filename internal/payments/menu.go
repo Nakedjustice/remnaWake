@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
@@ -12,14 +13,14 @@ import (
 // payment flow is enabled, buttons to view tariffs and start the gift and
 // invite flows.
 func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
-	text := "Меню\n\n" +
+	text := i18n.T("Меню\n\n" +
 		"/me — личный кабинет\n" +
 		"/tariff — посмотреть тарифы\n" +
 		"/gift — подарить подписку\n" +
 		"/mygifts — мои подарочные подписки\n" +
 		"/invite — пригласить нового пользователя\n" +
 		"/register — привязать свой Telegram к профилю\n" +
-		"/cancel — отменить текущее действие"
+		"/cancel — отменить текущее действие")
 	if !s.isEnabled() {
 		_ = s.bot.SendPlain(ctx, chatID, text)
 		return true
@@ -31,19 +32,19 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 		// stays a chat flow.
 		kb = &tg.InlineKeyboardMarkup{
 			InlineKeyboard: [][]tg.InlineKeyboardButton{
-				{{Text: "🖥 Открыть мини-приложение", WebApp: &tg.WebAppInfo{URL: url}}},
-				{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
+				{{Text: i18n.T("🖥 Открыть мини-приложение"), WebApp: &tg.WebAppInfo{URL: url}}},
+				{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
 			},
 		}
 	} else {
 		kb = &tg.InlineKeyboardMarkup{
 			InlineKeyboard: [][]tg.InlineKeyboardButton{
-				{{Text: "👤 Личный кабинет", CallbackData: "menu:cabinet"}},
-				{{Text: "💵 Тарифы", CallbackData: "menu:tariffs"}},
-				{{Text: "🎁 Подарить подписку", CallbackData: "menu:gift"}},
-				{{Text: "📦 Мои подарки", CallbackData: "menu:mygifts"}},
-				{{Text: "👤 Пригласить пользователя", CallbackData: "menu:invite"}},
-				{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
+				{{Text: i18n.T("👤 Личный кабинет"), CallbackData: "menu:cabinet"}},
+				{{Text: i18n.T("💵 Тарифы"), CallbackData: "menu:tariffs"}},
+				{{Text: i18n.T("🎁 Подарить подписку"), CallbackData: "menu:gift"}},
+				{{Text: i18n.T("📦 Мои подарки"), CallbackData: "menu:mygifts"}},
+				{{Text: i18n.T("👤 Пригласить пользователя"), CallbackData: "menu:invite"}},
+				{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
 			},
 		}
 	}
@@ -56,17 +57,17 @@ func (s *Service) SendTariffs(ctx context.Context, chatID int64) bool {
 	tariffs, err := s.store.ListTariffs(ctx)
 	if err != nil {
 		s.logger.Error("tariffs: list failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	if len(tariffs) == 0 {
-		_ = s.bot.SendPlain(ctx, chatID, "Тарифы пока не заданы.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Тарифы пока не заданы."))
 		return true
 	}
 	var b strings.Builder
-	b.WriteString("Тарифы:\n")
+	b.WriteString(i18n.T("Тарифы:\n"))
 	for _, t := range tariffs {
-		b.WriteString(fmt.Sprintf("%d мес. — %s\n", t.Months, s.priceLabel(t.Price)))
+		b.WriteString(fmt.Sprintf(i18n.T("%d мес. — %s\n"), t.Months, s.priceLabel(t.Price)))
 	}
 	_ = s.bot.SendPlain(ctx, chatID, strings.TrimRight(b.String(), "\n"))
 	return true
@@ -103,7 +104,7 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		s.clearRegister(chatID)
 		s.clearGiftCode(chatID)
 		s.clearRedeem(chatID)
-		_ = s.bot.SendPlain(ctx, chatID, "Отменено.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отменено."))
 		return true
 	}
 

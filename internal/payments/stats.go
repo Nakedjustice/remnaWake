@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
@@ -18,7 +19,7 @@ func (s *Service) sendAdminStats(ctx context.Context, chatID int64) {
 	subs, err := s.finder.ListAll(ctx)
 	if err != nil {
 		s.logger.Error("stats: list users failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка получения пользователей из панели.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка получения пользователей из панели."))
 		return
 	}
 
@@ -45,31 +46,31 @@ func (s *Service) sendAdminStats(ctx context.Context, chatID int64) {
 	st, err := s.store.ReadAdminStats(ctx, now.Add(-statsRevenueWindow))
 	if err != nil {
 		s.logger.Error("stats: read store stats failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка чтения статистики из базы.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения статистики из базы."))
 		return
 	}
 
 	var b strings.Builder
-	b.WriteString("📊 Статистика\n\n")
-	b.WriteString("Пользователи панели:\n")
-	b.WriteString(fmt.Sprintf("• всего: %d\n", total))
-	b.WriteString(fmt.Sprintf("• активных: %d\n", active))
-	b.WriteString(fmt.Sprintf("• истекают в ближайшие 7 дней: %d\n", expiringSoon))
-	b.WriteString(fmt.Sprintf("• истекших: %d\n", expired))
-	b.WriteString(fmt.Sprintf("• с привязанным Telegram: %d\n", linked))
-	b.WriteString("\nОплаты:\n")
-	b.WriteString(fmt.Sprintf("• подтверждено за 30 дней: %d (на %s)\n", st.PaymentsConfirmed, s.priceLabel(st.Revenue)))
-	b.WriteString(fmt.Sprintf("• ожидают подтверждения: %d\n", st.PaymentsPending))
-	b.WriteString("\nПодарочные коды:\n")
-	b.WriteString(fmt.Sprintf("• ожидают оплаты: %d\n", st.GiftsByStatus["pending"]))
-	b.WriteString(fmt.Sprintf("• выданы (не активированы): %d\n", st.GiftsByStatus["issued"]))
-	b.WriteString(fmt.Sprintf("• активированы: %d\n", st.GiftsByStatus["activated"]))
-	b.WriteString("\nПриглашения:\n")
-	b.WriteString(fmt.Sprintf("• ожидают одобрения: %d", st.InvitesPending))
+	b.WriteString(i18n.T("📊 Статистика\n\n"))
+	b.WriteString(i18n.T("Пользователи панели:\n"))
+	b.WriteString(fmt.Sprintf(i18n.T("• всего: %d\n"), total))
+	b.WriteString(fmt.Sprintf(i18n.T("• активных: %d\n"), active))
+	b.WriteString(fmt.Sprintf(i18n.T("• истекают в ближайшие 7 дней: %d\n"), expiringSoon))
+	b.WriteString(fmt.Sprintf(i18n.T("• истекших: %d\n"), expired))
+	b.WriteString(fmt.Sprintf(i18n.T("• с привязанным Telegram: %d\n"), linked))
+	b.WriteString(i18n.T("\nОплаты:\n"))
+	b.WriteString(fmt.Sprintf(i18n.T("• подтверждено за 30 дней: %d (на %s)\n"), st.PaymentsConfirmed, s.priceLabel(st.Revenue)))
+	b.WriteString(fmt.Sprintf(i18n.T("• ожидают подтверждения: %d\n"), st.PaymentsPending))
+	b.WriteString(i18n.T("\nПодарочные коды:\n"))
+	b.WriteString(fmt.Sprintf(i18n.T("• ожидают оплаты: %d\n"), st.GiftsByStatus["pending"]))
+	b.WriteString(fmt.Sprintf(i18n.T("• выданы (не активированы): %d\n"), st.GiftsByStatus["issued"]))
+	b.WriteString(fmt.Sprintf(i18n.T("• активированы: %d\n"), st.GiftsByStatus["activated"]))
+	b.WriteString(i18n.T("\nПриглашения:\n"))
+	b.WriteString(fmt.Sprintf(i18n.T("• ожидают одобрения: %d"), st.InvitesPending))
 
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: "← Меню", CallbackData: "adm:menu"}},
+			{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}},
 		},
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, b.String(), kb)

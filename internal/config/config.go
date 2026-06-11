@@ -106,7 +106,7 @@ func Load() (*Config, error) {
 			Enabled: getenvBool("WINBACK_ENABLED", true),
 			Days:    winbackDays,
 		},
-		Lang: lang,
+		Lang:       lang,
 		LogLevel:   parseLogLevel(getenv("LOG_LEVEL", "info")),
 		DryRun:     getenvBool("DRY_RUN", false),
 		RunOnStart: getenvBool("RUN_ON_START", true),
