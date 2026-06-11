@@ -2,6 +2,7 @@ package payments
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -242,6 +243,37 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 		return true
 	}
 
+	req, created, expireAt, err := s.approveInviteRequest(ctx, reqID)
+	if errors.Is(err, ErrPanelCreateFailed) {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка создания пользователя. Проверьте логи.")
+		return true
+	}
+	if err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, resolveErrorText(err))
+		return true
+	}
+
+	if created == nil { // dry-run
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Пользователь создан (dry-run).")
+		_ = s.bot.SendPlain(ctx, cb.From.ID,
+			fmt.Sprintf("✅ (dry-run) Пользователь «%s» создан, подписка до %s.",
+				req.NewUsername, expireAt.Format("02.01.2006")))
+		return true
+	}
+
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Пользователь создан!")
+	_ = s.bot.SendPlain(ctx, cb.From.ID,
+		fmt.Sprintf("✅ Пользователь «%s» создан (UUID: %s), подписка до %s.",
+			created.Username, created.UUID, expireAt.Format("02.01.2006")))
+	return true
+}
+
+// approveInviteRequest approves a pending invite: creates the user in the
+// panel (skipped in dry-run, where created is nil), marks the request
+// approved, clears the approve buttons in every admin's chat and notifies the
+// inviter. Shared by the bot callback and the mini app admin API; admin-facing
+// notifications stay with each transport.
+func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store.InviteRequest, *CreatedUser, time.Time, error) {
 	req, err := s.store.GetInviteRequest(ctx, reqID)
 	if err != nil {
 		s.logger.Error("invite: get request failed", "err", err.Error())
@@ -271,7 +303,7 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 			_ = s.bot.SendPlain(ctx, req.InviterTelegramID,
 				fmt.Sprintf(i18n.T("✅ Ваша заявка одобрена! Пользователь «%s» создан (dry-run)."), req.NewUsername))
 		}
-		return true
+		return req, nil, expireAt, nil
 	}
 
 	created, err := s.creator.CreateUser(ctx, req.NewUsername, expireAt)
@@ -299,7 +331,7 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 		}
 		_ = s.bot.SendPlain(ctx, req.InviterTelegramID, msg)
 	}
-	return true
+	return req, created, expireAt, nil
 }
 
 // handleInviteReject processes admin's "Отклонить" button.
@@ -316,6 +348,22 @@ func (s *Service) handleInviteReject(ctx context.Context, cb *tg.CallbackQuery) 
 		return true
 	}
 
+	req, err := s.rejectInviteRequest(ctx, reqID)
+	if err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, resolveErrorText(err))
+		return true
+	}
+
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отклонена.")
+	_ = s.bot.SendPlain(ctx, cb.From.ID,
+		fmt.Sprintf("❌ Заявка на пользователя «%s» отклонена.", req.NewUsername))
+	return true
+}
+
+// rejectInviteRequest rejects a pending invite: marks it rejected, clears the
+// approve buttons in every admin's chat and notifies the inviter. Shared by
+// the bot callback and the mini app admin API.
+func (s *Service) rejectInviteRequest(ctx context.Context, reqID int64) (*store.InviteRequest, error) {
 	req, err := s.store.GetInviteRequest(ctx, reqID)
 	if err != nil {
 		s.logger.Error("invite: get request failed", "err", err.Error())
@@ -344,7 +392,7 @@ func (s *Service) handleInviteReject(ctx context.Context, cb *tg.CallbackQuery) 
 		_ = s.bot.SendPlain(ctx, req.InviterTelegramID,
 			fmt.Sprintf(i18n.T("❌ Ваша заявка на пользователя «%s» отклонена администратором."), req.NewUsername))
 	}
-	return true
+	return req, nil
 }
 
 // clearInviteButtons removes the approve/reject buttons from every admin's copy

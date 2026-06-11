@@ -62,11 +62,21 @@ func (s *Store) GetInviteRequest(ctx context.Context, id int64) (*InviteRequest,
 // ListInviteRequestsByInviter returns every invite request created by the
 // given Telegram user, newest first.
 func (s *Store) ListInviteRequestsByInviter(ctx context.Context, inviterTGID int64) ([]InviteRequest, error) {
+	return s.listInviteRequests(ctx, `WHERE inviter_telegram_id = ?`, inviterTGID)
+}
+
+// ListInviteRequestsByStatus returns every invite request in the given
+// status, newest first.
+func (s *Store) ListInviteRequestsByStatus(ctx context.Context, status string) ([]InviteRequest, error) {
+	return s.listInviteRequests(ctx, `WHERE status = ?`, status)
+}
+
+func (s *Store) listInviteRequests(ctx context.Context, where string, arg any) ([]InviteRequest, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, inviter_telegram_id, inviter_username, new_username, months, price,
 			status, created_at, resolved_at
-		FROM invite_requests WHERE inviter_telegram_id = ? ORDER BY id DESC
-	`, inviterTGID)
+		FROM invite_requests `+where+` ORDER BY id DESC
+	`, arg)
 	if err != nil {
 		return nil, err
 	}
