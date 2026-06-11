@@ -351,6 +351,10 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.sendAdminGiftList(ctx, chatID)
 	case strings.HasPrefix(cb.Data, "adm:grev:"):
 		s.handleAdminGiftRevoke(ctx, chatID, cb.Data)
+	case cb.Data == "adm:squad":
+		s.sendAdminSquadList(ctx, chatID)
+	case strings.HasPrefix(cb.Data, "adm:sq:"):
+		s.handleAdminSquadPick(ctx, chatID, cb.Data)
 	case cb.Data == "adm:bcast":
 		s.startBroadcastFlow(ctx, chatID)
 	case cb.Data == "adm:bc_send":
@@ -442,6 +446,63 @@ func (s *Service) handleAdminDelTariff(ctx context.Context, chatID int64, data s
 		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Тариф на %d мес. удалён."), months))
 	}
 	s.sendAdminDelList(ctx, chatID)
+}
+
+// sendAdminSquadList shows the panel's internal squads as buttons so the
+// admin can pick the default squad for newly created users; the current
+// selection is marked with a check.
+func (s *Service) sendAdminSquadList(ctx context.Context, chatID int64) {
+	if s.squads == nil {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Список сквадов недоступен."))
+		return
+	}
+	squads, err := s.squads.GetInternalSquads(ctx)
+	if err != nil {
+		s.logger.Error("admin: list squads failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка получения сквадов из панели. Попробуйте позже."))
+		return
+	}
+	selectedUUID, _ := s.defaultSquadSelection(ctx)
+	rows := make([][]tg.InlineKeyboardButton, 0, len(squads)+1)
+	for _, sq := range squads {
+		text := sq.Name
+		if sq.UUID == selectedUUID {
+			text = "✅ " + text
+		}
+		rows = append(rows, []tg.InlineKeyboardButton{{
+			Text:         text,
+			CallbackData: "adm:sq:" + sq.UUID,
+		}})
+	}
+	rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}})
+	text := i18n.T("Выберите сквад, в который добавлять новых пользователей:")
+	if len(squads) == 0 {
+		text = i18n.T("В панели нет внутренних сквадов.")
+	}
+	if selectedUUID == "" && len(squads) > 0 {
+		text += i18n.T("\n\nСейчас сквад не выбран: используется сквад с именем «Default-Squad», если он есть.")
+	}
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+// handleAdminSquadPick persists the squad chosen via an adm:sq:<uuid> button.
+func (s *Service) handleAdminSquadPick(ctx context.Context, chatID int64, data string) {
+	uuid := strings.TrimPrefix(data, "adm:sq:")
+	sq, err := s.setDefaultSquad(ctx, uuid)
+	switch {
+	case errors.Is(err, ErrBadInput):
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сквад не найден в панели. Обновите список."))
+		s.sendAdminSquadList(ctx, chatID)
+		return
+	case errors.Is(err, ErrPanelUnavailable):
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка получения сквадов из панели. Попробуйте позже."))
+		return
+	case err != nil:
+		s.logger.Error("admin: set default squad failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения сквада."))
+		return
+	}
+	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Сквад по умолчанию: «%s». Новые пользователи будут добавляться в него."), sq.Name))
 }
 
 func (s *Service) startSetRequisitesFlow(ctx context.Context, chatID int64) {

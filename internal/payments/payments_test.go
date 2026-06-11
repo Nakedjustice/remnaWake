@@ -103,11 +103,30 @@ func (f *fakeFinder) ListAll(_ context.Context) ([]Subscriber, error) {
 
 type fakeCreator struct {
 	created []string
+	squads  [][]string // squad UUIDs passed with each CreateUser call
 }
 
-func (f *fakeCreator) CreateUser(_ context.Context, username string, _ time.Time) (*CreatedUser, error) {
+func (f *fakeCreator) CreateUser(_ context.Context, username string, _ time.Time, squadUUIDs []string) (*CreatedUser, error) {
 	f.created = append(f.created, username)
+	f.squads = append(f.squads, squadUUIDs)
 	return &CreatedUser{UUID: "fake-uuid", Username: username}, nil
+}
+
+// fakeSquadLister returns a Default-Squad by default so creation flows that
+// rely on the by-name fallback keep working in tests.
+type fakeSquadLister struct {
+	squads []InternalSquad
+	err    error
+	calls  int
+}
+
+func newFakeSquadLister() *fakeSquadLister {
+	return &fakeSquadLister{squads: []InternalSquad{{UUID: "default-squad-uuid", Name: "Default-Squad"}}}
+}
+
+func (f *fakeSquadLister) GetInternalSquads(_ context.Context) ([]InternalSquad, error) {
+	f.calls++
+	return f.squads, f.err
 }
 
 type fakeRegistrar struct {
@@ -137,14 +156,14 @@ func newTestService(t *testing.T) (*Service, *fakeBot, *fakeExtender, *store.Sto
 	bot := &fakeBot{}
 	ext := &fakeExtender{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, []int64{1000}, "₽", false /*dryRun*/, logger)
+	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false /*dryRun*/, logger)
 	return svc, bot, ext, st
 }
 
 func TestPaymentButtonNilWithoutAdmin(t *testing.T) {
 	st, _ := store.New(filepath.Join(t.TempDir(), "x.db"))
 	defer st.Close()
-	svc := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if svc.PaymentButton(42) != nil {
 		t.Fatal("expected nil button when no admins")
 	}
@@ -543,7 +562,7 @@ func newTestServiceTwoAdmins(t *testing.T) (*Service, *fakeBot, *fakeExtender, *
 	bot := &fakeBot{}
 	ext := &fakeExtender{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, []int64{1000, 2000}, "₽", false, logger)
+	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000, 2000}, "₽", false, logger)
 	return svc, bot, ext, st
 }
 
@@ -614,7 +633,7 @@ func TestMenuFlowsInertWhenDisabled(t *testing.T) {
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
 		555: {{RemnawaveID: 1, UUID: "u-1", Username: "sub", TelegramID: 555}},
 	}}
-	svc := New(st, bot, &fakeExtender{}, &fakeCreator{}, finder, &fakeRegistrar{}, []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := New(st, bot, &fakeExtender{}, &fakeCreator{}, finder, &fakeRegistrar{}, newFakeSquadLister(), []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx := context.Background()
 
 	// Menu-button entry points must be inert when no admins are configured.

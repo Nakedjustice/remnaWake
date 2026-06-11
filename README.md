@@ -134,9 +134,15 @@ silently ignored for everyone else):
 | `/requisites`                | Show the currently saved payment requisites |
 | `/stats`                     | 📊 Statistics: panel users (total / active / expiring in 7 days / expired / linked to Telegram), payments confirmed in the last 30 days with revenue, pending requests, gift codes by status, pending invites |
 
-The `/admin` menu also has a **📊 Статистика** button (same report as `/stats`)
-and a **🎁 Подарочные коды** section listing all issued (not yet activated)
-gift codes, each with a one-tap revoke button.
+The `/admin` menu also has a **📊 Статистика** button (same report as `/stats`),
+a **🎁 Подарочные коды** section listing all issued (not yet activated)
+gift codes, each with a one-tap revoke button, and a **🛡 Сквад по умолчанию**
+picker that selects the panel internal squad new users (created via `/gift` and
+`/invite`) are added to. When no squad is selected, the squad named
+`Default-Squad` (seeded by a stock Remnawave install) is used; if neither can
+be resolved, user creation fails with a visible error instead of producing a
+profile without access to any nodes. The same picker is available in the Mini
+App admin panel.
 
 Tariffs and payment state are stored in SQLite (`DB_PATH`, default `/data/bot.db`,
 kept in the `botdata` Docker volume), so they survive restarts.

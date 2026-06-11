@@ -24,6 +24,9 @@ var (
 	// ErrPanelCreateFailed: the panel rejected the user creation; the invite
 	// request stays pending and can be approved again.
 	ErrPanelCreateFailed = errors.New("create user in panel failed")
+	// ErrPanelUnavailable: a panel API call needed by the operation (e.g.
+	// listing internal squads) failed; retrying later may succeed.
+	ErrPanelUnavailable = errors.New("panel api unavailable")
 )
 
 // confirmPaymentRequest extends the subscription for a pending payment
