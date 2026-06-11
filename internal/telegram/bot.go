@@ -551,13 +551,23 @@ func (b *Bot) SetMyCommandsForChat(ctx context.Context, chatID int64, commands [
 // SetChatMenuButton sets the default menu button (left of the input field) to
 // open the Mini App at url with the given label, via the setChatMenuButton API.
 func (b *Bot) SetChatMenuButton(ctx context.Context, text, url string) error {
-	payload := map[string]any{
-		"menu_button": map[string]any{
-			"type":    "web_app",
-			"text":    text,
-			"web_app": WebAppInfo{URL: url},
-		},
-	}
+	return b.setChatMenuButton(ctx, map[string]any{
+		"type":    "web_app",
+		"text":    text,
+		"web_app": WebAppInfo{URL: url},
+	})
+}
+
+// ResetChatMenuButton restores the default menu button (the commands menu).
+// Telegram stores the menu button on the bot account, so a previously set
+// Mini App button survives restarts and must be reset explicitly when the
+// webapp is disabled.
+func (b *Bot) ResetChatMenuButton(ctx context.Context) error {
+	return b.setChatMenuButton(ctx, map[string]any{"type": "default"})
+}
+
+func (b *Bot) setChatMenuButton(ctx context.Context, menuButton map[string]any) error {
+	payload := map[string]any{"menu_button": menuButton}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
