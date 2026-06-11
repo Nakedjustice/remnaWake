@@ -13,6 +13,11 @@ the bot extends the subscription by the chosen number of months.
 - Remnawave authentication via the panel API token (`Authorization: Bearer ...`).
 - Fetches users with `GET /api/users`, paginated by `start/size`.
 - Processes only `status == "ACTIVE"`; users without a `telegramId` are skipped.
+- **Win-back messages** 1 and 3 days *after* expiry (configurable via
+  `WINBACK_DAYS` / `WINBACK_ENABLED`) with the same payment button.
+- Every notification is deduplicated in SQLite, so restarts never double-send;
+  failed sends are retried on the next daily run, and rate-limited (429)
+  Telegram calls are retried automatically.
 - Sends messages through the Telegram Bot API (`sendMessage`).
 - **"Я оплатил"** (*I paid*) inline button in notifications, with an admin-confirmed
   flow that extends the subscription via `PATCH /api/users`.
@@ -54,6 +59,27 @@ word for "day" (день / дня / дней) is grammatically agreed with the n
 If `TELEGRAM_ADMIN_ID` is set, an inline **"Я оплатил"** button is attached to
 the message. Use the admin's **Telegram user ID** here, not a group/channel chat
 ID.
+
+Every reminder is recorded in SQLite before it is sent, so a restart (or the
+run-on-start pass plus the daily run landing on the same day) can never deliver
+the same notice twice; a failed Telegram send is retried on the next daily run.
+
+### Win-back after expiry
+
+When a subscription has already **expired** (panel status `EXPIRED`, or still
+`ACTIVE` with a past expiry date), the bot sends a win-back message 1 and 3
+days after the expiry date:
+
+```
+⛔️ ivan, ваша подписка истекла 10.06.2026.
+Чтобы продолжить пользоваться сервисом, продлите подписку.
+```
+
+The message carries the same **"Я оплатил"** button, and the regular
+confirmation flow extends the subscription from `max(now, old expiry)`.
+`DISABLED` / `LIMITED` accounts are never contacted. Tune the days with
+`WINBACK_DAYS` (default `1,3`) or turn the feature off with
+`WINBACK_ENABLED=false`.
 
 ## Payment confirmation flow (optional)
 
@@ -246,6 +272,8 @@ and **why it matters** (no link = no notifications), plus a **🔗 Привяз�
 | `CURRENCY`             | no       | `₽`              | Currency label shown next to tariff prices                   |
 | `WEBAPP_URL`           | no       | —                | Public HTTPS URL of the Telegram Mini App (empty = mini app off) |
 | `WEBAPP_LISTEN`        | no       | `:8080`          | Local bind address for the mini app server (behind your reverse proxy) |
+| `WINBACK_ENABLED`      | no       | `true`           | Send "subscription expired" win-back messages after expiry   |
+| `WINBACK_DAYS`         | no       | `1,3`            | Days **after** expiry to send the win-back message (comma-separated) |
 
 ## Telegram Mini App
 

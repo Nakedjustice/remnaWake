@@ -39,6 +39,8 @@ func main() {
 		"run_on_start", cfg.RunOnStart,
 		"payment_notifications_enabled", len(cfg.Telegram.AdminIDs) > 0,
 		"webapp_enabled", cfg.WebApp.Enabled(),
+		"winback_enabled", cfg.Winback.Enabled,
+		"winback_days", cfg.Winback.Days,
 	)
 
 	rwClient, err := remnawave.NewClient(cfg.Remnawave.BaseURL, cfg.Remnawave.APIToken, cfg.HTTP.Timeout)
@@ -57,7 +59,11 @@ func main() {
 	defer db.Close()
 
 	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, cfg.Telegram.AdminIDs, cfg.Currency, cfg.DryRun, logger)
-	svc := notify.NewService(rwClient, bot, pay, logger, cfg.DryRun)
+	var winbackDays []int
+	if cfg.Winback.Enabled {
+		winbackDays = cfg.Winback.Days
+	}
+	svc := notify.NewService(rwClient, bot, pay, db, logger, cfg.DryRun, winbackDays)
 
 	rootCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

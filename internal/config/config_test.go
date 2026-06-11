@@ -129,6 +129,68 @@ func TestLoadAdminIDRejectsNegative(t *testing.T) {
 	}
 }
 
+func TestLoadWinbackDefaults(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Winback.Enabled {
+		t.Fatal("Winback should default to enabled")
+	}
+	if len(cfg.Winback.Days) != 2 || cfg.Winback.Days[0] != 1 || cfg.Winback.Days[1] != 3 {
+		t.Fatalf("Winback.Days = %v, want [1 3]", cfg.Winback.Days)
+	}
+}
+
+func TestLoadWinbackCustomDays(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("WINBACK_DAYS", "2, 7,14")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Winback.Days) != 3 || cfg.Winback.Days[0] != 2 || cfg.Winback.Days[2] != 14 {
+		t.Fatalf("Winback.Days = %v, want [2 7 14]", cfg.Winback.Days)
+	}
+}
+
+func TestLoadWinbackDisabled(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("WINBACK_ENABLED", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Winback.Enabled {
+		t.Fatal("Winback should be disabled")
+	}
+}
+
+func TestLoadWinbackRejectsBadDays(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("WINBACK_DAYS", "1,zero")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load should fail with invalid WINBACK_DAYS token")
+	}
+	if !strings.Contains(err.Error(), "WINBACK_DAYS") {
+		t.Fatalf("error = %q, want mention of WINBACK_DAYS", err.Error())
+	}
+}
+
 func TestLoadAdminIDInvalidToken(t *testing.T) {
 	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
 	t.Setenv("REMNAWAVE_API_TOKEN", "tok")

@@ -19,6 +19,7 @@ type Bot struct {
 	apiBase   string
 	parseMode string
 	http      *http.Client
+	wait      func(ctx context.Context, d time.Duration) error
 }
 
 type sendMessageRequest struct {
@@ -156,6 +157,16 @@ func NewBot(token, parseMode string, timeout time.Duration) *Bot {
 		http: &http.Client{
 			Timeout: timeout,
 		},
+		wait: func(ctx context.Context, d time.Duration) error {
+			t := time.NewTimer(d)
+			defer t.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-t.C:
+				return nil
+			}
+		},
 	}
 }
 
@@ -241,22 +252,49 @@ func (b *Bot) SendWelcome(ctx context.Context, chatID int64) error {
 	return err
 }
 
+const (
+	// sendMaxAttempts bounds 429 retries per message; other errors fail fast.
+	sendMaxAttempts = 3
+	// sendRetryAfterCap limits how long one retry_after wait may block a send.
+	sendRetryAfterCap = 30 * time.Second
+)
+
 func (b *Bot) sendMessage(ctx context.Context, payload sendMessageRequest) (int64, error) {
+	for attempt := 1; ; attempt++ {
+		msgID, retryAfter, err := b.doSendMessage(ctx, payload)
+		if err == nil {
+			return msgID, nil
+		}
+		if retryAfter <= 0 || attempt >= sendMaxAttempts {
+			return 0, err
+		}
+		if retryAfter > sendRetryAfterCap {
+			retryAfter = sendRetryAfterCap
+		}
+		if werr := b.wait(ctx, retryAfter); werr != nil {
+			return 0, werr
+		}
+	}
+}
+
+// doSendMessage performs a single sendMessage call. A positive retryAfter
+// signals a 429 the caller may wait out and retry.
+func (b *Bot) doSendMessage(ctx context.Context, payload sendMessageRequest) (int64, time.Duration, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	endpoint := b.apiBase + "/sendMessage"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := b.http.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("telegram send: %w", err)
+		return 0, 0, fmt.Errorf("telegram send: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -264,22 +302,23 @@ func (b *Bot) sendMessage(ctx context.Context, payload sendMessageRequest) (int6
 	if resp.StatusCode == http.StatusTooManyRequests {
 		var ar apiResponse
 		if err := json.Unmarshal(raw, &ar); err == nil && ar.Parameters != nil && ar.Parameters.RetryAfter > 0 {
-			return 0, fmt.Errorf("telegram rate limited, retry_after=%ds", ar.Parameters.RetryAfter)
+			return 0, time.Duration(ar.Parameters.RetryAfter) * time.Second,
+				fmt.Errorf("telegram rate limited, retry_after=%ds", ar.Parameters.RetryAfter)
 		}
-		return 0, fmt.Errorf("telegram rate limited, status=%d", resp.StatusCode)
+		return 0, 0, fmt.Errorf("telegram rate limited, status=%d", resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return 0, fmt.Errorf("telegram send failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+		return 0, 0, fmt.Errorf("telegram send failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
 	}
 
 	var ar sendMessageResponse
 	if err := json.Unmarshal(raw, &ar); err != nil {
-		return 0, fmt.Errorf("telegram send decode: %w", err)
+		return 0, 0, fmt.Errorf("telegram send decode: %w", err)
 	}
 	if !ar.OK {
-		return 0, fmt.Errorf("telegram send not ok: %s", ar.Description)
+		return 0, 0, fmt.Errorf("telegram send not ok: %s", ar.Description)
 	}
-	return ar.Result.MessageID, nil
+	return ar.Result.MessageID, 0, nil
 }
 
 func (b *Bot) GetUpdates(ctx context.Context, offset int64, timeout int) ([]Update, error) {

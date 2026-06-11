@@ -213,9 +213,7 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 		}
 		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
 	}
-	s.mu.Lock()
-	s.payMsgs[reqID] = refs
-	s.mu.Unlock()
+	s.putAdminMsgs(s.payMsgs, reqID, refs)
 	return reqID, nil
 }
 
@@ -240,9 +238,21 @@ func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool 
 	case errors.Is(err, ErrRequestResolved):
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подписка уже была продлена.")
 		return true
+	case errors.Is(err, ErrConfirmedNotMarked):
+		s.logger.Error("confirm payment request failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подписка продлена, но статус заявки не обновился.")
+		_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(
+			"⚠️ Подписка для %s продлена до %s, но заявку №%d не удалось отметить подтверждённой в базе. Не подтверждайте её повторно — это продлит подписку ещё раз.",
+			req.Username, newExpireAt.Format("02.01.2006"), reqID))
+		return true
 	case err != nil:
 		s.logger.Error("confirm payment request failed", "err", err.Error())
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка продления подписки. Проверьте логи.")
+		if req != nil {
+			_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(
+				"❌ Не удалось продлить подписку для %s (заявка №%d): ошибка панели.\nЗаявка осталась в ожидании — попробуйте подтвердить ещё раз.",
+				req.Username, reqID))
+		}
 		return true
 	}
 
@@ -260,10 +270,7 @@ func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool 
 // clearPayButtons removes the confirm button from every admin's copy of the
 // payment notification for reqID, then forgets the stored refs.
 func (s *Service) clearPayButtons(ctx context.Context, reqID int64) {
-	s.mu.Lock()
-	refs := s.payMsgs[reqID]
-	delete(s.payMsgs, reqID)
-	s.mu.Unlock()
+	refs := s.takeAdminMsgs(s.payMsgs, reqID)
 	for _, ref := range refs {
 		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
 			s.logger.Warn("clear admin confirm button failed", "chat_id", ref.chatID, "err", err.Error())
