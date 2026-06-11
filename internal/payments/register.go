@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
@@ -59,7 +60,7 @@ func (s *Service) beginRegisterFlow(ctx context.Context, chatID int64) {
 		createdAt:     s.now(),
 	})
 	_ = s.bot.SendPlain(ctx, chatID,
-		"Введите имя вашего профила (Можно посмотреть в приложении). /cancel — отмена.")
+		i18n.T("Введите имя вашего профила (Можно посмотреть в приложении). /cancel — отмена."))
 }
 
 // handleMenuRegister starts the register flow from the menu button.
@@ -91,25 +92,25 @@ func (s *Service) handleRegisterUsernameInput(ctx context.Context, m *tg.Message
 
 	if strings.HasPrefix(text, "/") {
 		_ = s.bot.SendPlain(ctx, chatID,
-			"Введите имя вашего профила или /cancel для отмены.")
+			i18n.T("Введите имя вашего профила или /cancel для отмены."))
 		return true
 	}
 
 	if !isValidUsername(text) {
 		_ = s.bot.SendPlain(ctx, chatID,
-			"Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов.")
+			i18n.T("Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов."))
 		return true
 	}
 
 	sub, err := s.finder.FindByUsername(ctx, text)
 	if err != nil {
 		s.logger.Error("register: find by username failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	if sub == nil {
 		_ = s.bot.SendPlain(ctx, chatID,
-			"Профиль с таким именем не найден. Попробуйте ещё раз.")
+			i18n.T("Профиль с таким именем не найден. Попробуйте ещё раз."))
 		return true
 	}
 
@@ -118,10 +119,10 @@ func (s *Service) handleRegisterUsernameInput(ctx context.Context, m *tg.Message
 		s.clearRegister(chatID)
 		if sub.TelegramID == r.requesterTGID {
 			_ = s.bot.SendPlain(ctx, chatID,
-				"Этот профиль уже привязан к вашему Telegram.")
+				i18n.T("Этот профиль уже привязан к вашему Telegram."))
 		} else {
 			_ = s.bot.SendPlain(ctx, chatID,
-				"Этот профиль уже привязан к другому Telegram. Обратитесь к администратору.")
+				i18n.T("Этот профиль уже привязан к другому Telegram. Обратитесь к администратору."))
 		}
 		return true
 	}
@@ -134,11 +135,11 @@ func (s *Service) handleRegisterUsernameInput(ctx context.Context, m *tg.Message
 }
 
 func (s *Service) showRegisterConfirm(ctx context.Context, chatID int64, r *registerState) {
-	text := fmt.Sprintf("Привязать ваш Telegram к профилю «%s»?", r.username)
+	text := fmt.Sprintf(i18n.T("Привязать ваш Telegram к профилю «%s»?"), r.username)
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: "Привязать", CallbackData: "reg_confirm"}},
-			{{Text: "Отмена", CallbackData: "reg_cancel"}},
+			{{Text: i18n.T("Привязать"), CallbackData: "reg_confirm"}},
+			{{Text: i18n.T("Отмена"), CallbackData: "reg_cancel"}},
 		},
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
@@ -147,13 +148,13 @@ func (s *Service) showRegisterConfirm(ctx context.Context, chatID int64, r *regi
 // handleRegisterConfirm processes the "Привязать" button press.
 func (s *Service) handleRegisterConfirm(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if cb.Message == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка."))
 		return true
 	}
 	chatID := cb.Message.Chat.ID
 	r := s.getRegister(chatID)
 	if r == nil || r.username == "" {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Сессия истекла. Запустите /register заново.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Сессия истекла. Запустите /register заново."))
 		return true
 	}
 
@@ -165,9 +166,9 @@ func (s *Service) handleRegisterConfirm(ctx context.Context, cb *tg.CallbackQuer
 		s.logger.Info("dry-run: would set telegram id", "username", username, "uuid", uuid, "telegram_id", tgID)
 		s.clearRegister(chatID)
 		_ = s.bot.EditMessageReplyMarkup(ctx, chatID, cb.Message.MessageID, nil)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Готово (dry-run).")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Готово (dry-run)."))
 		_ = s.bot.SendPlain(ctx, chatID,
-			fmt.Sprintf("✅ Готово! Ваш Telegram привязан к профилю «%s» (dry-run).", username))
+			fmt.Sprintf(i18n.T("✅ Готово! Ваш Telegram привязан к профилю «%s» (dry-run)."), username))
 		return true
 	}
 
@@ -175,15 +176,15 @@ func (s *Service) handleRegisterConfirm(ctx context.Context, cb *tg.CallbackQuer
 		s.logger.Error("register: set telegram id failed", "uuid", uuid, "err", err.Error())
 		s.clearRegister(chatID)
 		_ = s.bot.EditMessageReplyMarkup(ctx, chatID, cb.Message.MessageID, nil)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка привязки. Попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка привязки. Попробуйте позже."))
 		return true
 	}
 
 	s.clearRegister(chatID)
 	_ = s.bot.EditMessageReplyMarkup(ctx, chatID, cb.Message.MessageID, nil)
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Привязано!")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("✅ Привязано!"))
 	_ = s.bot.SendPlain(ctx, chatID,
-		fmt.Sprintf("✅ Готово! Ваш Telegram привязан к профилю «%s».", username))
+		fmt.Sprintf(i18n.T("✅ Готово! Ваш Telegram привязан к профилю «%s»."), username))
 	return true
 }
 
@@ -193,6 +194,6 @@ func (s *Service) handleRegisterCancel(ctx context.Context, cb *tg.CallbackQuery
 		s.clearRegister(cb.Message.Chat.ID)
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Отменено.")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Отменено."))
 	return true
 }

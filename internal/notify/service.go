@@ -242,4 +242,3 @@ func daysSince(now, exp time.Time) int {
 	}
 	return int(diff / (24 * time.Hour))
 }
-

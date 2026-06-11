@@ -1,6 +1,24 @@
 package i18n
 
-import "testing"
+import (
+	"regexp"
+	"slices"
+	"testing"
+)
+
+var verbRe = regexp.MustCompile(`%[#+\-0 ]*\d*(?:\.\d+)?[a-zA-Z]`)
+
+// TestEnglishFormatVerbsMatch guards that every translation keeps the same
+// fmt verbs in the same order as its Russian source, since the texts are
+// formatted after translation.
+func TestEnglishFormatVerbsMatch(t *testing.T) {
+	for k, v := range en {
+		key, tr := verbRe.FindAllString(k, -1), verbRe.FindAllString(v, -1)
+		if !slices.Equal(key, tr) {
+			t.Errorf("format verbs differ for %q: source %v, translation %v", k, key, tr)
+		}
+	}
+}
 
 func TestParse(t *testing.T) {
 	tests := []struct {
