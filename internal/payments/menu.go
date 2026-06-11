@@ -83,8 +83,8 @@ func (s *Service) handleMenuTariffs(ctx context.Context, cb *tg.CallbackQuery) b
 }
 
 // HandleText consumes a free-text message when the chat is mid-flow
-// (invite, redeem, register), plus /cancel. Returns true only when it
-// handled the message.
+// (invite, redeem, register), plus /cancel and bare subscription links.
+// Returns true only when it handled the message.
 func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 	if m == nil {
 		return false
@@ -114,5 +114,9 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 	if s.handleRedeemUsernameInput(ctx, m) {
 		return true
 	}
-	return s.handleRegisterUsernameInput(ctx, m)
+	if s.handleRegisterUsernameInput(ctx, m) {
+		return true
+	}
+	// A pasted subscription link starts the linking flow even without /register.
+	return s.handleBareSubscriptionLink(ctx, m)
 }

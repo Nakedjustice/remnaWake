@@ -83,6 +83,7 @@ func (f *fakeExtender) ExtendSubscriptionByUUID(_ context.Context, uuid string, 
 type fakeFinder struct {
 	byTG    map[int64][]Subscriber
 	byName  map[string]*Subscriber
+	byShort map[string]*Subscriber
 	all     []Subscriber
 	listErr error
 }
@@ -92,6 +93,9 @@ func (f *fakeFinder) FindByTelegramID(_ context.Context, id int64) ([]Subscriber
 }
 func (f *fakeFinder) FindByUsername(_ context.Context, name string) (*Subscriber, error) {
 	return f.byName[name], nil
+}
+func (f *fakeFinder) FindByShortUUID(_ context.Context, shortUUID string) (*Subscriber, error) {
+	return f.byShort[shortUUID], nil
 }
 func (f *fakeFinder) ListAll(_ context.Context) ([]Subscriber, error) {
 	return f.all, f.listErr

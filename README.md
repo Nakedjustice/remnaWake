@@ -24,9 +24,10 @@ the bot extends the subscription by the chosen number of months.
 - Sends messages through the Telegram Bot API (`sendMessage`).
 - **"Я оплатил"** (*I paid*) inline button in notifications, with an admin-confirmed
   flow that extends the subscription via `PATCH /api/users`.
-- **`/register`** — self-service Telegram linking: a user enters their Remnawave
-  profile name, the bot finds the account and links their Telegram ID without
-  admin involvement.
+- **`/register`** — self-service Telegram linking: a user sends their
+  subscription link (or Remnawave profile name) — even just pasting the link
+  into the chat works — the bot finds the account and links their Telegram ID
+  without admin involvement.
 - **`/invite`** — existing subscribers can request a new user to be created in the
   panel; admin approves and the new subscription URL is sent back to the inviter.
 - **`/gift`** — buy a subscription as a gift without naming the recipient: after
@@ -203,10 +204,16 @@ confirmation.
 ### Linking Telegram to a profile (`/register`)
 
 Users who already have a Remnawave account but haven't linked their Telegram can
-do it themselves without contacting the admin:
+do it themselves without contacting the admin. The easiest way is to simply
+paste the **subscription link** into the chat — no command needed: the bot
+resolves the profile by the short UUID at the end of the link (via
+`GET /api/users/by-short-uuid/{shortUuid}`) and offers to link it.
+
+The explicit flow also accepts both inputs:
 
 1. Send `/register` to the bot (or tap **🔗 Привязать аккаунт** in the menu).
-2. Enter your **Remnawave profile name** (visible in the VPN app).
+2. Send your **subscription link** or your **Remnawave profile name** (both
+   visible in the VPN app).
 3. The bot looks up the account. If the profile exists and has no Telegram linked,
    it asks for confirmation.
 4. Tap **"Привязать"** — the bot calls `PATCH /api/users` and links your Telegram
@@ -248,12 +255,12 @@ through linking an account step by step (no link = no notifications), plus a
 ❗️ Сначала привяжите свой Telegram к профилю подписки — без привязки я не узнаю, какая подписка ваша, и напоминания приходить не будут.
 
 Как привязать аккаунт — по шагам:
-1. Нажмите кнопку «🔗 Привязать аккаунт» под этим сообщением (или отправьте команду /register).
-2. Бот попросит ввести имя вашего профиля. Откройте приложение, в котором вы пользуетесь подпиской, — имя профиля написано там (например, ivan_petrov).
-3. Наберите это имя в чате обычным сообщением и отправьте — точно так, как оно написано в приложении.
-4. Бот спросит «Привязать ваш Telegram к профилю …?» — нажмите кнопку «Привязать».
-5. Когда придёт сообщение «✅ Готово!», привязка завершена и напоминания включены.
+1. Откройте приложение, в котором вы пользуетесь подпиской, и скопируйте ссылку на подписку.
+2. Отправьте эту ссылку мне обычным сообщением в этот чат — команда /register не нужна.
+3. Я найду ваш профиль и спрошу «Привязать ваш Telegram к профилю …?» — нажмите кнопку «Привязать».
+4. Когда придёт сообщение «✅ Готово!», привязка завершена и напоминания включены.
 
+Нет ссылки под рукой? Нажмите «🔗 Привязать аккаунт» ниже (или отправьте /register) и введите имя профиля (например, ivan_petrov).
 Если ошиблись или передумали — отправьте /cancel и начните заново.
 
 Все команды:

@@ -42,12 +42,12 @@ const WelcomeRU = `👋 Привет! Я бот для управления ва
 ❗️ Сначала привяжите свой Telegram к профилю подписки — без привязки я не узнаю, какая подписка ваша, и напоминания приходить не будут.
 
 Как привязать аккаунт — по шагам:
-1. Нажмите кнопку «🔗 Привязать аккаунт» под этим сообщением (или отправьте команду /register).
-2. Бот попросит ввести имя вашего профиля. Откройте приложение, в котором вы пользуетесь подпиской, — имя профиля написано там (например, ivan_petrov).
-3. Наберите это имя в чате обычным сообщением и отправьте — точно так, как оно написано в приложении.
-4. Бот спросит «Привязать ваш Telegram к профилю …?» — нажмите кнопку «Привязать».
-5. Когда придёт сообщение «✅ Готово!», привязка завершена и напоминания включены.
+1. Откройте приложение, в котором вы пользуетесь подпиской, и скопируйте ссылку на подписку.
+2. Отправьте эту ссылку мне обычным сообщением в этот чат — команда /register не нужна.
+3. Я найду ваш профиль и спрошу «Привязать ваш Telegram к профилю …?» — нажмите кнопку «Привязать».
+4. Когда придёт сообщение «✅ Готово!», привязка завершена и напоминания включены.
 
+Нет ссылки под рукой? Нажмите «🔗 Привязать аккаунт» ниже (или отправьте /register) и введите имя профиля (например, ivan_petrov).
 Если ошиблись или передумали — отправьте /cancel и начните заново.
 
 Все команды:
@@ -72,12 +72,12 @@ const welcomeEN = `👋 Hi! I'm a bot for managing your subscription. Here's wha
 ❗️ First, link your Telegram to your subscription profile — without the link I can't tell which subscription is yours, and no reminders will arrive.
 
 How to link your account — step by step:
-1. Tap the “🔗 Link account” button under this message (or send the /register command).
-2. The bot will ask for your profile name. Open the app you use your subscription in — the profile name is shown there (for example, ivan_petrov).
-3. Type that name in the chat as a regular message and send it — exactly as it appears in the app.
-4. The bot will ask “Link your Telegram to profile …?” — tap the “Привязать” (Link) button.
-5. When you receive the “✅ Done!” message, the link is complete and reminders are on.
+1. Open the app you use your subscription in and copy your subscription link.
+2. Send that link to me as a regular message in this chat — no /register needed.
+3. I'll find your profile and ask “Link your Telegram to profile …?” — tap the “Привязать” (Link) button.
+4. When you receive the “✅ Done!” message, the link is complete and reminders are on.
 
+Don't have the link handy? Tap “🔗 Link account” below (or send /register) and enter your profile name (for example, ivan_petrov).
 If you make a mistake or change your mind — send /cancel and start over.
 
 All commands:
