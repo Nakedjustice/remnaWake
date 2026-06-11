@@ -2,6 +2,7 @@ package payments
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -214,6 +215,13 @@ func (s *Service) AdminConfirmRequest(ctx context.Context, telegramID, reqID int
 		return err
 	}
 	req, newExpireAt, err := s.confirmPaymentRequest(ctx, reqID)
+	if errors.Is(err, ErrConfirmedNotMarked) {
+		// The extension itself succeeded; warn the admin in chat, because the
+		// webapp can only show a generic error for this state.
+		_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
+			"⚠️ Подписка для %s продлена до %s, но заявку №%d не удалось отметить подтверждённой в базе. Не подтверждайте её повторно — это продлит подписку ещё раз.",
+			req.Username, newExpireAt.Format("02.01.2006"), reqID))
+	}
 	if err != nil {
 		return err
 	}

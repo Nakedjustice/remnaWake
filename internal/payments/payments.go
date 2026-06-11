@@ -87,6 +87,17 @@ type adminMsgRef struct {
 	messageID int64
 }
 
+// adminMsgEntry holds every admin's copy of one request notification plus when
+// it was recorded, so abandoned (never-actioned) entries can be evicted.
+type adminMsgEntry struct {
+	refs      []adminMsgRef
+	createdAt time.Time
+}
+
+// adminMsgTTL is how long admin message refs are kept for a request nobody
+// actions; after that the stale confirm buttons just stop being clearable.
+const adminMsgTTL = 7 * 24 * time.Hour
+
 // giftCodeState tracks a /gift purchase conversation: the buyer has been
 // prompted with the tariff keyboard and we are awaiting their pick.
 type giftCodeState struct {
@@ -132,13 +143,13 @@ type Service struct {
 	webAppURL   string // protected by mu; empty = mini app disabled
 
 	adminInput map[int64]adminInputState // protected by mu
-	// payMsgs/inviteMsgs map a request ID to the admin message copies of its
-	// notification, so confirming/rejecting clears the button for every admin.
-	// Entries are deleted on resolve; abandoned (never-actioned) requests leak
-	// slowly until restart. TODO: add TTL-based eviction if this grows.
-	payMsgs    map[int64][]adminMsgRef // protected by mu
-	inviteMsgs map[int64][]adminMsgRef // protected by mu
-	giftMsgs   map[int64][]adminMsgRef // protected by mu
+	// payMsgs/inviteMsgs/giftMsgs map a request ID to the admin message copies
+	// of its notification, so confirming/rejecting clears the button for every
+	// admin. Entries are deleted on resolve; abandoned requests are evicted
+	// after adminMsgTTL by putAdminMsgs.
+	payMsgs    map[int64]adminMsgEntry // protected by mu
+	inviteMsgs map[int64]adminMsgEntry // protected by mu
+	giftMsgs   map[int64]adminMsgEntry // protected by mu
 	requisites string                  // protected by mu; empty = not set
 }
 
@@ -164,9 +175,9 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 		giftCodes:  make(map[int64]*giftCodeState),
 		redeems:    make(map[int64]*redeemState),
 		adminInput: make(map[int64]adminInputState),
-		payMsgs:    make(map[int64][]adminMsgRef),
-		inviteMsgs: make(map[int64][]adminMsgRef),
-		giftMsgs:   make(map[int64][]adminMsgRef),
+		payMsgs:    make(map[int64]adminMsgEntry),
+		inviteMsgs: make(map[int64]adminMsgEntry),
+		giftMsgs:   make(map[int64]adminMsgEntry),
 	}
 	// Load persisted payment requisites into the in-memory cache so the user
 	// flow never needs a DB read on each button tap.
@@ -236,6 +247,29 @@ func (s *Service) PaymentButton(userID int64) *tg.InlineKeyboardMarkup {
 // RememberUser persists the user snapshot captured when a notification is sent.
 func (s *Service) RememberUser(ctx context.Context, u store.NotifiedUser) error {
 	return s.store.UpsertNotifiedUser(ctx, u)
+}
+
+// putAdminMsgs stores the admin message refs for id in m, first evicting
+// entries older than adminMsgTTL.
+func (s *Service) putAdminMsgs(m map[int64]adminMsgEntry, id int64, refs []adminMsgRef) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	for k, e := range m {
+		if now.Sub(e.createdAt) > adminMsgTTL {
+			delete(m, k)
+		}
+	}
+	m[id] = adminMsgEntry{refs: refs, createdAt: now}
+}
+
+// takeAdminMsgs removes and returns the admin message refs stored for id.
+func (s *Service) takeAdminMsgs(m map[int64]adminMsgEntry, id int64) []adminMsgRef {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := m[id]
+	delete(m, id)
+	return e.refs
 }
 
 func (s *Service) priceLabel(price int) string {

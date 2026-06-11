@@ -3,11 +3,15 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 )
 
 func TestSendPlainWithKeyboardReturnsMessageID(t *testing.T) {
@@ -26,6 +30,122 @@ func TestSendPlainWithKeyboardReturnsMessageID(t *testing.T) {
 	}
 	if msgID != 42 {
 		t.Fatalf("msgID = %d, want 42", msgID)
+	}
+}
+
+func TestSendMessageRetriesAfterRateLimit(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after":7}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":11,"chat":{"id":100,"type":"private"},"text":"hi"}}`))
+	}))
+	defer srv.Close()
+
+	b := NewBot("token", "", time.Second)
+	b.apiBase = srv.URL
+	var waited time.Duration
+	b.wait = func(ctx context.Context, d time.Duration) error {
+		waited += d
+		return nil
+	}
+
+	msgID, err := b.SendPlainWithKeyboard(context.Background(), 100, "hi", nil)
+	if err != nil {
+		t.Fatalf("send after retry: %v", err)
+	}
+	if msgID != 11 {
+		t.Fatalf("msgID = %d, want 11", msgID)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2", calls)
+	}
+	if waited != 7*time.Second {
+		t.Fatalf("waited = %v, want 7s", waited)
+	}
+}
+
+func TestSendMessageGivesUpAfterMaxAttempts(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after":1}}`))
+	}))
+	defer srv.Close()
+
+	b := NewBot("token", "", time.Second)
+	b.apiBase = srv.URL
+	b.wait = func(ctx context.Context, d time.Duration) error { return nil }
+
+	if _, err := b.SendPlainWithKeyboard(context.Background(), 100, "hi", nil); err == nil {
+		t.Fatal("expected rate-limit error")
+	}
+	if calls != sendMaxAttempts {
+		t.Fatalf("calls = %d, want %d", calls, sendMaxAttempts)
+	}
+}
+
+func TestSendMessageStopsWhenContextCancelledDuringWait(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after":5}}`))
+	}))
+	defer srv.Close()
+
+	b := NewBot("token", "", time.Second)
+	b.apiBase = srv.URL
+	ctx, cancel := context.WithCancel(context.Background())
+	b.wait = func(ctx context.Context, d time.Duration) error {
+		cancel()
+		return ctx.Err()
+	}
+
+	_, err := b.SendPlainWithKeyboard(ctx, 100, "hi", nil)
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1 (no retry after cancel)", calls)
+	}
+}
+
+// TestSendWelcomeLocalizedEN also guards that the welcome text in bot.go and
+// the dictionary key in i18n/en.go stay byte-identical — a mismatch would
+// silently fall back to Russian.
+func TestSendWelcomeLocalizedEN(t *testing.T) {
+	i18n.SetLang(i18n.EN)
+	t.Cleanup(func() { i18n.SetLang(i18n.RU) })
+
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"chat":{"id":1,"type":"private"}}}`))
+	}))
+	defer srv.Close()
+
+	b := NewBot("token", "", time.Second)
+	b.apiBase = srv.URL
+	if err := b.SendWelcome(context.Background(), 1); err != nil {
+		t.Fatalf("SendWelcome: %v", err)
+	}
+	text, _ := body["text"].(string)
+	if !strings.Contains(text, "Link account") || !strings.Contains(text, "I paid") {
+		t.Fatalf("welcome not translated (dictionary key mismatch?): %q", text)
+	}
+	if IsCabinetButton("👤 Личный кабинет") != true || IsCabinetButton("👤 My account") != true {
+		t.Fatal("IsCabinetButton must match both the RU source and the localized label")
 	}
 }
 

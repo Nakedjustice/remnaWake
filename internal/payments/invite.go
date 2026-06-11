@@ -224,9 +224,7 @@ func (s *Service) notifyAdminsInviteRequest(ctx context.Context, reqID int64, in
 		}
 		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
 	}
-	s.mu.Lock()
-	s.inviteMsgs[reqID] = refs
-	s.mu.Unlock()
+	s.putAdminMsgs(s.inviteMsgs, reqID, refs)
 }
 
 // handleInviteApprove processes admin's "Одобрить" button.
@@ -351,10 +349,7 @@ func (s *Service) handleInviteReject(ctx context.Context, cb *tg.CallbackQuery) 
 // clearInviteButtons removes the approve/reject buttons from every admin's copy
 // of the invite notification for reqID, then forgets the stored refs.
 func (s *Service) clearInviteButtons(ctx context.Context, reqID int64) {
-	s.mu.Lock()
-	refs := s.inviteMsgs[reqID]
-	delete(s.inviteMsgs, reqID)
-	s.mu.Unlock()
+	refs := s.takeAdminMsgs(s.inviteMsgs, reqID)
 	for _, ref := range refs {
 		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
 			s.logger.Warn("clear admin invite button failed", "chat_id", ref.chatID, "err", err.Error())

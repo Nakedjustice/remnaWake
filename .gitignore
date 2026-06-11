@@ -7,3 +7,7 @@ CLAUDE.md
 CLAUDE.local.md
 .claude.json
 .mcp.json
+
+# Build & coverage artifacts
+/bot
+*.out
