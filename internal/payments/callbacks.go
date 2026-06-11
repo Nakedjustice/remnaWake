@@ -285,12 +285,16 @@ func (s *Service) handleReject(ctx context.Context, cb *tg.CallbackQuery) bool {
 		return true
 	}
 
-	if err := s.rejectPaymentRequest(ctx, reqID); err != nil {
+	req, err := s.rejectPaymentRequest(ctx, reqID)
+	if err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, resolveErrorText(err))
 		return true
 	}
 
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка отклонена."))
+	_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(
+		i18n.T("❌ Заявка на продление «%s» на %d мес. отклонена."),
+		req.Username, req.Months))
 	return true
 }
 

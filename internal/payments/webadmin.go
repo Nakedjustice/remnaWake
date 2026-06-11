@@ -307,7 +307,8 @@ func (s *Service) AdminRejectRequest(ctx context.Context, telegramID, reqID int6
 	if err := s.adminGuard(telegramID); err != nil {
 		return err
 	}
-	return s.rejectPaymentRequest(ctx, reqID)
+	_, err := s.rejectPaymentRequest(ctx, reqID)
+	return err
 }
 
 // AdminConfirmGiftRequest confirms payment of a pending gift purchase from the
