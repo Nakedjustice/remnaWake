@@ -195,6 +195,7 @@ var enPayments = map[string]string{
 	"❌ Ваша заявка на подарочную подписку отклонена администратором.":                                                                  "❌ Your gift subscription request was rejected by the administrator.",
 	"❌ Ваша заявка на пользователя «%s» отклонена администратором.":                                                                    "❌ Your request for user “%s” was rejected by the administrator.",
 	"❌ Заявка на пользователя «%s» отклонена.":                                                                                         "❌ Request for user “%s” rejected.",
+	"❌ Заявка на продление «%s» на %d мес. отклонена.":                                                                                 "❌ Renewal request for “%s” (%d mo.) rejected.",
 	"❌ Заявка на продление «%s» на %d мес. отклонена администратором.":                                                                 "❌ Renewal request for “%s” (%d mo.) was rejected by the administrator.",
 	"❌ Не удалось продлить подписку для %s (заявка №%d): ошибка панели.\nЗаявка осталась в ожидании — попробуйте подтвердить ещё раз.": "❌ Failed to extend the subscription for %s (request #%d): panel error.\nThe request is still pending — try confirming again.",
 	"❌ Отклонить":          "❌ Reject",

@@ -68,24 +68,24 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 
 // rejectPaymentRequest marks a pending payment request rejected, clears the
 // confirm buttons in every admin's chat and notifies the requesting user.
-func (s *Service) rejectPaymentRequest(ctx context.Context, reqID int64) error {
+func (s *Service) rejectPaymentRequest(ctx context.Context, reqID int64) (*store.PaymentRequest, error) {
 	req, err := s.store.GetPaymentRequest(ctx, reqID)
 	if err != nil {
-		return fmt.Errorf("get payment request: %w", err)
+		return nil, fmt.Errorf("get payment request: %w", err)
 	}
 	if req == nil {
-		return ErrRequestNotFound
+		return nil, ErrRequestNotFound
 	}
 	if req.Status != "pending" {
-		return ErrRequestResolved
+		return nil, ErrRequestResolved
 	}
 
 	ok, err := s.store.RejectPaymentRequest(ctx, reqID, s.now())
 	if err != nil {
-		return fmt.Errorf("reject payment request: %w", err)
+		return nil, fmt.Errorf("reject payment request: %w", err)
 	}
 	if !ok {
-		return ErrRequestResolved
+		return nil, ErrRequestResolved
 	}
 	s.clearPayButtons(ctx, reqID)
 	if req.TelegramID != 0 {
@@ -93,5 +93,5 @@ func (s *Service) rejectPaymentRequest(ctx context.Context, reqID int64) error {
 			i18n.T("❌ Заявка на продление «%s» на %d мес. отклонена администратором."),
 			req.Username, req.Months))
 	}
-	return nil
+	return req, nil
 }
