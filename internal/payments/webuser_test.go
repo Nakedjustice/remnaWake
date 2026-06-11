@@ -94,7 +94,7 @@ func TestCreateGiftRequestDisabled(t *testing.T) {
 	st, _ := store.New(filepath.Join(t.TempDir(), "x.db"))
 	defer st.Close()
 	svc := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{},
-		[]int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		newFakeSquadLister(), []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err := svc.CreateGiftRequest(context.Background(), 42, 1); !errors.Is(err, ErrPaymentsDisabled) {
 		t.Fatalf("err=%v, want ErrPaymentsDisabled", err)
 	}

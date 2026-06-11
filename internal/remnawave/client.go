@@ -192,7 +192,7 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User,
 	return &payload.Response, nil
 }
 
-func (c *Client) CreateUser(ctx context.Context, username string, expireAt time.Time) (*User, error) {
+func (c *Client) CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string) (*User, error) {
 	endpoint := fmt.Sprintf("%s/api/users", c.baseURL)
 	reqBody := map[string]interface{}{
 		"username":             username,
@@ -200,6 +200,9 @@ func (c *Client) CreateUser(ctx context.Context, username string, expireAt time.
 		"status":               "ACTIVE",
 		"trafficLimitBytes":    0,
 		"trafficLimitStrategy": "NO_RESET",
+	}
+	if len(squadUUIDs) > 0 {
+		reqBody["activeInternalSquads"] = squadUUIDs
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -236,6 +239,39 @@ func (c *Client) CreateUser(ctx context.Context, username string, expireAt time.
 		return nil, fmt.Errorf("decode created user: %w (body=%s)", err, textutil.Truncate(string(respBody), 300))
 	}
 	return &payload.Response, nil
+}
+
+func (c *Client) GetInternalSquads(ctx context.Context) ([]InternalSquad, error) {
+	endpoint := fmt.Sprintf("%s/api/internal-squads", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setRequestHeaders(req)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get internal squads: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("get internal squads: unauthorized (status=%d)", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get internal squads: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var payload internalSquadsResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("decode internal squads: %w (body=%s)", err, textutil.Truncate(string(body), 300))
+	}
+	return payload.Response.InternalSquads, nil
 }
 
 func (c *Client) GetUserByTelegramID(ctx context.Context, telegramID int64) ([]User, error) {

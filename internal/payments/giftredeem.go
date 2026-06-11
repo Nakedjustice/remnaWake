@@ -288,7 +288,17 @@ func (s *Service) redeemCreate(ctx context.Context, chatID int64, st *redeemStat
 		return
 	}
 
-	created, err := s.creator.CreateUser(ctx, username, expireAt)
+	squadUUID, err := s.resolveDefaultSquadUUID(ctx)
+	if err != nil {
+		s.logger.Error("redeem: resolve default squad failed", "username", username, "err", err.Error())
+		if _, rerr := s.store.ReissueGiftCode(ctx, st.giftID); rerr != nil {
+			s.logger.Error("redeem: rollback to issued failed", "gift_id", st.giftID, "err", rerr.Error())
+		}
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка активации подарка. Попробуйте позже."))
+		return
+	}
+
+	created, err := s.creator.CreateUser(ctx, username, expireAt, []string{squadUUID})
 	if err != nil {
 		s.logger.Error("redeem: create user failed", "username", username, "err", err.Error())
 		if _, rerr := s.store.ReissueGiftCode(ctx, st.giftID); rerr != nil {

@@ -81,7 +81,7 @@
     margin: 8px 0 0;
   }
   #status { text-align: center; color: var(--hint); padding: 32px 8px; font-size: 15px; }
-  input, textarea {
+  input, textarea, select {
     width: 100%;
     border: 1px solid var(--secondary-bg);
     border-radius: 10px;
@@ -648,6 +648,49 @@ function renderAdminInviteRequests(data) {
   return card;
 }
 
+function renderAdminSquad(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '🛡 Сквад по умолчанию'));
+  card.appendChild(el('div', 'hint', data.default_squad_name
+    ? `Новые пользователи добавляются в сквад «${data.default_squad_name}».`
+    : 'Сквад не выбран: используется сквад «Default-Squad», если он есть в панели.'));
+  const select = el('select');
+  select.appendChild(Object.assign(el('option', null, 'Загрузка…'), { value: '' }));
+  select.disabled = true;
+  card.appendChild(select);
+  const save = el('button', null, '💾 Сохранить сквад');
+  save.disabled = true;
+  save.onclick = () => {
+    if (!select.value) { tg.showAlert('Выберите сквад.'); return; }
+    adminAction('/api/admin/squad', { uuid: select.value });
+  };
+  card.appendChild(save);
+  api('/api/admin/squads').then(res => {
+    select.textContent = '';
+    const squads = res.squads || [];
+    if (!squads.length) {
+      select.appendChild(Object.assign(el('option', null, 'В панели нет сквадов'), { value: '' }));
+      return;
+    }
+    squads.forEach(sq => {
+      const opt = Object.assign(el('option', null, sq.name), { value: sq.uuid });
+      if (sq.selected) opt.selected = true;
+      select.appendChild(opt);
+    });
+    if (!squads.some(sq => sq.selected)) {
+      select.insertBefore(Object.assign(el('option', null, '— не выбран —'),
+        { value: '', selected: true }), select.firstChild);
+    }
+    select.disabled = false;
+    save.disabled = false;
+  }).catch(e => {
+    select.textContent = '';
+    select.appendChild(Object.assign(el('option', null, 'Ошибка загрузки сквадов'), { value: '' }));
+    tg.showAlert(e.message);
+  });
+  return card;
+}
+
 function renderAdmin(data) {
   appEl.textContent = '';
 
@@ -663,6 +706,7 @@ function renderAdmin(data) {
   appEl.appendChild(renderAdminInviteRequests(data));
   appEl.appendChild(renderAdminTariffs(data));
   appEl.appendChild(renderAdminRequisites(data));
+  appEl.appendChild(renderAdminSquad(data));
   appEl.appendChild(renderAdminGifts(data));
   appEl.appendChild(renderAdminBroadcast());
 

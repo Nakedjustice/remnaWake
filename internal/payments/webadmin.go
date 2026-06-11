@@ -63,6 +63,19 @@ type WebAdminPanel struct {
 	Requests       []WebAdminRequest       `json:"requests"`
 	GiftRequests   []WebAdminGiftRequest   `json:"gift_requests"`
 	InviteRequests []WebAdminInviteRequest `json:"invite_requests"`
+	// DefaultSquadName is the display name of the admin-selected internal
+	// squad for new users; empty when none is selected yet (the by-name
+	// Default-Squad fallback applies then). Read from settings only, so the
+	// panel payload never waits on the Remnawave API.
+	DefaultSquadName string `json:"default_squad_name"`
+}
+
+// WebSquad is one panel internal squad offered in the mini app default-squad
+// picker.
+type WebSquad struct {
+	UUID     string `json:"uuid"`
+	Name     string `json:"name"`
+	Selected bool   `json:"selected"`
 }
 
 // adminGuard rejects calls from non-admin Telegram IDs. The ID comes from
@@ -94,6 +107,8 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	s.mu.Lock()
 	out.Requisites = s.requisites
 	s.mu.Unlock()
+
+	_, out.DefaultSquadName = s.defaultSquadSelection(ctx)
 
 	gifts, err := s.store.ListGiftCodesByStatus(ctx, "issued")
 	if err != nil {
@@ -222,6 +237,37 @@ func (s *Service) AdminSetRequisites(ctx context.Context, telegramID int64, text
 	s.requisites = text
 	s.mu.Unlock()
 	return nil
+}
+
+// AdminListSquads returns the panel's internal squads for the mini app
+// default-squad picker, marking the currently selected one.
+func (s *Service) AdminListSquads(ctx context.Context, telegramID int64) ([]WebSquad, error) {
+	if err := s.adminGuard(telegramID); err != nil {
+		return nil, err
+	}
+	if s.squads == nil {
+		return nil, ErrPanelUnavailable
+	}
+	squads, err := s.squads.GetInternalSquads(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrPanelUnavailable, err)
+	}
+	selectedUUID, _ := s.defaultSquadSelection(ctx)
+	out := make([]WebSquad, 0, len(squads))
+	for _, sq := range squads {
+		out = append(out, WebSquad{UUID: sq.UUID, Name: sq.Name, Selected: sq.UUID == selectedUUID})
+	}
+	return out, nil
+}
+
+// AdminSetDefaultSquad persists the internal squad newly created users are
+// assigned to, selected from the mini app admin panel.
+func (s *Service) AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	_, err := s.setDefaultSquad(ctx, uuid)
+	return err
 }
 
 // WebBroadcastResult reports broadcast delivery counts to the mini app.

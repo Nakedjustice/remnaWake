@@ -299,7 +299,13 @@ func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store
 		return req, nil, expireAt, nil
 	}
 
-	created, err := s.creator.CreateUser(ctx, req.NewUsername, expireAt)
+	squadUUID, err := s.resolveDefaultSquadUUID(ctx)
+	if err != nil {
+		s.logger.Error("invite: resolve default squad failed", "username", req.NewUsername, "err", err.Error())
+		return req, nil, expireAt, fmt.Errorf("%w: %v", ErrPanelCreateFailed, err)
+	}
+
+	created, err := s.creator.CreateUser(ctx, req.NewUsername, expireAt, []string{squadUUID})
 	if err != nil {
 		s.logger.Error("invite: create user in panel failed", "username", req.NewUsername, "err", err.Error())
 		return req, nil, expireAt, fmt.Errorf("%w: %v", ErrPanelCreateFailed, err)

@@ -200,6 +200,71 @@ func TestGetUserByTelegramID(t *testing.T) {
 	}
 }
 
+func TestGetInternalSquads(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/api/internal-squads" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer tok" {
+			t.Fatalf("auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"total":2,"internalSquads":[{"uuid":"sq-1","name":"Default-Squad"},{"uuid":"sq-2","name":"Premium"}]}}`))
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	squads, err := c.GetInternalSquads(context.Background())
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(squads) != 2 || squads[0].UUID != "sq-1" || squads[0].Name != "Default-Squad" || squads[1].Name != "Premium" {
+		t.Fatalf("squads wrong: %+v", squads)
+	}
+}
+
+func TestCreateUserSendsActiveInternalSquads(t *testing.T) {
+	expireAt := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	var gotBody map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/users" {
+			t.Fatalf("got %s %s, want POST /api/users", r.Method, r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(body, &gotBody); err != nil {
+			t.Fatalf("decode body: %v (body=%s)", err, body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"uuid":"u-new","username":"alice"}}`))
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	if _, err := c.CreateUser(context.Background(), "alice", expireAt, []string{"sq-1"}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	squads, ok := gotBody["activeInternalSquads"].([]interface{})
+	if !ok || len(squads) != 1 || squads[0] != "sq-1" {
+		t.Fatalf("body activeInternalSquads = %v, want [sq-1]", gotBody["activeInternalSquads"])
+	}
+
+	// Without squads the field must be absent entirely, not an empty array.
+	gotBody = nil
+	if _, err := c.CreateUser(context.Background(), "alice", expireAt, nil); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if _, present := gotBody["activeInternalSquads"]; present {
+		t.Fatalf("activeInternalSquads should be omitted when empty, body=%v", gotBody)
+	}
+}
+
 func TestGetUserByTelegramIDNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

@@ -69,6 +69,20 @@ func (f *fakeAdmin) AdminSetRequisites(_ context.Context, tgID int64, text strin
 	f.calls = append(f.calls, adminCall{Name: "setreq", Text: text})
 	return f.err
 }
+func (f *fakeAdmin) AdminListSquads(_ context.Context, tgID int64) ([]payments.WebSquad, error) {
+	f.calls = append(f.calls, adminCall{Name: "listsquads", A: tgID})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return []payments.WebSquad{
+		{UUID: "sq-1", Name: "Default-Squad", Selected: true},
+		{UUID: "sq-2", Name: "Premium"},
+	}, nil
+}
+func (f *fakeAdmin) AdminSetDefaultSquad(_ context.Context, tgID int64, uuid string) error {
+	f.calls = append(f.calls, adminCall{Name: "setsquad", A: tgID, Text: uuid})
+	return f.err
+}
 func (f *fakeAdmin) AdminRevokeGiftCode(_ context.Context, tgID, giftID int64) error {
 	f.calls = append(f.calls, adminCall{Name: "revoke", A: giftID})
 	return f.err
@@ -311,6 +325,7 @@ func TestHandleAdminMutations(t *testing.T) {
 		{"/api/admin/invite-request/confirm", `{"id":11}`, "inviteapprove", 11, 0, ""},
 		{"/api/admin/invite-request/reject", `{"id":12}`, "invitereject", 12, 0, ""},
 		{"/api/admin/broadcast", `{"message":"hello"}`, "broadcast", 42, 0, "hello"},
+		{"/api/admin/squad", `{"uuid":"sq-2"}`, "setsquad", 42, 0, "sq-2"},
 	}
 	for i, tc := range cases {
 		if code := post(tc.path, tc.body); code != 200 {
@@ -344,6 +359,7 @@ func TestHandleAdminErrorMapping(t *testing.T) {
 		{payments.ErrRequestNotFound, 404},
 		{payments.ErrRequestResolved, 409},
 		{payments.ErrPanelCreateFailed, 502},
+		{payments.ErrPanelUnavailable, 502},
 	}
 	for _, tc := range cases {
 		srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: tc.err})
@@ -354,6 +370,28 @@ func TestHandleAdminErrorMapping(t *testing.T) {
 		if w.Code != tc.want {
 			t.Errorf("err=%v: status = %d, want %d", tc.err, w.Code, tc.want)
 		}
+	}
+}
+
+func TestHandleAdminListSquads(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	req := httptest.NewRequest("GET", "/api/admin/squads", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var got struct {
+		Squads []payments.WebSquad `json:"squads"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Squads) != 2 || !got.Squads[0].Selected || got.Squads[1].UUID != "sq-2" {
+		t.Fatalf("unexpected payload: %+v", got)
 	}
 }
 
