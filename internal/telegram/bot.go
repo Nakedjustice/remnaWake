@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/textutil"
 )
 
@@ -81,14 +82,24 @@ type KeyboardButton struct {
 	Text string `json:"text"`
 }
 
-// CabinetButtonLabel is the reply-keyboard button text that opens the personal
-// cabinet; the poll loop matches incoming messages against it.
-const CabinetButtonLabel = "👤 Личный кабинет"
+// cabinetButtonLabelRU is the Russian source text of the cabinet reply button.
+const cabinetButtonLabelRU = "👤 Личный кабинет"
+
+// CabinetButtonLabel returns the localized reply-keyboard button text that
+// opens the personal cabinet.
+func CabinetButtonLabel() string { return i18n.T(cabinetButtonLabelRU) }
+
+// IsCabinetButton reports whether an incoming message presses the cabinet
+// reply button. It matches the Russian source label as well as the localized
+// one, so keyboards installed before a language switch keep working.
+func IsCabinetButton(text string) bool {
+	return text == cabinetButtonLabelRU || text == CabinetButtonLabel()
+}
 
 // MainReplyKeyboard returns the persistent reply keyboard with the cabinet button.
 func MainReplyKeyboard() *ReplyKeyboardMarkup {
 	return &ReplyKeyboardMarkup{
-		Keyboard:       [][]KeyboardButton{{{Text: CabinetButtonLabel}}},
+		Keyboard:       [][]KeyboardButton{{{Text: CabinetButtonLabel()}}},
 		ResizeKeyboard: true,
 		IsPersistent:   true,
 	}
@@ -222,7 +233,7 @@ func (b *Bot) SendWithKeyboard(ctx context.Context, chatID int64, text string, k
 }
 
 func (b *Bot) SendWelcome(ctx context.Context, chatID int64) error {
-	text := `⏰ Привет! Я бот-напоминалка: если ваша подписка на КВН скоро закончится, я сообщу об этом заранее — за 7, 3 или 1 день до окончания.
+	text := i18n.T(`⏰ Привет! Я бот-напоминалка: если ваша подписка на КВН скоро закончится, я сообщу об этом заранее — за 7, 3 или 1 день до окончания.
 
 ❗️ Чтобы получать уведомления, сначала привяжите свой Telegram к профилю подписки. Без привязки я не смогу понять, какая подписка ваша, и напоминания приходить не будут.
 
@@ -240,11 +251,11 @@ func (b *Bot) SendWelcome(ctx context.Context, chatID int64) error {
 /mygifts — мои подарочные подписки и их статус
 /cancel — отменить текущее действие
 
-После оплаты нажмите «Я оплатил» — администратор получит уведомление и подтвердит продление.`
+После оплаты нажмите «Я оплатил» — администратор получит уведомление и подтвердит продление.`)
 
 	keyboard := &InlineKeyboardMarkup{
 		InlineKeyboard: [][]InlineKeyboardButton{
-			{{Text: "🔗 Привязать аккаунт", CallbackData: "menu:register"}},
+			{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
 		},
 	}
 

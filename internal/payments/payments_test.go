@@ -390,6 +390,38 @@ func TestConfirmExtendFailureNotifiesAdminAndStaysRetryable(t *testing.T) {
 	}
 }
 
+func TestAdminStatsCommand(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	svc.finder = &fakeFinder{all: []Subscriber{
+		{RemnawaveID: 1, Username: "a", Status: "ACTIVE", ExpireAt: now.Add(3 * 24 * time.Hour), TelegramID: 11},
+		{RemnawaveID: 2, Username: "b", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour)},
+		{RemnawaveID: 3, Username: "c", Status: "EXPIRED", ExpireAt: now.Add(-24 * time.Hour), TelegramID: 33},
+	}}
+	_, _ = st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 1, UUID: "u", Username: "a", TelegramID: 11,
+		Months: 1, Price: 150, ExpireAt: now, Status: "pending",
+	})
+
+	if svc.HandleAdminCommand(ctx, msg(2222, "/stats")) {
+		t.Fatal("non-admin /stats must not be handled")
+	}
+	if !svc.HandleAdminCommand(ctx, msg(1000, "/stats")) {
+		t.Fatal("/stats should be handled for admin")
+	}
+	report := bot.sent[len(bot.sent)-1].Text
+	for _, want := range []string{
+		"всего: 3", "активных: 2", "истекают в ближайшие 7 дней: 1",
+		"истекших: 1", "с привязанным Telegram: 2", "ожидают подтверждения: 1",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("report missing %q:\n%s", want, report)
+		}
+	}
+}
+
 func TestAdminMsgTTLEviction(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
 	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)

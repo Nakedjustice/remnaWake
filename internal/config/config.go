@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 )
 
 type Config struct {
@@ -18,6 +20,7 @@ type Config struct {
 	HTTP       HTTPConfig
 	WebApp     WebAppConfig
 	Winback    WinbackConfig
+	Lang       i18n.Lang
 	LogLevel   slog.Level
 	DryRun     bool
 	RunOnStart bool
@@ -76,6 +79,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	lang, ok := i18n.Parse(getenv("BOT_LANG", "ru"))
+	if !ok {
+		return nil, fmt.Errorf("invalid BOT_LANG: %q (supported: ru, en)", os.Getenv("BOT_LANG"))
+	}
+
 	cfg := &Config{
 		Remnawave: RemnawaveConfig{
 			BaseURL:  strings.TrimRight(os.Getenv("REMNAWAVE_BASE_URL"), "/"),
@@ -98,6 +106,7 @@ func Load() (*Config, error) {
 			Enabled: getenvBool("WINBACK_ENABLED", true),
 			Days:    winbackDays,
 		},
+		Lang: lang,
 		LogLevel:   parseLogLevel(getenv("LOG_LEVEL", "info")),
 		DryRun:     getenvBool("DRY_RUN", false),
 		RunOnStart: getenvBool("RUN_ON_START", true),

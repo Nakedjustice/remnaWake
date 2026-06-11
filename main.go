@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Nakedjustice/remnaWake/internal/config"
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/notify"
 	"github.com/Nakedjustice/remnaWake/internal/payments"
 	"github.com/Nakedjustice/remnaWake/internal/remnawave"
@@ -29,6 +31,7 @@ func main() {
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(logger)
+	i18n.SetLang(cfg.Lang)
 
 	logger.Info("config loaded",
 		"remnawave_host", redactURL(cfg.Remnawave.BaseURL),
@@ -41,6 +44,7 @@ func main() {
 		"webapp_enabled", cfg.WebApp.Enabled(),
 		"winback_enabled", cfg.Winback.Enabled,
 		"winback_days", cfg.Winback.Days,
+		"lang", string(cfg.Lang),
 	)
 
 	rwClient, err := remnawave.NewClient(cfg.Remnawave.BaseURL, cfg.Remnawave.APIToken, cfg.HTTP.Timeout)
@@ -192,16 +196,17 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 						logger.Error("send welcome message failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
 					}
 					if err := bot.SendPlainWithReplyKeyboard(ctx, u.Message.Chat.ID,
-						"Кнопка «"+tgbot.CabinetButtonLabel+"» теперь всегда под полем ввода 👇", tgbot.MainReplyKeyboard()); err != nil {
+						fmt.Sprintf(i18n.T("Кнопка «%s» теперь всегда под полем ввода 👇"), tgbot.CabinetButtonLabel()), tgbot.MainReplyKeyboard()); err != nil {
 						logger.Error("send reply keyboard failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
 					}
 					continue
 				}
-				switch text {
-				case "/me", "/cabinet", tgbot.CabinetButtonLabel:
+				if text == "/me" || text == "/cabinet" || tgbot.IsCabinetButton(text) {
 					if pay.SendCabinet(ctx, u.Message.Chat.ID) {
 						continue
 					}
+				}
+				switch text {
 				case "/menu", "/help":
 					pay.SendMenu(ctx, u.Message.Chat.ID)
 					continue
@@ -237,26 +242,26 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 
 // adminBotCommands returns the command menu for the admin chat (user commands + /admin).
 func adminBotCommands() []tgbot.BotCommand {
-	return append(userBotCommands(), tgbot.BotCommand{
-		Command:     "admin",
-		Description: "Панель администратора",
-	})
+	return append(userBotCommands(),
+		tgbot.BotCommand{Command: "admin", Description: i18n.T("Панель администратора")},
+		tgbot.BotCommand{Command: "stats", Description: i18n.T("Статистика")},
+	)
 }
 
 // userBotCommands is the command menu shown to users (the "Menu" button and the
 // "/" autocomplete list).
 func userBotCommands() []tgbot.BotCommand {
 	return []tgbot.BotCommand{
-		{Command: "me", Description: "Личный кабинет"},
-		{Command: "menu", Description: "Открыть меню"},
-		{Command: "tariff", Description: "Посмотреть тарифы"},
-		{Command: "gift", Description: "Подарить подписку"},
-		{Command: "mygifts", Description: "Мои подарочные подписки"},
-		{Command: "invite", Description: "Пригласить нового пользователя"},
-		{Command: "register", Description: "Привязать свой Telegram к профилю"},
-		{Command: "cancel", Description: "Отменить текущее действие"},
-		{Command: "help", Description: "Помощь"},
-		{Command: "start", Description: "О боте"},
+		{Command: "me", Description: i18n.T("Личный кабинет")},
+		{Command: "menu", Description: i18n.T("Открыть меню")},
+		{Command: "tariff", Description: i18n.T("Посмотреть тарифы")},
+		{Command: "gift", Description: i18n.T("Подарить подписку")},
+		{Command: "mygifts", Description: i18n.T("Мои подарочные подписки")},
+		{Command: "invite", Description: i18n.T("Пригласить нового пользователя")},
+		{Command: "register", Description: i18n.T("Привязать свой Telegram к профилю")},
+		{Command: "cancel", Description: i18n.T("Отменить текущее действие")},
+		{Command: "help", Description: i18n.T("Помощь")},
+		{Command: "start", Description: i18n.T("О боте")},
 	}
 }
 

@@ -18,6 +18,9 @@ the bot extends the subscription by the chosen number of months.
 - Every notification is deduplicated in SQLite, so restarts never double-send;
   failed sends are retried on the next daily run, and rate-limited (429)
   Telegram calls are retried automatically.
+- **`/stats`** — admin report: panel users (active / expiring soon / expired /
+  linked), payments and revenue for the last 30 days, gifts and invites.
+- **Russian or English** chat interface via `BOT_LANG` (default Russian).
 - Sends messages through the Telegram Bot API (`sendMessage`).
 - **"Я оплатил"** (*I paid*) inline button in notifications, with an admin-confirmed
   flow that extends the subscription via `PATCH /api/users`.
@@ -128,9 +131,11 @@ silently ignored for everyone else):
 | `/deltariff <months>`        | Remove a tariff               |
 | `/setrequisites`             | Set the payment requisites shown to users after «Я оплатил» (two-step: send the command, then the text in the next message) |
 | `/requisites`                | Show the currently saved payment requisites |
+| `/stats`                     | 📊 Statistics: panel users (total / active / expiring in 7 days / expired / linked to Telegram), payments confirmed in the last 30 days with revenue, pending requests, gift codes by status, pending invites |
 
-The `/admin` menu also has a **🎁 Подарочные коды** section listing all issued
-(not yet activated) gift codes, each with a one-tap revoke button.
+The `/admin` menu also has a **📊 Статистика** button (same report as `/stats`)
+and a **🎁 Подарочные коды** section listing all issued (not yet activated)
+gift codes, each with a one-tap revoke button.
 
 Tariffs and payment state are stored in SQLite (`DB_PATH`, default `/data/bot.db`,
 kept in the `botdata` Docker volume), so they survive restarts.
@@ -274,6 +279,7 @@ and **why it matters** (no link = no notifications), plus a **🔗 Привяз�
 | `WEBAPP_LISTEN`        | no       | `:8080`          | Local bind address for the mini app server (behind your reverse proxy) |
 | `WINBACK_ENABLED`      | no       | `true`           | Send "subscription expired" win-back messages after expiry   |
 | `WINBACK_DAYS`         | no       | `1,3`            | Days **after** expiry to send the win-back message (comma-separated) |
+| `BOT_LANG`             | no       | `ru`             | Bot chat language: `ru` / `en` (the Mini App frontend stays Russian) |
 
 ## Telegram Mini App
 

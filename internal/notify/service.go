@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/remnawave"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 	tgbot "github.com/Nakedjustice/remnaWake/internal/telegram"
@@ -129,10 +130,10 @@ func (s *Service) Run(ctx context.Context) error {
 
 		var text string
 		if kind == store.NotificationExpiry {
-			text = fmt.Sprintf("⏰ %s, ваша подписка истекает %s — через %d %s.\nДля продления оплатите подписку.",
-				u.Username, u.ExpireAt.Format("02.01.2006"), days, pluralDays(days))
+			text = fmt.Sprintf(i18n.T("⏰ %s, ваша подписка истекает %s — через %d %s.\nДля продления оплатите подписку."),
+				u.Username, u.ExpireAt.Format("02.01.2006"), days, i18n.PluralDays(days))
 		} else {
-			text = fmt.Sprintf("⛔️ %s, ваша подписка истекла %s.\nЧтобы продолжить пользоваться сервисом, продлите подписку.",
+			text = fmt.Sprintf(i18n.T("⛔️ %s, ваша подписка истекла %s.\nЧтобы продолжить пользоваться сервисом, продлите подписку."),
 				u.Username, u.ExpireAt.Format("02.01.2006"))
 		}
 
@@ -242,17 +243,3 @@ func daysSince(now, exp time.Time) int {
 	return int(diff / (24 * time.Hour))
 }
 
-func pluralDays(n int) string {
-	last := n % 100
-	if last >= 11 && last <= 14 {
-		return "дней"
-	}
-	switch n % 10 {
-	case 1:
-		return "день"
-	case 2, 3, 4:
-		return "дня"
-	default:
-		return "дней"
-	}
-}
