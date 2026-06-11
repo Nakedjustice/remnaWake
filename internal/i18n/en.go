@@ -4,13 +4,13 @@ package i18n
 // the source strings byte-for-byte; missing entries fall back to Russian.
 var en = map[string]string{
 	// --- notify ---
-	"⏰ %s, ваша подписка истекает %s — через %d %s.\nДля продления оплатите подписку.":      "⏰ %s, your subscription expires on %s — in %d %s.\nPlease pay to renew it.",
+	"⏰ %s, ваша подписка истекает %s — через %d %s.\nДля продления оплатите подписку.":             "⏰ %s, your subscription expires on %s — in %d %s.\nPlease pay to renew it.",
 	"⛔️ %s, ваша подписка истекла %s.\nЧтобы продолжить пользоваться сервисом, продлите подписку.": "⛔️ %s, your subscription expired on %s.\nRenew it to keep using the service.",
 
 	// --- telegram (welcome / shared buttons) ---
 	"👤 Личный кабинет":    "👤 My account",
 	"🔗 Привязать аккаунт": "🔗 Link account",
-	welcomeRU:              welcomeEN,
+	welcomeRU:             welcomeEN,
 
 	// --- main (command menu / reply keyboard) ---
 	"Кнопка «%s» теперь всегда под полем ввода 👇": "The “%s” button is now always under the input field 👇",
@@ -22,10 +22,10 @@ var en = map[string]string{
 	"Пригласить нового пользователя":    "Invite a new user",
 	"Привязать свой Telegram к профилю": "Link your Telegram to a profile",
 	"Отменить текущее действие":         "Cancel the current action",
-	"Помощь":                            "Help",
-	"О боте":                            "About the bot",
-	"Панель администратора":             "Admin panel",
-	"Статистика":                        "Statistics",
+	"Помощь": "Help",
+	"О боте": "About the bot",
+	"Панель администратора": "Admin panel",
+	"Статистика":            "Statistics",
 }
 
 // The welcome message is kept as named constants so the map stays readable.

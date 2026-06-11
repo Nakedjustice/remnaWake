@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
@@ -55,38 +56,38 @@ func isValidGiftCodeFormat(code string) bool {
 func (s *Service) StartGiftRedemption(ctx context.Context, chatID int64, rawCode string) {
 	code := strings.ToUpper(strings.TrimSpace(rawCode))
 	if !isValidGiftCodeFormat(code) {
-		_ = s.bot.SendPlain(ctx, chatID, "Код не найден или недействителен.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Код не найден или недействителен."))
 		return
 	}
 
 	g, err := s.store.GetGiftCodeByCode(ctx, code)
 	if err != nil {
 		s.logger.Error("redeem: get gift code failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
 	if g == nil {
-		_ = s.bot.SendPlain(ctx, chatID, "Код не найден или недействителен.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Код не найден или недействителен."))
 		return
 	}
 	switch g.Status {
 	case "issued":
 		// proceed
 	case "pending":
-		_ = s.bot.SendPlain(ctx, chatID, "Оплата этого подарка ещё не подтверждена. Попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Оплата этого подарка ещё не подтверждена. Попробуйте позже."))
 		return
 	case "redeemed":
-		_ = s.bot.SendPlain(ctx, chatID, "Этот код уже был активирован.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот код уже был активирован."))
 		return
 	default: // revoked, rejected
-		_ = s.bot.SendPlain(ctx, chatID, "Код недействителен.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Код недействителен."))
 		return
 	}
 
 	subs, err := s.finder.FindByTelegramID(ctx, chatID)
 	if err != nil {
 		s.logger.Error("redeem: find redeemer failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
 
@@ -103,7 +104,7 @@ func (s *Service) StartGiftRedemption(ctx context.Context, chatID int64, rawCode
 		st.awaitingUsername = true
 		s.setRedeem(chatID, st)
 		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
-			"🎁 Вам подарили подписку на %d мес.!\n\nВведите желаемое имя пользователя для вашего профиля (буквы, цифры и «_», от 3 до 32 символов). /cancel — отмена.",
+			i18n.T("🎁 Вам подарили подписку на %d мес.!\n\nВведите желаемое имя пользователя для вашего профиля (буквы, цифры и «_», от 3 до 32 символов). /cancel — отмена."),
 			g.Months))
 	case 1:
 		// Existing subscriber: ask for confirmation so an accidental tap on
@@ -111,11 +112,11 @@ func (s *Service) StartGiftRedemption(ctx context.Context, chatID int64, rawCode
 		st.candidates = subs
 		s.setRedeem(chatID, st)
 		kb := &tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: "✅ Активировать", CallbackData: "gc_use:0"}},
-			{{Text: "Отмена", CallbackData: "gc_redeem_cancel"}},
+			{{Text: i18n.T("✅ Активировать"), CallbackData: "gc_use:0"}},
+			{{Text: i18n.T("Отмена"), CallbackData: "gc_redeem_cancel"}},
 		}}
 		_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID,
-			fmt.Sprintf("🎁 Вам подарили подписку на %d мес.\n\nАктивировать для профиля «%s» (подписка до %s)? Срок будет продлён на %d мес.",
+			fmt.Sprintf(i18n.T("🎁 Вам подарили подписку на %d мес.\n\nАктивировать для профиля «%s» (подписка до %s)? Срок будет продлён на %d мес."),
 				g.Months, subs[0].Username, subs[0].ExpireAt.Format("02.01.2006"), g.Months),
 			kb)
 	default:
@@ -125,13 +126,13 @@ func (s *Service) StartGiftRedemption(ctx context.Context, chatID int64, rawCode
 		rows := make([][]tg.InlineKeyboardButton, 0, len(subs)+1)
 		for i, sub := range subs {
 			rows = append(rows, []tg.InlineKeyboardButton{{
-				Text:         fmt.Sprintf("%s (до %s)", sub.Username, sub.ExpireAt.Format("02.01.2006")),
+				Text:         fmt.Sprintf(i18n.T("%s (до %s)"), sub.Username, sub.ExpireAt.Format("02.01.2006")),
 				CallbackData: fmt.Sprintf("gc_use:%d", i),
 			}})
 		}
-		rows = append(rows, []tg.InlineKeyboardButton{{Text: "Отмена", CallbackData: "gc_redeem_cancel"}})
+		rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("Отмена"), CallbackData: "gc_redeem_cancel"}})
 		_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID,
-			fmt.Sprintf("🎁 Вам подарили подписку на %d мес. Выберите профиль для продления:", g.Months),
+			fmt.Sprintf(i18n.T("🎁 Вам подарили подписку на %d мес. Выберите профиль для продления:"), g.Months),
 			&tg.InlineKeyboardMarkup{InlineKeyboard: rows})
 	}
 }
@@ -139,18 +140,18 @@ func (s *Service) StartGiftRedemption(ctx context.Context, chatID int64, rawCode
 // handleGiftUse processes the profile choice when the redeemer has several.
 func (s *Service) handleGiftUse(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if cb.Message == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка."))
 		return true
 	}
 	chatID := cb.Message.Chat.ID
 	st := s.getRedeem(chatID)
 	if st == nil || len(st.candidates) == 0 {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Сессия истекла. Откройте ссылку ещё раз.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Сессия истекла. Откройте ссылку ещё раз."))
 		return true
 	}
 	idx, err := strconv.Atoi(strings.TrimPrefix(cb.Data, "gc_use:"))
 	if err != nil || idx < 0 || idx >= len(st.candidates) {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать выбор.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
 	_ = s.bot.EditMessageReplyMarkup(ctx, chatID, cb.Message.MessageID, nil)
@@ -166,7 +167,7 @@ func (s *Service) handleGiftRedeemCancel(ctx context.Context, cb *tg.CallbackQue
 		s.clearRedeem(cb.Message.Chat.ID)
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Отменено.")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Отменено."))
 	return true
 }
 
@@ -181,23 +182,23 @@ func (s *Service) handleRedeemUsernameInput(ctx context.Context, m *tg.Message) 
 
 	text := strings.TrimSpace(m.Text)
 	if strings.HasPrefix(text, "/") {
-		_ = s.bot.SendPlain(ctx, chatID, "Введите имя пользователя или /cancel для отмены.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите имя пользователя или /cancel для отмены."))
 		return true
 	}
 	if !isValidUsername(text) {
 		_ = s.bot.SendPlain(ctx, chatID,
-			"Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов.")
+			i18n.T("Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов."))
 		return true
 	}
 
 	existing, err := s.finder.FindByUsername(ctx, text)
 	if err != nil {
 		s.logger.Error("redeem: check username failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	if existing != nil {
-		_ = s.bot.SendPlain(ctx, chatID, "Это имя занято, попробуйте другое.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Это имя занято, попробуйте другое."))
 		return true
 	}
 
@@ -212,12 +213,12 @@ func (s *Service) redeemExtend(ctx context.Context, chatID int64, st *redeemStat
 	ok, err := s.store.RedeemGiftCode(ctx, st.code, chatID, sub.Username, s.now())
 	if err != nil {
 		s.logger.Error("redeem: claim failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
 	if !ok {
 		s.clearRedeem(chatID)
-		_ = s.bot.SendPlain(ctx, chatID, "Этот код уже был активирован.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот код уже был активирован."))
 		return
 	}
 
@@ -232,7 +233,7 @@ func (s *Service) redeemExtend(ctx context.Context, chatID int64, st *redeemStat
 			"new_expire", newExpireAt.Format("2006-01-02"))
 		s.clearRedeem(chatID)
 		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
-			"✅ (dry-run) Подарок активирован! Подписка «%s» продлена на %d мес. до %s.",
+			i18n.T("✅ (dry-run) Подарок активирован! Подписка «%s» продлена на %d мес. до %s."),
 			sub.Username, st.months, newExpireAt.Format("02.01.2006")))
 		s.notifyGiftRedeemed(ctx, st.giftID, chatID, sub.Username)
 		return
@@ -243,13 +244,13 @@ func (s *Service) redeemExtend(ctx context.Context, chatID int64, st *redeemStat
 		if _, rerr := s.store.ReissueGiftCode(ctx, st.giftID); rerr != nil {
 			s.logger.Error("redeem: rollback to issued failed", "gift_id", st.giftID, "err", rerr.Error())
 		}
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка активации подарка. Попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка активации подарка. Попробуйте позже."))
 		return
 	}
 
 	s.clearRedeem(chatID)
 	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
-		"✅ Подарок активирован! Подписка «%s» продлена на %d мес. до %s.",
+		i18n.T("✅ Подарок активирован! Подписка «%s» продлена на %d мес. до %s."),
 		sub.Username, st.months, newExpireAt.Format("02.01.2006")))
 	s.notifyGiftRedeemed(ctx, st.giftID, chatID, sub.Username)
 }
@@ -258,19 +259,19 @@ func (s *Service) redeemExtend(ctx context.Context, chatID int64, st *redeemStat
 // the redeemer's Telegram ID and delivers the subscription link.
 func (s *Service) redeemCreate(ctx context.Context, chatID int64, st *redeemState, username string) {
 	if s.creator == nil {
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
 
 	ok, err := s.store.RedeemGiftCode(ctx, st.code, chatID, username, s.now())
 	if err != nil {
 		s.logger.Error("redeem: claim failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка, попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
 	if !ok {
 		s.clearRedeem(chatID)
-		_ = s.bot.SendPlain(ctx, chatID, "Этот код уже был активирован.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот код уже был активирован."))
 		return
 	}
 
@@ -281,7 +282,7 @@ func (s *Service) redeemCreate(ctx context.Context, chatID int64, st *redeemStat
 			"telegram_id", chatID, "expire_at", expireAt.Format("2006-01-02"))
 		s.clearRedeem(chatID)
 		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
-			"✅ (dry-run) Подарок активирован! Профиль «%s» создан, подписка до %s.",
+			i18n.T("✅ (dry-run) Подарок активирован! Профиль «%s» создан, подписка до %s."),
 			username, expireAt.Format("02.01.2006")))
 		s.notifyGiftRedeemed(ctx, st.giftID, chatID, username)
 		return
@@ -293,7 +294,7 @@ func (s *Service) redeemCreate(ctx context.Context, chatID int64, st *redeemStat
 		if _, rerr := s.store.ReissueGiftCode(ctx, st.giftID); rerr != nil {
 			s.logger.Error("redeem: rollback to issued failed", "gift_id", st.giftID, "err", rerr.Error())
 		}
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка активации подарка. Попробуйте позже.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка активации подарка. Попробуйте позже."))
 		return
 	}
 
@@ -303,15 +304,15 @@ func (s *Service) redeemCreate(ctx context.Context, chatID int64, st *redeemStat
 		if err := s.registrar.SetTelegramID(ctx, created.UUID, chatID); err != nil {
 			s.logger.Error("redeem: set telegram id failed", "uuid", created.UUID, "err", err.Error())
 			_ = s.bot.SendPlain(ctx, chatID,
-				"Профиль создан, но привязать Telegram не удалось. Используйте /register для привязки.")
+				i18n.T("Профиль создан, но привязать Telegram не удалось. Используйте /register для привязки."))
 		}
 	}
 
 	s.clearRedeem(chatID)
-	msg := fmt.Sprintf("✅ Подарок активирован! Профиль «%s» создан, подписка до %s.",
+	msg := fmt.Sprintf(i18n.T("✅ Подарок активирован! Профиль «%s» создан, подписка до %s."),
 		created.Username, expireAt.Format("02.01.2006"))
 	if created.SubscriptionURL != "" {
-		msg += "\n\nВаша ссылка на подписку:\n" + created.SubscriptionURL
+		msg += i18n.T("\n\nВаша ссылка на подписку:\n") + created.SubscriptionURL
 	}
 	_ = s.bot.SendPlain(ctx, chatID, msg)
 	s.notifyGiftRedeemed(ctx, st.giftID, chatID, created.Username)
@@ -331,5 +332,5 @@ func (s *Service) notifyGiftRedeemed(ctx context.Context, giftID, redeemerTGID i
 		return
 	}
 	_ = s.bot.SendPlain(ctx, g.BuyerTelegramID,
-		fmt.Sprintf("🎁 Ваш подарочный код %s активирован: подписка «%s».", g.Code, username))
+		fmt.Sprintf(i18n.T("🎁 Ваш подарочный код %s активирован: подписка «%s»."), g.Code, username))
 }
