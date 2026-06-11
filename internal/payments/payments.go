@@ -55,11 +55,13 @@ type Subscriber struct {
 	SubscriptionURL string
 }
 
-// Finder resolves a target subscriber by Telegram ID (may match several) or by
-// username (at most one), and can list every subscriber for broadcasts.
+// Finder resolves a target subscriber by Telegram ID (may match several), by
+// username or by subscription-link short UUID (at most one each), and can list
+// every subscriber for broadcasts.
 type Finder interface {
 	FindByTelegramID(ctx context.Context, telegramID int64) ([]Subscriber, error)
 	FindByUsername(ctx context.Context, username string) (*Subscriber, error)
+	FindByShortUUID(ctx context.Context, shortUUID string) (*Subscriber, error)
 	ListAll(ctx context.Context) ([]Subscriber, error)
 }
 

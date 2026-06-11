@@ -158,6 +158,17 @@ func (c *Client) SetTelegramID(ctx context.Context, uuid string, telegramID int6
 
 func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User, error) {
 	endpoint := fmt.Sprintf("%s/api/users/by-username/%s", c.baseURL, url.PathEscape(username))
+	return c.getUser(ctx, endpoint, "get user by username")
+}
+
+// GetUserByShortUUID resolves a user by the short UUID that terminates their
+// subscription link. Returns nil without error when no user matches.
+func (c *Client) GetUserByShortUUID(ctx context.Context, shortUUID string) (*User, error) {
+	endpoint := fmt.Sprintf("%s/api/users/by-short-uuid/%s", c.baseURL, url.PathEscape(shortUUID))
+	return c.getUser(ctx, endpoint, "get user by short uuid")
+}
+
+func (c *Client) getUser(ctx context.Context, endpoint, op string) (*User, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -166,7 +177,7 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User,
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("get user by username: %w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer resp.Body.Close()
 
@@ -174,11 +185,11 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User,
 		return nil, nil
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("get user by username: unauthorized (status=%d)", resp.StatusCode)
+		return nil, fmt.Errorf("%s: unauthorized (status=%d)", op, resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("get user by username: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
+		return nil, fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
 	}
 
 	body, err := io.ReadAll(resp.Body)

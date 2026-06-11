@@ -298,6 +298,18 @@ func (f rwFinder) FindByUsername(ctx context.Context, username string) (*payment
 	return &s, nil
 }
 
+func (f rwFinder) FindByShortUUID(ctx context.Context, shortUUID string) (*payments.Subscriber, error) {
+	u, err := f.c.GetUserByShortUUID(ctx, shortUUID)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, nil
+	}
+	s := toSubscriber(*u)
+	return &s, nil
+}
+
 func (f rwFinder) ListAll(ctx context.Context) ([]payments.Subscriber, error) {
 	us, err := f.c.GetUsers(ctx)
 	if err != nil {

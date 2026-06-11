@@ -3,8 +3,10 @@ package payments
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
@@ -60,7 +62,7 @@ func (s *Service) beginRegisterFlow(ctx context.Context, chatID int64) {
 		createdAt:     s.now(),
 	})
 	_ = s.bot.SendPlain(ctx, chatID,
-		i18n.T("Введите имя вашего профила (Можно посмотреть в приложении). /cancel — отмена."))
+		i18n.T("Отправьте ссылку на вашу подписку или имя профиля (можно посмотреть в приложении). /cancel — отмена."))
 }
 
 // handleMenuRegister starts the register flow from the menu button.
@@ -72,8 +74,9 @@ func (s *Service) handleMenuRegister(ctx context.Context, cb *tg.CallbackQuery) 
 	return true
 }
 
-// handleRegisterUsernameInput processes free-text input during an active register
-// flow. Returns true if the message was consumed.
+// handleRegisterUsernameInput processes free-text input during an active
+// register flow: a subscription link or a profile username. Returns true if
+// the message was consumed.
 func (s *Service) handleRegisterUsernameInput(ctx context.Context, m *tg.Message) bool {
 	chatID := m.Chat.ID
 	r := s.getRegister(chatID)
@@ -92,7 +95,28 @@ func (s *Service) handleRegisterUsernameInput(ctx context.Context, m *tg.Message
 
 	if strings.HasPrefix(text, "/") {
 		_ = s.bot.SendPlain(ctx, chatID,
-			i18n.T("Введите имя вашего профила или /cancel для отмены."))
+			i18n.T("Отправьте ссылку на подписку или имя профиля, либо /cancel для отмены."))
+		return true
+	}
+
+	if shortUUID, isLink := extractShortUUID(text); isLink {
+		if shortUUID == "" {
+			_ = s.bot.SendPlain(ctx, chatID,
+				i18n.T("Не удалось распознать ссылку. Пришлите ссылку на подписку целиком, как она указана в приложении."))
+			return true
+		}
+		sub, err := s.finder.FindByShortUUID(ctx, shortUUID)
+		if err != nil {
+			s.logger.Error("register: find by short uuid failed", "err", err.Error())
+			_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
+			return true
+		}
+		if sub == nil {
+			_ = s.bot.SendPlain(ctx, chatID,
+				i18n.T("Профиль по этой ссылке не найден. Проверьте ссылку и попробуйте ещё раз."))
+			return true
+		}
+		s.continueRegisterWith(ctx, chatID, r, sub)
 		return true
 	}
 
@@ -114,6 +138,47 @@ func (s *Service) handleRegisterUsernameInput(ctx context.Context, m *tg.Message
 		return true
 	}
 
+	s.continueRegisterWith(ctx, chatID, r, sub)
+	return true
+}
+
+// handleBareSubscriptionLink links an account when the user simply pastes their
+// subscription link into the chat with no flow active — no /register required.
+// Returns true if the message was consumed.
+func (s *Service) handleBareSubscriptionLink(ctx context.Context, m *tg.Message) bool {
+	if m == nil || !s.isEnabled() || s.registrar == nil {
+		return false
+	}
+	shortUUID, isLink := extractShortUUID(strings.TrimSpace(m.Text))
+	if !isLink {
+		return false
+	}
+	chatID := m.Chat.ID
+	if shortUUID == "" {
+		_ = s.bot.SendPlain(ctx, chatID,
+			i18n.T("Не удалось распознать ссылку. Пришлите ссылку на подписку целиком, как она указана в приложении."))
+		return true
+	}
+	sub, err := s.finder.FindByShortUUID(ctx, shortUUID)
+	if err != nil {
+		s.logger.Error("register: find by short uuid failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
+		return true
+	}
+	if sub == nil {
+		_ = s.bot.SendPlain(ctx, chatID,
+			i18n.T("Профиль по этой ссылке не найден. Проверьте ссылку и попробуйте ещё раз."))
+		return true
+	}
+	r := &registerState{requesterTGID: chatID, createdAt: s.now()}
+	s.setRegister(chatID, r)
+	s.continueRegisterWith(ctx, chatID, r, sub)
+	return true
+}
+
+// continueRegisterWith applies the already-linked checks to a resolved
+// subscriber and shows the confirmation keyboard.
+func (s *Service) continueRegisterWith(ctx context.Context, chatID int64, r *registerState, sub *Subscriber) {
 	// Account already linked: idempotent if it's this user, refuse otherwise.
 	if sub.TelegramID != 0 {
 		s.clearRegister(chatID)
@@ -124,13 +189,47 @@ func (s *Service) handleRegisterUsernameInput(ctx context.Context, m *tg.Message
 			_ = s.bot.SendPlain(ctx, chatID,
 				i18n.T("Этот профиль уже привязан к другому Telegram. Обратитесь к администратору."))
 		}
-		return true
+		return
 	}
 
 	r.username = sub.Username
 	r.uuid = sub.UUID
 	s.setRegister(chatID, r)
 	s.showRegisterConfirm(ctx, chatID, r)
+}
+
+// extractShortUUID reports whether text looks like an http(s) link and, if so,
+// returns the short UUID terminating it (the last path segment of a Remnawave
+// subscription link). An empty short UUID with isLink=true means the text is a
+// link but no plausible short UUID could be extracted.
+func extractShortUUID(text string) (shortUUID string, isLink bool) {
+	lower := strings.ToLower(text)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		return "", false
+	}
+	u, err := url.Parse(text)
+	if err != nil {
+		return "", true
+	}
+	segments := strings.Split(strings.Trim(u.Path, "/"), "/")
+	last := segments[len(segments)-1]
+	if !isValidShortUUID(last) {
+		return "", true
+	}
+	return last, true
+}
+
+// isValidShortUUID accepts the nanoid-style identifiers Remnawave puts at the
+// end of subscription links: 4-64 chars, letters/digits/«-»/«_».
+func isValidShortUUID(s string) bool {
+	if len(s) < 4 || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '_' {
+			return false
+		}
+	}
 	return true
 }
 

@@ -64,6 +64,108 @@ func TestRegisterHappyPathBindsFreeAccount(t *testing.T) {
 	}
 }
 
+func TestRegisterAcceptsSubscriptionLink(t *testing.T) {
+	svc, bot, f, reg := newRegisterService(t)
+	ctx := context.Background()
+	f.byShort = map[string]*Subscriber{
+		"abc123XY": {RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 0},
+	}
+
+	svc.StartRegisterFlow(ctx, regMsg(200, "/register"))
+	if !svc.HandleText(ctx, regMsg(200, "https://sub.example.com/sub/abc123XY")) {
+		t.Fatal("link should be consumed")
+	}
+	last := bot.sent[len(bot.sent)-1]
+	if last.Keyboard == nil || last.Keyboard.InlineKeyboard[0][0].CallbackData != "reg_confirm" {
+		t.Fatalf("confirm keyboard not shown: %+v", last)
+	}
+	if !strings.Contains(last.Text, "alice") {
+		t.Fatalf("confirmation should name the resolved profile: %q", last.Text)
+	}
+
+	if !svc.HandleCallback(ctx, regConfirmCB(200, "reg_confirm")) {
+		t.Fatal("reg_confirm should be handled")
+	}
+	if reg.calls != 1 || reg.uuid != "u-42" || reg.telegramID != 200 {
+		t.Fatalf("registrar not called correctly: calls=%d uuid=%s tgid=%d", reg.calls, reg.uuid, reg.telegramID)
+	}
+}
+
+func TestBareSubscriptionLinkStartsLinking(t *testing.T) {
+	svc, bot, f, reg := newRegisterService(t)
+	ctx := context.Background()
+	f.byShort = map[string]*Subscriber{
+		"abc123XY": {RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 0},
+	}
+
+	// No /register first: the pasted link alone starts the flow.
+	if !svc.HandleText(ctx, regMsg(200, "https://sub.example.com/sub/abc123XY")) {
+		t.Fatal("bare link should be consumed")
+	}
+	last := bot.sent[len(bot.sent)-1]
+	if last.Keyboard == nil || last.Keyboard.InlineKeyboard[0][0].CallbackData != "reg_confirm" {
+		t.Fatalf("confirm keyboard not shown: %+v", last)
+	}
+
+	if !svc.HandleCallback(ctx, regConfirmCB(200, "reg_confirm")) {
+		t.Fatal("reg_confirm should be handled")
+	}
+	if reg.calls != 1 || reg.uuid != "u-42" || reg.telegramID != 200 {
+		t.Fatalf("registrar not called correctly: calls=%d uuid=%s tgid=%d", reg.calls, reg.uuid, reg.telegramID)
+	}
+}
+
+func TestBareSubscriptionLinkUnknownReportsNotFound(t *testing.T) {
+	svc, bot, _, reg := newRegisterService(t)
+	ctx := context.Background()
+
+	if !svc.HandleText(ctx, regMsg(200, "https://sub.example.com/sub/nosuch1")) {
+		t.Fatal("bare link should be consumed even when unknown")
+	}
+	if reg.calls != 0 {
+		t.Fatal("must not write for an unknown link")
+	}
+	if svc.getRegister(200) != nil {
+		t.Fatal("an unknown bare link must not leave a register session behind")
+	}
+	last := bot.sent[len(bot.sent)-1]
+	if !strings.Contains(last.Text, "не найден") {
+		t.Fatalf("expected not-found message: %q", last.Text)
+	}
+}
+
+func TestBareNonLinkTextIsIgnored(t *testing.T) {
+	svc, _, _, _ := newRegisterService(t)
+	if svc.HandleText(context.Background(), regMsg(200, "hello there")) {
+		t.Fatal("plain text outside a flow must not be consumed")
+	}
+}
+
+func TestExtractShortUUID(t *testing.T) {
+	cases := []struct {
+		in     string
+		want   string
+		isLink bool
+	}{
+		{"https://sub.example.com/sub/abc123XY", "abc123XY", true},
+		{"https://sub.example.com/abc123XY", "abc123XY", true},
+		{"https://sub.example.com/sub/abc123XY/", "abc123XY", true},
+		{"HTTPS://sub.example.com/sub/abc123XY?x=1#frag", "abc123XY", true},
+		{"http://example.com/prefix/deep/Short_-1", "Short_-1", true},
+		{"https://sub.example.com/", "", true},    // no usable segment
+		{"https://sub.example.com/a b", "", true}, // bad segment
+		{"alice", "", false},
+		{"/register", "", false},
+		{"ftp://example.com/abc123XY", "", false},
+	}
+	for _, c := range cases {
+		got, isLink := extractShortUUID(c.in)
+		if got != c.want || isLink != c.isLink {
+			t.Errorf("extractShortUUID(%q) = (%q, %v), want (%q, %v)", c.in, got, isLink, c.want, c.isLink)
+		}
+	}
+}
+
 func TestRegisterNotFoundStaysInFlow(t *testing.T) {
 	svc, bot, _, reg := newRegisterService(t)
 	ctx := context.Background()

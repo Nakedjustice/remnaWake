@@ -180,6 +180,49 @@ func TestGetUserByUsernameNotFound(t *testing.T) {
 	}
 }
 
+func TestGetUserByShortUUID(t *testing.T) {
+	const token = "tok"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.EscapedPath() != "/api/users/by-short-uuid/abc123XY" {
+			t.Fatalf("path = %s", r.URL.EscapedPath())
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Fatalf("auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"uuid":"u-1","id":7,"shortUuid":"abc123XY","username":"alice","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, token, time.Second)
+	u, err := c.GetUserByShortUUID(context.Background(), "abc123XY")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil || u.UUID != "u-1" || u.ShortUUID != "abc123XY" || u.Username != "alice" {
+		t.Fatalf("user wrong: %+v", u)
+	}
+}
+
+func TestGetUserByShortUUIDNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	u, err := c.GetUserByShortUUID(context.Background(), "ghost123")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u != nil {
+		t.Fatalf("want nil, got %+v", u)
+	}
+}
+
 func TestGetUserByTelegramID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/users/by-telegram-id/123" {
