@@ -17,6 +17,10 @@ var (
 	ErrProfileUnknown   = errors.New("profile does not belong to this user")
 	ErrTariffUnknown    = errors.New("tariff not found")
 	ErrPaymentsDisabled = errors.New("payment flow is disabled (no admin configured)")
+	// ErrScreenshotRequired: the renew request was not created because the
+	// admin requires a payment screenshot; the user was asked to attach it in
+	// the bot chat.
+	ErrScreenshotRequired = errors.New("payment screenshot required")
 )
 
 // WebProfile is one linked subscription as shown in the mini app.
@@ -208,7 +212,14 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 		s.logger.Error("webapp: remember user failed", "err", err.Error(), "user_id", sub.RemnawaveID)
 	}
 
-	if _, err := s.createPaymentRequest(ctx, u, months, price); err != nil {
+	// With the screenshot requirement on, the request is deferred: the mini app
+	// cannot upload photos to the bot, so the user finishes in the bot chat.
+	if s.getRequireScreenshot() {
+		s.startPayPhotoFlow(ctx, telegramID, sub.RemnawaveID, months, price)
+		return ErrScreenshotRequired
+	}
+
+	if _, err := s.createPaymentRequest(ctx, u, months, price, ""); err != nil {
 		return err
 	}
 

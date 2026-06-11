@@ -21,6 +21,9 @@ type PaymentRequest struct {
 	ConfirmedAt     *time.Time
 	PayerTelegramID int64
 	PayerUsername   string
+	// ScreenshotFileID is the Telegram file_id of the payment screenshot the
+	// user attached; empty when the screenshot requirement was off.
+	ScreenshotFileID string
 }
 
 func (s *Store) CreatePaymentRequest(ctx context.Context, r PaymentRequest) (int64, error) {
@@ -28,10 +31,10 @@ func (s *Store) CreatePaymentRequest(ctx context.Context, r PaymentRequest) (int
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO payment_requests
 			(remnawave_user_id, uuid, username, telegram_id, months, price, expire_at,
-			 status, created_at, payer_telegram_id, payer_username)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 status, created_at, payer_telegram_id, payer_username, screenshot_file_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.RemnawaveID, r.UUID, r.Username, r.TelegramID, r.Months, r.Price,
-		formatTime(r.ExpireAt), "pending", now, r.PayerTelegramID, r.PayerUsername)
+		formatTime(r.ExpireAt), "pending", now, r.PayerTelegramID, r.PayerUsername, r.ScreenshotFileID)
 	if err != nil {
 		return 0, err
 	}
@@ -46,10 +49,12 @@ func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentReques
 	)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
-			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username
+			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
+			screenshot_file_id
 		FROM payment_requests WHERE id = ?
 	`, id).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
-		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername)
+		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
+		&r.ScreenshotFileID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -71,7 +76,8 @@ func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentReques
 func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) ([]PaymentRequest, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
-			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username
+			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
+			screenshot_file_id
 		FROM payment_requests WHERE status = ? ORDER BY id
 	`, status)
 	if err != nil {
@@ -88,7 +94,7 @@ func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) 
 		)
 		if err := rows.Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID,
 			&r.Months, &r.Price, &exp, &r.Status, &created, &confirmed,
-			&r.PayerTelegramID, &r.PayerUsername); err != nil {
+			&r.PayerTelegramID, &r.PayerUsername, &r.ScreenshotFileID); err != nil {
 			return nil, err
 		}
 		r.ExpireAt, _ = parseTime(exp)

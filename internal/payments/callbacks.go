@@ -175,7 +175,16 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 		return
 	}
 
-	if _, err := s.createPaymentRequest(ctx, u, months, price); err != nil {
+	// With the screenshot requirement on, the request is deferred until the
+	// user sends a payment photo; nothing reaches the admins yet.
+	if s.getRequireScreenshot() && cb.Message != nil {
+		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Прикрепите чек об оплате."))
+		s.startPayPhotoFlow(ctx, cb.Message.Chat.ID, userID, months, price)
+		return
+	}
+
+	if _, err := s.createPaymentRequest(ctx, u, months, price, ""); err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
@@ -188,12 +197,14 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 }
 
 // createPaymentRequest writes a pending payment request and DMs all admins a
-// confirm button. Shared by the chat callback flow and the mini app API.
-func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUser, months, price int) (int64, error) {
+// confirm button (a photo message when a payment screenshot is attached).
+// Shared by the chat callback flow, the photo flow and the mini app API.
+func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUser, months, price int, screenshotFileID string) (int64, error) {
 	reqID, err := s.store.CreatePaymentRequest(ctx, store.PaymentRequest{
 		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
 		TelegramID: u.TelegramID, Months: months, Price: price,
 		ExpireAt: u.ExpireAt, Status: "pending",
+		ScreenshotFileID: screenshotFileID,
 	})
 	if err != nil {
 		s.logger.Error("create payment request failed", "err", err.Error())
@@ -210,7 +221,12 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 	}
 	var refs []adminMsgRef
 	for _, adminID := range s.adminIDs {
-		msgID, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
+		var msgID int64
+		if screenshotFileID != "" {
+			msgID, err = s.bot.SendPhoto(ctx, adminID, screenshotFileID, text, kb)
+		} else {
+			msgID, err = s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
+		}
 		if err != nil {
 			s.logger.Error("notify admin failed", "admin_id", adminID, "err", err.Error())
 			continue
@@ -345,6 +361,8 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.handleAdminDelTariff(ctx, chatID, cb.Data)
 	case cb.Data == "adm:setreq":
 		s.startSetRequisitesFlow(ctx, chatID)
+	case cb.Data == "adm:shot_toggle":
+		s.handleAdminScreenshotToggle(ctx, chatID)
 	case cb.Data == "adm:addtariff":
 		s.startAddTariffFlow(ctx, chatID)
 	case cb.Data == "adm:gifts":
@@ -503,6 +521,23 @@ func (s *Service) handleAdminSquadPick(ctx context.Context, chatID int64, data s
 		return
 	}
 	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Сквад по умолчанию: «%s». Новые пользователи будут добавляться в него."), sq.Name))
+}
+
+// handleAdminScreenshotToggle flips the payment-screenshot requirement from
+// the adm:shot_toggle button and re-renders the menu with the new state.
+func (s *Service) handleAdminScreenshotToggle(ctx context.Context, chatID int64) {
+	on := !s.getRequireScreenshot()
+	if err := s.setRequireScreenshot(ctx, on); err != nil {
+		s.logger.Error("admin: save screenshot setting failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
+		return
+	}
+	if on {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате теперь обязателен: заявка уходит администратору вместе с фото."))
+	} else {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате отключён: заявки отправляются без фото."))
+	}
+	s.SendAdminMenu(ctx, chatID)
 }
 
 func (s *Service) startSetRequisitesFlow(ctx context.Context, chatID int64) {

@@ -29,6 +29,9 @@ type WebAdminRequest struct {
 	PriceLabel string `json:"price_label,omitempty"`
 	ExpireAt   string `json:"expire_at,omitempty"` // DD.MM.YYYY
 	CreatedAt  string `json:"created_at"`          // DD.MM.YYYY
+	// HasScreenshot marks requests that carry a payment screenshot; the photo
+	// itself is delivered to the admins' Telegram chats.
+	HasScreenshot bool `json:"has_screenshot,omitempty"`
 }
 
 // WebAdminGiftRequest is one pending gift purchase as shown in the mini app
@@ -68,6 +71,8 @@ type WebAdminPanel struct {
 	// Default-Squad fallback applies then). Read from settings only, so the
 	// panel payload never waits on the Remnawave API.
 	DefaultSquadName string `json:"default_squad_name"`
+	// RequireScreenshot mirrors the "payment screenshot required" toggle.
+	RequireScreenshot bool `json:"require_screenshot"`
 }
 
 // WebSquad is one panel internal squad offered in the mini app default-squad
@@ -106,6 +111,7 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 
 	s.mu.Lock()
 	out.Requisites = s.requisites
+	out.RequireScreenshot = s.requireScreenshot
 	s.mu.Unlock()
 
 	_, out.DefaultSquadName = s.defaultSquadSelection(ctx)
@@ -132,11 +138,12 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	for i := range requests {
 		r := &requests[i]
 		wr := WebAdminRequest{
-			ID:        r.ID,
-			Username:  r.Username,
-			Months:    r.Months,
-			Price:     r.Price,
-			CreatedAt: r.CreatedAt.Format("02.01.2006"),
+			ID:            r.ID,
+			Username:      r.Username,
+			Months:        r.Months,
+			Price:         r.Price,
+			CreatedAt:     r.CreatedAt.Format("02.01.2006"),
+			HasScreenshot: r.ScreenshotFileID != "",
 		}
 		if r.Price > 0 {
 			wr.PriceLabel = s.priceLabel(r.Price)
@@ -236,6 +243,18 @@ func (s *Service) AdminSetRequisites(ctx context.Context, telegramID int64, text
 	s.mu.Lock()
 	s.requisites = text
 	s.mu.Unlock()
+	return nil
+}
+
+// AdminSetRequireScreenshot turns the payment-screenshot requirement on or off
+// from the mini app admin panel (same setting as the adm:shot_toggle button).
+func (s *Service) AdminSetRequireScreenshot(ctx context.Context, telegramID int64, on bool) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	if err := s.setRequireScreenshot(ctx, on); err != nil {
+		return fmt.Errorf("save screenshot setting: %w", err)
+	}
 	return nil
 }
 

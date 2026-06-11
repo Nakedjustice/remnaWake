@@ -188,6 +188,11 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 				logger.Debug("ignored telegram callback", "data", u.CallbackQuery.Data)
 				continue
 			}
+			if u.Message != nil && len(u.Message.Photo) > 0 {
+				if pay.HandlePhoto(ctx, u.Message) {
+					continue
+				}
+			}
 			if u.Message != nil && u.Message.Text != "" {
 				text := strings.TrimSpace(u.Message.Text)
 				if text == "/start" || strings.HasPrefix(text, "/start ") {
