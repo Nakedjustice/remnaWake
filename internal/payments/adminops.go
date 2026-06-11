@@ -16,6 +16,10 @@ var (
 	ErrBadInput        = errors.New("invalid input")
 	ErrRequestNotFound = errors.New("request not found")
 	ErrRequestResolved = errors.New("request already resolved")
+	// ErrConfirmedNotMarked: the panel extension succeeded but the request could
+	// not be marked confirmed in the database; confirming again would extend the
+	// subscription a second time.
+	ErrConfirmedNotMarked = errors.New("extension applied but request not marked confirmed")
 )
 
 // confirmPaymentRequest extends the subscription for a pending payment
@@ -48,7 +52,11 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 	}
 
 	if _, err := s.store.ConfirmPaymentRequest(ctx, reqID, s.now()); err != nil {
-		s.logger.Error("mark confirmed failed", "err", err.Error())
+		s.logger.Error("mark confirmed failed", "uuid", req.UUID, "req_id", reqID, "err", err.Error())
+		// The subscription IS extended; clear the buttons anyway so a second tap
+		// cannot extend it again, and report the inconsistency to the caller.
+		s.clearPayButtons(ctx, reqID)
+		return req, newExpireAt, fmt.Errorf("%w: %v", ErrConfirmedNotMarked, err)
 	}
 	s.clearPayButtons(ctx, reqID)
 	return req, newExpireAt, nil

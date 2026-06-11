@@ -242,9 +242,7 @@ func (s *Service) notifyAdminsGiftRequest(ctx context.Context, giftID int64, cod
 		}
 		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
 	}
-	s.mu.Lock()
-	s.giftMsgs[giftID] = refs
-	s.mu.Unlock()
+	s.putAdminMsgs(s.giftMsgs, giftID, refs)
 }
 
 // createGiftCodeRow generates a unique code and inserts the pending row,
@@ -390,10 +388,7 @@ func (s *Service) handleGiftCodeReject(ctx context.Context, cb *tg.CallbackQuery
 // clearGiftButtons removes the approve/reject buttons from every admin's copy
 // of the gift notification, then forgets the stored refs.
 func (s *Service) clearGiftButtons(ctx context.Context, giftID int64) {
-	s.mu.Lock()
-	refs := s.giftMsgs[giftID]
-	delete(s.giftMsgs, giftID)
-	s.mu.Unlock()
+	refs := s.takeAdminMsgs(s.giftMsgs, giftID)
 	for _, ref := range refs {
 		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
 			s.logger.Warn("clear admin gift button failed", "chat_id", ref.chatID, "err", err.Error())

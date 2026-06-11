@@ -40,6 +40,9 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 	case "/requisites":
 		s.cmdShowRequisites(ctx, chatID)
 		return true
+	case "/stats":
+		s.sendAdminStats(ctx, chatID)
+		return true
 	default:
 		return false
 	}
@@ -204,6 +207,7 @@ func (s *Service) cmdSetTariff(ctx context.Context, chatID int64, fields []strin
 func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
+			{{Text: "📊 Статистика", CallbackData: "adm:stats"}},
 			{{Text: "📋 Посмотреть тарифы", CallbackData: "adm:tariffs"}},
 			{{Text: "➕ Добавить тариф", CallbackData: "adm:addtariff"}},
 			{{Text: "❌ Удалить тариф", CallbackData: "adm:del_list"}},

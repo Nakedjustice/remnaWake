@@ -74,6 +74,14 @@ CREATE TABLE IF NOT EXISTS settings (
   value      TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sent_notifications (
+  remnawave_user_id INTEGER NOT NULL,
+  kind              TEXT NOT NULL,
+  milestone         INTEGER NOT NULL,
+  expire_at         TEXT NOT NULL,
+  sent_at           TEXT NOT NULL,
+  PRIMARY KEY (remnawave_user_id, kind, milestone, expire_at)
+);
 `
 
 // New opens (creating if needed) the SQLite database at path and applies migrations.

@@ -2,10 +2,12 @@ package payments
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,12 +66,16 @@ type fakeExtender struct {
 	uuid   string
 	expire time.Time
 	calls  int
+	err    error
 }
 
 func (f *fakeExtender) ExtendSubscriptionByUUID(_ context.Context, uuid string, newExpireAt time.Time) error {
+	f.calls++
+	if f.err != nil {
+		return f.err
+	}
 	f.uuid = uuid
 	f.expire = newExpireAt
-	f.calls++
 	return nil
 }
 
@@ -334,6 +340,109 @@ func TestConfirmExtendsByChosenMonths(t *testing.T) {
 	svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("ok:%d", id)))
 	if ext.calls != 1 {
 		t.Fatalf("second confirm must be a no-op, calls=%d", ext.calls)
+	}
+}
+
+func TestConfirmExtendFailureNotifiesAdminAndStaysRetryable(t *testing.T) {
+	svc, bot, ext, st := newTestService(t)
+	ctx := context.Background()
+	ext.err = errors.New("panel down")
+	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 3, Price: 450, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), Status: "pending",
+	})
+	svc.putAdminMsgs(svc.payMsgs, id, []adminMsgRef{{chatID: 1000, messageID: 5}})
+
+	if !svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("ok:%d", id))) {
+		t.Fatal("confirm should be handled")
+	}
+
+	// Persistent admin message (not just the callback toast).
+	var adminWarned bool
+	for _, m := range bot.sent {
+		if m.ChatID == 1000 && strings.Contains(m.Text, "Не удалось продлить подписку для alice") {
+			adminWarned = true
+		}
+	}
+	if !adminWarned {
+		t.Fatalf("admin not warned in chat: %+v", bot.sent)
+	}
+	// Request stays pending with its confirm buttons alive so a retry works.
+	req, _ := st.GetPaymentRequest(ctx, id)
+	if req.Status != "pending" {
+		t.Fatalf("status = %q, want pending", req.Status)
+	}
+	if len(bot.edits) != 0 {
+		t.Fatalf("confirm buttons must not be cleared on failure: %+v", bot.edits)
+	}
+
+	// Panel recovers -> the same button confirms successfully.
+	ext.err = nil
+	if !svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("ok:%d", id))) {
+		t.Fatal("retry confirm should be handled")
+	}
+	req, _ = st.GetPaymentRequest(ctx, id)
+	if req.Status != "confirmed" {
+		t.Fatalf("status after retry = %q, want confirmed", req.Status)
+	}
+	if len(bot.edits) == 0 {
+		t.Fatal("confirm buttons should be cleared after success")
+	}
+}
+
+func TestAdminStatsCommand(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	svc.finder = &fakeFinder{all: []Subscriber{
+		{RemnawaveID: 1, Username: "a", Status: "ACTIVE", ExpireAt: now.Add(3 * 24 * time.Hour), TelegramID: 11},
+		{RemnawaveID: 2, Username: "b", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour)},
+		{RemnawaveID: 3, Username: "c", Status: "EXPIRED", ExpireAt: now.Add(-24 * time.Hour), TelegramID: 33},
+	}}
+	_, _ = st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 1, UUID: "u", Username: "a", TelegramID: 11,
+		Months: 1, Price: 150, ExpireAt: now, Status: "pending",
+	})
+
+	if svc.HandleAdminCommand(ctx, msg(2222, "/stats")) {
+		t.Fatal("non-admin /stats must not be handled")
+	}
+	if !svc.HandleAdminCommand(ctx, msg(1000, "/stats")) {
+		t.Fatal("/stats should be handled for admin")
+	}
+	report := bot.sent[len(bot.sent)-1].Text
+	for _, want := range []string{
+		"всего: 3", "активных: 2", "истекают в ближайшие 7 дней: 1",
+		"истекших: 1", "с привязанным Telegram: 2", "ожидают подтверждения: 1",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("report missing %q:\n%s", want, report)
+		}
+	}
+}
+
+func TestAdminMsgTTLEviction(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	svc.now = func() time.Time { return base }
+	svc.putAdminMsgs(svc.payMsgs, 1, []adminMsgRef{{chatID: 1000, messageID: 5}})
+
+	svc.now = func() time.Time { return base.Add(adminMsgTTL + time.Hour) }
+	svc.putAdminMsgs(svc.payMsgs, 2, []adminMsgRef{{chatID: 1000, messageID: 6}})
+
+	svc.mu.Lock()
+	_, oldKept := svc.payMsgs[1]
+	_, newKept := svc.payMsgs[2]
+	svc.mu.Unlock()
+	if oldKept || !newKept {
+		t.Fatalf("eviction wrong: old=%v new=%v", oldKept, newKept)
+	}
+	// Clearing the evicted request is a harmless no-op.
+	svc.clearPayButtons(context.Background(), 1)
+	if len(bot.edits) != 0 {
+		t.Fatalf("no edits expected for evicted entry: %+v", bot.edits)
 	}
 }
 

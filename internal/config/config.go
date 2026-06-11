@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 )
 
 type Config struct {
@@ -17,6 +19,8 @@ type Config struct {
 	Scheduler  SchedulerConfig
 	HTTP       HTTPConfig
 	WebApp     WebAppConfig
+	Winback    WinbackConfig
+	Lang       i18n.Lang
 	LogLevel   slog.Level
 	DryRun     bool
 	RunOnStart bool
@@ -57,10 +61,27 @@ func (w WebAppConfig) Enabled() bool {
 	return w.PublicURL != ""
 }
 
+// WinbackConfig configures post-expiry win-back notifications: a "subscription
+// expired" message sent the given number of days after the expiry date.
+type WinbackConfig struct {
+	Enabled bool
+	Days    []int
+}
+
 func Load() (*Config, error) {
 	adminIDs, err := parseAdminIDs(os.Getenv("TELEGRAM_ADMIN_ID"))
 	if err != nil {
 		return nil, err
+	}
+
+	winbackDays, err := parseDaysList("WINBACK_DAYS", getenv("WINBACK_DAYS", "1,3"))
+	if err != nil {
+		return nil, err
+	}
+
+	lang, ok := i18n.Parse(getenv("BOT_LANG", "ru"))
+	if !ok {
+		return nil, fmt.Errorf("invalid BOT_LANG: %q (supported: ru, en)", os.Getenv("BOT_LANG"))
 	}
 
 	cfg := &Config{
@@ -81,6 +102,11 @@ func Load() (*Config, error) {
 			PublicURL: strings.TrimRight(strings.TrimSpace(os.Getenv("WEBAPP_URL")), "/"),
 			Listen:    getenv("WEBAPP_LISTEN", ":8080"),
 		},
+		Winback: WinbackConfig{
+			Enabled: getenvBool("WINBACK_ENABLED", true),
+			Days:    winbackDays,
+		},
+		Lang: lang,
 		LogLevel:   parseLogLevel(getenv("LOG_LEVEL", "info")),
 		DryRun:     getenvBool("DRY_RUN", false),
 		RunOnStart: getenvBool("RUN_ON_START", true),
@@ -123,6 +149,9 @@ func (c *Config) validate() error {
 	if _, err := time.Parse("15:04", c.Scheduler.RunAt); err != nil {
 		return fmt.Errorf("invalid RUN_AT (expected HH:MM): %q", c.Scheduler.RunAt)
 	}
+	if c.Winback.Enabled && len(c.Winback.Days) == 0 {
+		return errors.New("WINBACK_DAYS must list at least one day when WINBACK_ENABLED is true")
+	}
 	if _, err := time.LoadLocation(c.Scheduler.Timezone); err != nil {
 		return fmt.Errorf("invalid TZ: %q", c.Scheduler.Timezone)
 	}
@@ -159,6 +188,29 @@ func getenvBool(key string, def bool) bool {
 		return def
 	}
 	return b
+}
+
+// parseDaysList parses a comma-separated list of positive day numbers
+// (e.g. "1,3"); name is the env var used in error messages.
+func parseDaysList(name, raw string) ([]int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	tokens := strings.Split(raw, ",")
+	out := make([]int, 0, len(tokens))
+	for _, t := range tokens {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		n, err := strconv.Atoi(t)
+		if err != nil || n < 1 {
+			return nil, fmt.Errorf("invalid %s token: %q", name, t)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }
 
 func parseAdminIDs(raw string) ([]int64, error) {
