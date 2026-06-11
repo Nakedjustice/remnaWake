@@ -69,6 +69,14 @@ func (f *fakeAdmin) AdminSetRequisites(_ context.Context, tgID int64, text strin
 	f.calls = append(f.calls, adminCall{Name: "setreq", Text: text})
 	return f.err
 }
+func (f *fakeAdmin) AdminSetRequireScreenshot(_ context.Context, tgID int64, on bool) error {
+	var b int64
+	if on {
+		b = 1
+	}
+	f.calls = append(f.calls, adminCall{Name: "setshot", A: tgID, B: b})
+	return f.err
+}
 func (f *fakeAdmin) AdminListSquads(_ context.Context, tgID int64) ([]payments.WebSquad, error) {
 	f.calls = append(f.calls, adminCall{Name: "listsquads", A: tgID})
 	if f.err != nil {
@@ -195,6 +203,50 @@ func TestHandleRenewErrorMapping(t *testing.T) {
 		if w.Code != tc.want {
 			t.Errorf("err=%v: status = %d, want %d", tc.err, w.Code, tc.want)
 		}
+	}
+}
+
+func TestHandleRenewAwaitingScreenshot(t *testing.T) {
+	srv := newTestServer(&fakeCabinet{renewErr: payments.ErrScreenshotRequired})
+	req := httptest.NewRequest("POST", "/api/renew", strings.NewReader(`{"remnawave_id":7,"months":3}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["status"] != "awaiting_screenshot" {
+		t.Fatalf("unexpected payload: %v", got)
+	}
+}
+
+func TestHandleAdminScreenshotToggle(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req := httptest.NewRequest("POST", "/api/admin/screenshot-toggle", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "setshot" || adm.calls[0].B != 1 {
+		t.Fatalf("unexpected admin calls: %+v", adm.calls)
+	}
+
+	// Non-admin (service error) maps to 403.
+	adm = &fakeAdmin{err: payments.ErrNotAdmin}
+	srv = newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req = httptest.NewRequest("POST", "/api/admin/screenshot-toggle", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 403 {
+		t.Fatalf("status = %d, want 403; body=%s", w.Code, w.Body.String())
 	}
 }
 

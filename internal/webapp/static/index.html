@@ -225,12 +225,17 @@ function renderRenew(p, data) {
     pay.disabled = true;
     pay.textContent = 'Отправка…';
     try {
-      await api('/api/renew', {
+      const res = await api('/api/renew', {
         method: 'POST',
         body: JSON.stringify({ remnawave_id: p.remnawave_id, months }),
       });
-      pay.textContent = '✅ Заявка отправлена';
-      tg.showAlert('Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.');
+      if (res.status === 'awaiting_screenshot') {
+        pay.textContent = '📸 Ждём чек в чате с ботом';
+        tg.showAlert('Осталось прикрепить чек: перейдите в чат с ботом и отправьте фото или скриншот оплаты — после этого заявка уйдёт администратору.');
+      } else {
+        pay.textContent = '✅ Заявка отправлена';
+        tg.showAlert('Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.');
+      }
     } catch (e) {
       pay.disabled = false;
       pay.textContent = '💳 Оплатить / продлить';
@@ -507,6 +512,19 @@ function renderAdminRequisites(data) {
   return card;
 }
 
+function renderAdminScreenshotToggle(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '📸 Чек об оплате'));
+  card.appendChild(el('div', 'hint', data.require_screenshot
+    ? 'Включено: перед отправкой заявки пользователь обязан прикрепить фото или скриншот чека, админы получают заявку вместе с фото в Telegram.'
+    : 'Выключено: заявки на оплату отправляются без чека.'));
+  const toggle = el('button', data.require_screenshot ? 'secondary' : null,
+    data.require_screenshot ? '🚫 Выключить требование чека' : '✅ Включить требование чека');
+  toggle.onclick = () => adminAction('/api/admin/screenshot-toggle', { enabled: !data.require_screenshot });
+  card.appendChild(toggle);
+  return card;
+}
+
 function renderAdminBroadcast() {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, '📢 Рассылка'));
@@ -568,9 +586,11 @@ function renderAdminRequests(data) {
     const info = el('div', 'info');
     let line = `${r.username} — ${r.months} мес.`;
     if (r.price_label) line += ` (${r.price_label})`;
+    if (r.has_screenshot) line += ' 📸';
     info.appendChild(el('div', null, line));
     let st = `заявка от ${r.created_at}`;
     if (r.expire_at) st += `, подписка до ${r.expire_at}`;
+    if (r.has_screenshot) st += ' · чек отправлен в чат админам';
     info.appendChild(el('div', 'st', st));
     item.appendChild(info);
     const btns = el('div', 'btns');
@@ -706,6 +726,7 @@ function renderAdmin(data) {
   appEl.appendChild(renderAdminInviteRequests(data));
   appEl.appendChild(renderAdminTariffs(data));
   appEl.appendChild(renderAdminRequisites(data));
+  appEl.appendChild(renderAdminScreenshotToggle(data));
   appEl.appendChild(renderAdminSquad(data));
   appEl.appendChild(renderAdminGifts(data));
   appEl.appendChild(renderAdminBroadcast());

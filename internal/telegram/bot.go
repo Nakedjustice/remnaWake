@@ -49,6 +49,13 @@ type editMessageTextRequest struct {
 	ReplyMarkup *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
 }
 
+type sendPhotoRequest struct {
+	ChatID      int64  `json:"chat_id"`
+	Photo       string `json:"photo"` // file_id of a photo already on Telegram servers
+	Caption     string `json:"caption,omitempty"`
+	ReplyMarkup any    `json:"reply_markup,omitempty"`
+}
+
 type getUpdatesRequest struct {
 	Offset         int64    `json:"offset,omitempty"`
 	Timeout        int      `json:"timeout,omitempty"`
@@ -131,6 +138,17 @@ type Message struct {
 	MessageID int64  `json:"message_id"`
 	Chat      Chat   `json:"chat"`
 	Text      string `json:"text,omitempty"`
+	// Photo holds the available sizes of an attached photo, smallest first
+	// (Telegram orders them ascending — the last entry is the largest).
+	Photo   []PhotoSize `json:"photo,omitempty"`
+	Caption string      `json:"caption,omitempty"`
+}
+
+// PhotoSize is one resolution variant of a photo attached to a message.
+type PhotoSize struct {
+	FileID string `json:"file_id"`
+	Width  int    `json:"width,omitempty"`
+	Height int    `json:"height,omitempty"`
 }
 
 type Chat struct {
@@ -253,8 +271,28 @@ const (
 )
 
 func (b *Bot) sendMessage(ctx context.Context, payload sendMessageRequest) (int64, error) {
+	return b.sendWithRetry(ctx, "sendMessage", payload)
+}
+
+// SendPhoto sends a photo already stored on Telegram servers (by file_id) with
+// an optional caption and inline keyboard, returning the new message ID.
+func (b *Bot) SendPhoto(ctx context.Context, chatID int64, fileID, caption string, keyboard *InlineKeyboardMarkup) (int64, error) {
+	payload := sendPhotoRequest{
+		ChatID:  chatID,
+		Photo:   fileID,
+		Caption: caption,
+	}
+	if keyboard != nil {
+		payload.ReplyMarkup = keyboard
+	}
+	return b.sendWithRetry(ctx, "sendPhoto", payload)
+}
+
+// sendWithRetry posts payload to the given API method, waiting out 429s like
+// sendMessage always has.
+func (b *Bot) sendWithRetry(ctx context.Context, method string, payload any) (int64, error) {
 	for attempt := 1; ; attempt++ {
-		msgID, retryAfter, err := b.doSendMessage(ctx, payload)
+		msgID, retryAfter, err := b.doSend(ctx, method, payload)
 		if err == nil {
 			return msgID, nil
 		}
@@ -270,15 +308,15 @@ func (b *Bot) sendMessage(ctx context.Context, payload sendMessageRequest) (int6
 	}
 }
 
-// doSendMessage performs a single sendMessage call. A positive retryAfter
+// doSend performs a single message-producing API call. A positive retryAfter
 // signals a 429 the caller may wait out and retry.
-func (b *Bot) doSendMessage(ctx context.Context, payload sendMessageRequest) (int64, time.Duration, error) {
+func (b *Bot) doSend(ctx context.Context, method string, payload any) (int64, time.Duration, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	endpoint := b.apiBase + "/sendMessage"
+	endpoint := b.apiBase + "/" + method
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, 0, err

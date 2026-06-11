@@ -16,6 +16,7 @@ import (
 type BotSender interface {
 	SendPlain(ctx context.Context, chatID int64, text string) error
 	SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error)
+	SendPhoto(ctx context.Context, chatID int64, fileID, caption string, kb *tg.InlineKeyboardMarkup) (int64, error)
 	AnswerCallbackQuery(ctx context.Context, id, text string) error
 	EditMessageReplyMarkup(ctx context.Context, chatID, messageID int64, kb *tg.InlineKeyboardMarkup) error
 	EditMessageText(ctx context.Context, chatID, messageID int64, text string, kb *tg.InlineKeyboardMarkup) error
@@ -136,6 +137,18 @@ type redeemState struct {
 
 const giftCodeTTL = 10 * time.Minute
 
+// payPhotoState tracks a renewal conversation that is waiting for the user to
+// attach a payment screenshot (the screenshot requirement is on): the tariff
+// is already picked, the request is created only once the photo arrives.
+type payPhotoState struct {
+	userID    int64 // remnawave user ID whose subscription is being renewed
+	months    int
+	price     int
+	createdAt time.Time
+}
+
+const payPhotoTTL = 10 * time.Minute
+
 type Service struct {
 	store     *store.Store
 	bot       BotSender
@@ -155,6 +168,7 @@ type Service struct {
 	registers map[int64]*registerState
 	giftCodes map[int64]*giftCodeState
 	redeems   map[int64]*redeemState
+	payPhotos map[int64]*payPhotoState
 
 	botUsername string // protected by mu; empty = unknown, fall back to raw code
 	webAppURL   string // protected by mu; empty = mini app disabled
@@ -169,6 +183,10 @@ type Service struct {
 	giftMsgs   map[int64]adminMsgEntry // protected by mu
 	requisites string                  // protected by mu; empty = not set
 
+	// requireScreenshot mirrors the persisted setting: when true the user must
+	// attach a payment screenshot before the request reaches the admins.
+	requireScreenshot bool // protected by mu
+
 	// resolvedSquadUUID caches a successful by-name fallback lookup of the
 	// default squad, so user creation doesn't hit the panel's squad listing
 	// every time while no squad is explicitly selected. Protected by mu;
@@ -179,6 +197,10 @@ type Service struct {
 // requisitesKey is the settings-table key under which payment requisites text
 // is persisted.
 const requisitesKey = "payment_requisites"
+
+// requireScreenshotKey is the settings-table key for the "payment screenshot
+// required" toggle ("1" = on, anything else / absent = off).
+const requireScreenshotKey = "require_payment_screenshot"
 
 // defaultSquadUUIDKey / defaultSquadNameKey are the settings-table keys for
 // the admin-selected internal squad assigned to newly created users. The name
@@ -206,6 +228,7 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 		registers:  make(map[int64]*registerState),
 		giftCodes:  make(map[int64]*giftCodeState),
 		redeems:    make(map[int64]*redeemState),
+		payPhotos:  make(map[int64]*payPhotoState),
 		adminInput: make(map[int64]adminInputState),
 		payMsgs:    make(map[int64]adminMsgEntry),
 		inviteMsgs: make(map[int64]adminMsgEntry),
@@ -217,6 +240,11 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 		logger.Error("load requisites failed", "err", err.Error())
 	} else if found {
 		s.requisites = value
+	}
+	if value, found, err := st.GetSetting(context.Background(), requireScreenshotKey); err != nil {
+		logger.Error("load screenshot setting failed", "err", err.Error())
+	} else if found {
+		s.requireScreenshot = value == "1"
 	}
 	return s
 }

@@ -206,6 +206,10 @@ func (s *Service) cmdSetTariff(ctx context.Context, chatID int64, fields []strin
 }
 
 func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
+	shotLabel := i18n.T("📸 Чек об оплате: выкл")
+	if s.getRequireScreenshot() {
+		shotLabel = i18n.T("📸 Чек об оплате: вкл")
+	}
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
 			{{Text: i18n.T("📊 Статистика"), CallbackData: "adm:stats"}},
@@ -215,6 +219,7 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 			{{Text: i18n.T("💳 Посмотреть реквизиты"), CallbackData: "adm:req"}},
 			{{Text: i18n.T("🎁 Подарочные коды"), CallbackData: "adm:gifts"}},
 			{{Text: i18n.T("✏️ Изменить реквизиты"), CallbackData: "adm:setreq"}},
+			{{Text: shotLabel, CallbackData: "adm:shot_toggle"}},
 			{{Text: i18n.T("🛡 Сквад по умолчанию"), CallbackData: "adm:squad"}},
 			{{Text: i18n.T("📢 Рассылка всем"), CallbackData: "adm:bcast"}},
 		},

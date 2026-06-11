@@ -97,17 +97,22 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		hasRegister := s.getRegister(chatID) != nil
 		hasGiftCode := s.getGiftCode(chatID) != nil
 		hasRedeem := s.getRedeem(chatID) != nil
-		if !hasInvite && !hasRegister && !hasGiftCode && !hasRedeem {
+		hasPayPhoto := s.getPayPhoto(chatID) != nil
+		if !hasInvite && !hasRegister && !hasGiftCode && !hasRedeem && !hasPayPhoto {
 			return false
 		}
 		s.clearInvite(chatID)
 		s.clearRegister(chatID)
 		s.clearGiftCode(chatID)
 		s.clearRedeem(chatID)
+		s.clearPayPhoto(chatID)
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отменено."))
 		return true
 	}
 
+	if s.remindPayPhoto(ctx, chatID) {
+		return true
+	}
 	if s.handleInviteUsernameInput(ctx, m) {
 		return true
 	}

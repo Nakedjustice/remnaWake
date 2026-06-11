@@ -36,6 +36,7 @@ type Admin interface {
 	AdminSetTariff(ctx context.Context, telegramID int64, months, price int) error
 	AdminDeleteTariff(ctx context.Context, telegramID int64, months int) error
 	AdminSetRequisites(ctx context.Context, telegramID int64, text string) error
+	AdminSetRequireScreenshot(ctx context.Context, telegramID int64, on bool) error
 	AdminListSquads(ctx context.Context, telegramID int64) ([]payments.WebSquad, error)
 	AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error
 	AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error
@@ -75,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/tariff", s.handleAdminSetTariff)
 	mux.HandleFunc("POST /api/admin/tariff/delete", s.handleAdminDeleteTariff)
 	mux.HandleFunc("POST /api/admin/requisites", s.handleAdminSetRequisites)
+	mux.HandleFunc("POST /api/admin/screenshot-toggle", s.handleAdminSetRequireScreenshot)
 	mux.HandleFunc("GET /api/admin/squads", s.handleAdminListSquads)
 	mux.HandleFunc("POST /api/admin/squad", s.handleAdminSetDefaultSquad)
 	mux.HandleFunc("POST /api/admin/broadcast", s.handleAdminBroadcast)
@@ -169,7 +171,13 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months); err != nil {
+	err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months)
+	if errors.Is(err, payments.ErrScreenshotRequired) {
+		// Not an error for the user: the bot chat is waiting for the screenshot.
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "awaiting_screenshot"})
+		return
+	}
+	if err != nil {
 		s.writeCabinetError(w, "renew", userID, err)
 		return
 	}
@@ -320,6 +328,25 @@ func (s *Server) handleAdminSetRequisites(w http.ResponseWriter, r *http.Request
 	}
 	if err := s.admin.AdminSetRequisites(r.Context(), userID, req.Text); err != nil {
 		s.writeAdminError(w, "set requisites", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminSetRequireScreenshot(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetRequireScreenshot(r.Context(), userID, req.Enabled); err != nil {
+		s.writeAdminError(w, "set screenshot requirement", userID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

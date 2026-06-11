@@ -29,8 +29,16 @@ type editCall struct {
 	Text              string
 	Keyboard          *tg.InlineKeyboardMarkup
 }
+type sentPhoto struct {
+	ChatID   int64
+	FileID   string
+	Caption  string
+	Keyboard *tg.InlineKeyboardMarkup
+	MsgID    int64
+}
 type fakeBot struct {
 	sent     []sentMsg
+	photos   []sentPhoto
 	answers  []string
 	edits    []editCall
 	msgIDSeq int64
@@ -48,6 +56,11 @@ func (f *fakeBot) SendPlain(_ context.Context, chatID int64, text string) error 
 func (f *fakeBot) SendPlainWithKeyboard(_ context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error) {
 	f.msgIDSeq++
 	f.sent = append(f.sent, sentMsg{ChatID: chatID, Text: text, Keyboard: kb, MsgID: f.msgIDSeq})
+	return f.msgIDSeq, nil
+}
+func (f *fakeBot) SendPhoto(_ context.Context, chatID int64, fileID, caption string, kb *tg.InlineKeyboardMarkup) (int64, error) {
+	f.msgIDSeq++
+	f.photos = append(f.photos, sentPhoto{ChatID: chatID, FileID: fileID, Caption: caption, Keyboard: kb, MsgID: f.msgIDSeq})
 	return f.msgIDSeq, nil
 }
 func (f *fakeBot) AnswerCallbackQuery(_ context.Context, _ string, text string) error {
