@@ -1,8 +1,9 @@
 # Secrets
 .env
 
-# Claude Code
-.claude/
+# Claude Code (skills are versioned, local settings are not)
+.claude/*
+!.claude/skills/
 CLAUDE.md
 CLAUDE.local.md
 .claude.json
@@ -10,4 +11,5 @@ CLAUDE.local.md
 
 # Build & coverage artifacts
 /bot
+/bin/
 *.out
