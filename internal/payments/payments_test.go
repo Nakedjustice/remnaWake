@@ -344,6 +344,55 @@ func TestConfirmExtendsByChosenMonths(t *testing.T) {
 	}
 }
 
+func TestRejectViaCallbackNotifiesUserAndClearsButtons(t *testing.T) {
+	svc, bot, ext, st := newTestService(t)
+	ctx := context.Background()
+	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 3, Price: 450, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), Status: "pending",
+	})
+	svc.putAdminMsgs(svc.payMsgs, id, []adminMsgRef{{chatID: 1000, messageID: 5}})
+
+	// Non-admin must not be able to reject.
+	if !svc.HandleCallback(ctx, cbq(2222, fmt.Sprintf("rej:%d", id))) {
+		t.Fatal("should be handled (denied)")
+	}
+	req, _ := st.GetPaymentRequest(ctx, id)
+	if req.Status != "pending" {
+		t.Fatalf("status after non-admin reject = %q, want pending", req.Status)
+	}
+
+	if !svc.HandleCallback(ctx, cbq(1000 /*admin*/, fmt.Sprintf("rej:%d", id))) {
+		t.Fatal("reject should be handled")
+	}
+	if ext.calls != 0 {
+		t.Fatal("reject must not extend the subscription")
+	}
+	req, _ = st.GetPaymentRequest(ctx, id)
+	if req.Status != "rejected" {
+		t.Fatalf("status = %q, want rejected", req.Status)
+	}
+	if len(bot.edits) != 1 || bot.edits[0].Keyboard != nil {
+		t.Fatalf("expected admin buttons cleared, got %+v", bot.edits)
+	}
+	var userNotified bool
+	for _, m := range bot.sent {
+		if m.ChatID == 777 && strings.Contains(m.Text, "отклонена") {
+			userNotified = true
+		}
+	}
+	if !userNotified {
+		t.Fatalf("user not notified about rejection: %+v", bot.sent)
+	}
+
+	// Second tap is a no-op.
+	svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("rej:%d", id)))
+	req, _ = st.GetPaymentRequest(ctx, id)
+	if req.Status != "rejected" {
+		t.Fatalf("status after second reject = %q, want rejected", req.Status)
+	}
+}
+
 func TestConfirmExtendFailureNotifiesAdminAndStaysRetryable(t *testing.T) {
 	svc, bot, ext, st := newTestService(t)
 	ctx := context.Background()
