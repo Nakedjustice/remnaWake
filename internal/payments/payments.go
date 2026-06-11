@@ -33,9 +33,22 @@ type CreatedUser struct {
 	SubscriptionURL string
 }
 
-// Creator creates a new user in the remote panel.
+// Creator creates a new user in the remote panel, assigned to the given
+// internal squads (empty = no squads).
 type Creator interface {
-	CreateUser(ctx context.Context, username string, expireAt time.Time) (*CreatedUser, error)
+	CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string) (*CreatedUser, error)
+}
+
+// InternalSquad is the minimal squad view the admin pickers need, kept
+// payments-local so this package stays decoupled from the remnawave package.
+type InternalSquad struct {
+	UUID string
+	Name string
+}
+
+// SquadLister fetches the panel's internal squads.
+type SquadLister interface {
+	GetInternalSquads(ctx context.Context) ([]InternalSquad, error)
 }
 
 // Registrar links an existing panel user to a Telegram ID.
@@ -134,6 +147,7 @@ type Service struct {
 	now       func() time.Time
 
 	finder    Finder
+	squads    SquadLister
 	mu        sync.Mutex
 	invites   map[int64]*inviteState
 	registers map[int64]*registerState
@@ -152,13 +166,27 @@ type Service struct {
 	inviteMsgs map[int64]adminMsgEntry // protected by mu
 	giftMsgs   map[int64]adminMsgEntry // protected by mu
 	requisites string                  // protected by mu; empty = not set
+
+	// resolvedSquadUUID caches a successful by-name fallback lookup of the
+	// default squad, so user creation doesn't hit the panel's squad listing
+	// every time while no squad is explicitly selected. Protected by mu;
+	// cleared when an admin selects a squad.
+	resolvedSquadUUID string
 }
 
 // requisitesKey is the settings-table key under which payment requisites text
 // is persisted.
 const requisitesKey = "payment_requisites"
 
-func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder Finder, registrar Registrar, adminIDs []int64, currency string, dryRun bool, logger *slog.Logger) *Service {
+// defaultSquadUUIDKey / defaultSquadNameKey are the settings-table keys for
+// the admin-selected internal squad assigned to newly created users. The name
+// is presentational only; the UUID is what is sent to the panel.
+const (
+	defaultSquadUUIDKey = "default_squad_uuid"
+	defaultSquadNameKey = "default_squad_name"
+)
+
+func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder Finder, registrar Registrar, squads SquadLister, adminIDs []int64, currency string, dryRun bool, logger *slog.Logger) *Service {
 	s := &Service{
 		store:      st,
 		bot:        bot,
@@ -166,6 +194,7 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 		creator:    creator,
 		registrar:  registrar,
 		finder:     finder,
+		squads:     squads,
 		adminIDs:   adminIDs,
 		currency:   currency,
 		dryRun:     dryRun,

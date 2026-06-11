@@ -191,6 +191,10 @@ func TestRedeemCreatesNewProfile(t *testing.T) {
 	if len(creator.created) != 1 || creator.created[0] != "newbie" {
 		t.Fatalf("create not called: %+v", creator.created)
 	}
+	// No squad selected → the Default-Squad fallback from the lister applies.
+	if len(creator.squads) != 1 || len(creator.squads[0]) != 1 || creator.squads[0][0] != "default-squad-uuid" {
+		t.Fatalf("default squad not passed to create: %+v", creator.squads)
+	}
 	if registrar.calls != 1 || registrar.uuid != "fake-uuid" || registrar.telegramID != 700 {
 		t.Fatalf("registrar not called correctly: %+v", registrar)
 	}

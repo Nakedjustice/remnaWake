@@ -27,6 +27,20 @@ type User struct {
 	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
+// InternalSquad is one internal squad as returned by GET /api/internal-squads.
+type InternalSquad struct {
+	UUID string `json:"uuid"`
+	Name string `json:"name"`
+}
+
+// internalSquadsResponse wraps the internal squads listing.
+type internalSquadsResponse struct {
+	Response struct {
+		Total          int             `json:"total"`
+		InternalSquads []InternalSquad `json:"internalSquads"`
+	} `json:"response"`
+}
+
 type UsersResponse struct {
 	Response struct {
 		Users []User `json:"users"`

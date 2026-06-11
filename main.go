@@ -62,7 +62,7 @@ func main() {
 	}
 	defer db.Close()
 
-	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, cfg.Telegram.AdminIDs, cfg.Currency, cfg.DryRun, logger)
+	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, rwCreator{rwClient}, cfg.Telegram.AdminIDs, cfg.Currency, cfg.DryRun, logger)
 	var winbackDays []int
 	if cfg.Winback.Enabled {
 		winbackDays = cfg.Winback.Days
@@ -310,15 +310,28 @@ func (f rwFinder) ListAll(ctx context.Context) ([]payments.Subscriber, error) {
 	return out, nil
 }
 
-// rwCreator adapts *remnawave.Client to payments.Creator.
+// rwCreator adapts *remnawave.Client to payments.Creator and
+// payments.SquadLister.
 type rwCreator struct{ c *remnawave.Client }
 
-func (f rwCreator) CreateUser(ctx context.Context, username string, expireAt time.Time) (*payments.CreatedUser, error) {
-	u, err := f.c.CreateUser(ctx, username, expireAt)
+func (f rwCreator) CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string) (*payments.CreatedUser, error) {
+	u, err := f.c.CreateUser(ctx, username, expireAt, squadUUIDs)
 	if err != nil {
 		return nil, err
 	}
 	return &payments.CreatedUser{UUID: u.UUID, Username: u.Username, SubscriptionURL: u.SubscriptionURL}, nil
+}
+
+func (f rwCreator) GetInternalSquads(ctx context.Context) ([]payments.InternalSquad, error) {
+	squads, err := f.c.GetInternalSquads(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]payments.InternalSquad, 0, len(squads))
+	for _, sq := range squads {
+		out = append(out, payments.InternalSquad{UUID: sq.UUID, Name: sq.Name})
+	}
+	return out, nil
 }
 
 // rwRegistrar adapts *remnawave.Client to payments.Registrar.

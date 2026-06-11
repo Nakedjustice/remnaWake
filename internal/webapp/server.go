@@ -36,6 +36,8 @@ type Admin interface {
 	AdminSetTariff(ctx context.Context, telegramID int64, months, price int) error
 	AdminDeleteTariff(ctx context.Context, telegramID int64, months int) error
 	AdminSetRequisites(ctx context.Context, telegramID int64, text string) error
+	AdminListSquads(ctx context.Context, telegramID int64) ([]payments.WebSquad, error)
+	AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error
 	AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error
 	AdminConfirmRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminRejectRequest(ctx context.Context, telegramID, reqID int64) error
@@ -73,6 +75,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/tariff", s.handleAdminSetTariff)
 	mux.HandleFunc("POST /api/admin/tariff/delete", s.handleAdminDeleteTariff)
 	mux.HandleFunc("POST /api/admin/requisites", s.handleAdminSetRequisites)
+	mux.HandleFunc("GET /api/admin/squads", s.handleAdminListSquads)
+	mux.HandleFunc("POST /api/admin/squad", s.handleAdminSetDefaultSquad)
 	mux.HandleFunc("POST /api/admin/broadcast", s.handleAdminBroadcast)
 	mux.HandleFunc("POST /api/admin/gift/revoke", s.adminIDAction("revoke gift", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminRevokeGiftCode(ctx, tgID, id)
@@ -241,6 +245,9 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 	case errors.Is(err, payments.ErrPanelCreateFailed):
 		s.logger.Error("webapp: admin "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusBadGateway, "ошибка создания пользователя в панели, попробуйте позже")
+	case errors.Is(err, payments.ErrPanelUnavailable):
+		s.logger.Error("webapp: admin "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
+		writeJSONError(w, http.StatusBadGateway, "панель недоступна, попробуйте позже")
 	default:
 		s.logger.Error("webapp: admin "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusInternalServerError, "internal error, try again later")
@@ -313,6 +320,38 @@ func (s *Server) handleAdminSetRequisites(w http.ResponseWriter, r *http.Request
 	}
 	if err := s.admin.AdminSetRequisites(r.Context(), userID, req.Text); err != nil {
 		s.writeAdminError(w, "set requisites", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminListSquads(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	squads, err := s.admin.AdminListSquads(r.Context(), userID)
+	if err != nil {
+		s.writeAdminError(w, "list squads", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"squads": squads})
+}
+
+func (s *Server) handleAdminSetDefaultSquad(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetDefaultSquad(r.Context(), userID, req.UUID); err != nil {
+		s.writeAdminError(w, "set default squad", userID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
