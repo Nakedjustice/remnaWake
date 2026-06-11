@@ -294,40 +294,61 @@ func (s *Service) handleGiftCodeApprove(ctx context.Context, cb *tg.CallbackQuer
 		return true
 	}
 
+	g, err := s.issueGiftRequest(ctx, giftID)
+	if err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, resolveErrorText(err))
+		return true
+	}
+
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Код выдан покупателю.")
+	_ = s.bot.SendPlain(ctx, cb.From.ID,
+		fmt.Sprintf("✅ Подарочный код %s выдан покупателю %s.", g.Code, g.BuyerUsername))
+	return true
+}
+
+// resolveErrorText maps request-resolution errors shared by the gift and
+// invite admin actions to callback answer texts.
+func resolveErrorText(err error) string {
+	switch {
+	case errors.Is(err, ErrRequestNotFound):
+		return "Заявка не найдена."
+	case errors.Is(err, ErrRequestResolved):
+		return "Заявка уже обработана."
+	default:
+		return "Ошибка, попробуйте позже."
+	}
+}
+
+// issueGiftRequest confirms payment of a pending gift purchase: marks the code
+// issued, clears the confirm buttons in every admin's chat and sends the buyer
+// the redemption link. Shared by the bot callback and the mini app admin API.
+// No panel mutation happens here, so dry-run needs no special branch.
+func (s *Service) issueGiftRequest(ctx context.Context, giftID int64) (*store.GiftCode, error) {
 	g, err := s.store.GetGiftCode(ctx, giftID)
 	if err != nil {
 		s.logger.Error("gift: get gift code failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
-		return true
+		return nil, fmt.Errorf("get gift code: %w", err)
 	}
 	if g == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка не найдена.")
-		return true
+		return nil, ErrRequestNotFound
 	}
 	if g.Status != "pending" {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка уже обработана.")
-		return true
+		return nil, ErrRequestResolved
 	}
 
 	ok, err := s.store.IssueGiftCode(ctx, giftID, s.now())
 	if err != nil {
 		s.logger.Error("gift: issue failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
-		return true
+		return nil, fmt.Errorf("issue gift code: %w", err)
 	}
 	if !ok {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка уже обработана.")
-		return true
+		return nil, ErrRequestResolved
 	}
 
 	s.clearGiftButtons(ctx, giftID)
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Код выдан покупателю.")
-	_ = s.bot.SendPlain(ctx, cb.From.ID,
-		fmt.Sprintf("✅ Подарочный код %s выдан покупателю %s.", g.Code, g.BuyerUsername))
-
 	msg := fmt.Sprintf("🎁 Оплата подтверждена! Подарочная подписка на %d мес.\n\n%s", g.Months, s.giftLinkMessage(g))
 	_ = s.bot.SendPlain(ctx, g.BuyerTelegramID, msg)
-	return true
+	return g, nil
 }
 
 // giftLinkMessage builds the code + redemption deep link block sent to the
@@ -359,19 +380,29 @@ func (s *Service) handleGiftCodeReject(ctx context.Context, cb *tg.CallbackQuery
 		return true
 	}
 
+	if _, err := s.rejectGiftRequest(ctx, giftID); err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, resolveErrorText(err))
+		return true
+	}
+
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отклонена.")
+	return true
+}
+
+// rejectGiftRequest rejects a pending gift purchase: marks it rejected, clears
+// the confirm buttons in every admin's chat and notifies the buyer. Shared by
+// the bot callback and the mini app admin API.
+func (s *Service) rejectGiftRequest(ctx context.Context, giftID int64) (*store.GiftCode, error) {
 	g, err := s.store.GetGiftCode(ctx, giftID)
 	if err != nil {
 		s.logger.Error("gift: get gift code failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
-		return true
+		return nil, fmt.Errorf("get gift code: %w", err)
 	}
 	if g == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка не найдена.")
-		return true
+		return nil, ErrRequestNotFound
 	}
 	if g.Status != "pending" {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка уже обработана.")
-		return true
+		return nil, ErrRequestResolved
 	}
 
 	if _, err := s.store.RejectGiftCode(ctx, giftID, s.now()); err != nil {
@@ -379,10 +410,9 @@ func (s *Service) handleGiftCodeReject(ctx context.Context, cb *tg.CallbackQuery
 	}
 
 	s.clearGiftButtons(ctx, giftID)
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отклонена.")
 	_ = s.bot.SendPlain(ctx, g.BuyerTelegramID,
 		"❌ Ваша заявка на подарочную подписку отклонена администратором.")
-	return true
+	return g, nil
 }
 
 // clearGiftButtons removes the approve/reject buttons from every admin's copy

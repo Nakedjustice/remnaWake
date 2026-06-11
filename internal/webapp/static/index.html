@@ -588,6 +588,66 @@ function renderAdminRequests(data) {
   return card;
 }
 
+function renderAdminGiftRequests(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '🎁 Заявки на подарки'));
+  if (!(data.gift_requests || []).length) {
+    card.appendChild(el('div', 'hint', 'Ожидающих заявок нет.'));
+    return card;
+  }
+  data.gift_requests.forEach(r => {
+    const item = el('div', 'item');
+    const info = el('div', 'info');
+    let line = `${r.buyer} — ${r.months} мес.`;
+    if (r.price_label) line += ` (${r.price_label})`;
+    info.appendChild(el('div', null, line));
+    info.appendChild(el('div', 'st', `код ${r.code}, заявка от ${r.created_at}`));
+    item.appendChild(info);
+    const btns = el('div', 'btns');
+    const ok = el('button', null, '✅');
+    ok.onclick = () => adminAction('/api/admin/gift-request/confirm', { id: r.id },
+      `Подтвердить оплату подарка от «${r.buyer}» на ${r.months} мес.?`);
+    const rej = el('button', 'secondary', '❌');
+    rej.onclick = () => adminAction('/api/admin/gift-request/reject', { id: r.id },
+      `Отклонить заявку на подарок от «${r.buyer}»?`);
+    btns.appendChild(ok);
+    btns.appendChild(rej);
+    item.appendChild(btns);
+    card.appendChild(item);
+  });
+  return card;
+}
+
+function renderAdminInviteRequests(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '👤 Заявки на приглашения'));
+  if (!(data.invite_requests || []).length) {
+    card.appendChild(el('div', 'hint', 'Ожидающих заявок нет.'));
+    return card;
+  }
+  data.invite_requests.forEach(r => {
+    const item = el('div', 'item');
+    const info = el('div', 'info');
+    let line = `${r.new_username} — ${r.months} мес.`;
+    if (r.price_label) line += ` (${r.price_label})`;
+    info.appendChild(el('div', null, line));
+    info.appendChild(el('div', 'st', `от ${r.inviter}, заявка от ${r.created_at}`));
+    item.appendChild(info);
+    const btns = el('div', 'btns');
+    const ok = el('button', null, '✅');
+    ok.onclick = () => adminAction('/api/admin/invite-request/confirm', { id: r.id },
+      `Создать пользователя «${r.new_username}» по заявке от «${r.inviter}»?`);
+    const rej = el('button', 'secondary', '❌');
+    rej.onclick = () => adminAction('/api/admin/invite-request/reject', { id: r.id },
+      `Отклонить заявку на пользователя «${r.new_username}»?`);
+    btns.appendChild(ok);
+    btns.appendChild(rej);
+    item.appendChild(btns);
+    card.appendChild(item);
+  });
+  return card;
+}
+
 function renderAdmin(data) {
   appEl.textContent = '';
 
@@ -599,6 +659,8 @@ function renderAdmin(data) {
   appEl.appendChild(top);
 
   appEl.appendChild(renderAdminRequests(data));
+  appEl.appendChild(renderAdminGiftRequests(data));
+  appEl.appendChild(renderAdminInviteRequests(data));
   appEl.appendChild(renderAdminTariffs(data));
   appEl.appendChild(renderAdminRequisites(data));
   appEl.appendChild(renderAdminGifts(data));

@@ -81,6 +81,22 @@ func (f *fakeAdmin) AdminRejectRequest(_ context.Context, tgID, reqID int64) err
 	f.calls = append(f.calls, adminCall{Name: "reject", A: reqID})
 	return f.err
 }
+func (f *fakeAdmin) AdminConfirmGiftRequest(_ context.Context, tgID, giftID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "giftconfirm", A: giftID})
+	return f.err
+}
+func (f *fakeAdmin) AdminRejectGiftRequest(_ context.Context, tgID, giftID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "giftreject", A: giftID})
+	return f.err
+}
+func (f *fakeAdmin) AdminApproveInviteRequest(_ context.Context, tgID, reqID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "inviteapprove", A: reqID})
+	return f.err
+}
+func (f *fakeAdmin) AdminRejectInviteRequest(_ context.Context, tgID, reqID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "invitereject", A: reqID})
+	return f.err
+}
 func (f *fakeAdmin) AdminBroadcast(_ context.Context, tgID int64, text string) (*payments.WebBroadcastResult, error) {
 	f.calls = append(f.calls, adminCall{Name: "broadcast", A: tgID, Text: text})
 	if f.err != nil {
@@ -290,6 +306,10 @@ func TestHandleAdminMutations(t *testing.T) {
 		{"/api/admin/gift/revoke", `{"id":5}`, "revoke", 5, 0, ""},
 		{"/api/admin/request/confirm", `{"id":7}`, "confirm", 7, 0, ""},
 		{"/api/admin/request/reject", `{"id":8}`, "reject", 8, 0, ""},
+		{"/api/admin/gift-request/confirm", `{"id":9}`, "giftconfirm", 9, 0, ""},
+		{"/api/admin/gift-request/reject", `{"id":10}`, "giftreject", 10, 0, ""},
+		{"/api/admin/invite-request/confirm", `{"id":11}`, "inviteapprove", 11, 0, ""},
+		{"/api/admin/invite-request/reject", `{"id":12}`, "invitereject", 12, 0, ""},
 		{"/api/admin/broadcast", `{"message":"hello"}`, "broadcast", 42, 0, "hello"},
 	}
 	for i, tc := range cases {
@@ -323,6 +343,7 @@ func TestHandleAdminErrorMapping(t *testing.T) {
 		{payments.ErrTariffUnknown, 404},
 		{payments.ErrRequestNotFound, 404},
 		{payments.ErrRequestResolved, 409},
+		{payments.ErrPanelCreateFailed, 502},
 	}
 	for _, tc := range cases {
 		srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: tc.err})

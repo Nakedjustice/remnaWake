@@ -29,12 +29,38 @@ type WebAdminRequest struct {
 	CreatedAt  string `json:"created_at"`          // DD.MM.YYYY
 }
 
+// WebAdminGiftRequest is one pending gift purchase as shown in the mini app
+// admin panel.
+type WebAdminGiftRequest struct {
+	ID         int64  `json:"id"`
+	Code       string `json:"code"`
+	Months     int    `json:"months"`
+	Price      int    `json:"price"`
+	PriceLabel string `json:"price_label,omitempty"`
+	Buyer      string `json:"buyer"`
+	CreatedAt  string `json:"created_at"` // DD.MM.YYYY
+}
+
+// WebAdminInviteRequest is one pending invite request as shown in the mini app
+// admin panel.
+type WebAdminInviteRequest struct {
+	ID          int64  `json:"id"`
+	Inviter     string `json:"inviter"`
+	NewUsername string `json:"new_username"`
+	Months      int    `json:"months"`
+	Price       int    `json:"price"`
+	PriceLabel  string `json:"price_label,omitempty"`
+	CreatedAt   string `json:"created_at"` // DD.MM.YYYY
+}
+
 // WebAdminPanel is the full /api/admin payload for the mini app.
 type WebAdminPanel struct {
-	Tariffs    []WebTariff       `json:"tariffs"`
-	Requisites string            `json:"requisites"`
-	Gifts      []WebAdminGift    `json:"gifts"`
-	Requests   []WebAdminRequest `json:"requests"`
+	Tariffs        []WebTariff             `json:"tariffs"`
+	Requisites     string                  `json:"requisites"`
+	Gifts          []WebAdminGift          `json:"gifts"`
+	Requests       []WebAdminRequest       `json:"requests"`
+	GiftRequests   []WebAdminGiftRequest   `json:"gift_requests"`
+	InviteRequests []WebAdminInviteRequest `json:"invite_requests"`
 }
 
 // adminGuard rejects calls from non-admin Telegram IDs. The ID comes from
@@ -102,6 +128,46 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 			wr.ExpireAt = r.ExpireAt.Format("02.01.2006")
 		}
 		out.Requests = append(out.Requests, wr)
+	}
+
+	pendingGifts, err := s.store.ListGiftCodesByStatus(ctx, "pending")
+	if err != nil {
+		return nil, fmt.Errorf("list pending gift codes: %w", err)
+	}
+	for i := range pendingGifts {
+		g := &pendingGifts[i]
+		gr := WebAdminGiftRequest{
+			ID:        g.ID,
+			Code:      g.Code,
+			Months:    g.Months,
+			Price:     g.Price,
+			Buyer:     g.BuyerUsername,
+			CreatedAt: g.CreatedAt.Format("02.01.2006"),
+		}
+		if g.Price > 0 {
+			gr.PriceLabel = s.priceLabel(g.Price)
+		}
+		out.GiftRequests = append(out.GiftRequests, gr)
+	}
+
+	invites, err := s.store.ListInviteRequestsByStatus(ctx, "pending")
+	if err != nil {
+		return nil, fmt.Errorf("list invite requests: %w", err)
+	}
+	for i := range invites {
+		r := &invites[i]
+		ir := WebAdminInviteRequest{
+			ID:          r.ID,
+			Inviter:     r.InviterUsername,
+			NewUsername: r.NewUsername,
+			Months:      r.Months,
+			Price:       r.Price,
+			CreatedAt:   r.CreatedAt.Format("02.01.2006"),
+		}
+		if r.Price > 0 {
+			ir.PriceLabel = s.priceLabel(r.Price)
+		}
+		out.InviteRequests = append(out.InviteRequests, ir)
 	}
 
 	return out, nil
@@ -240,4 +306,46 @@ func (s *Service) AdminRejectRequest(ctx context.Context, telegramID, reqID int6
 		return err
 	}
 	return s.rejectPaymentRequest(ctx, reqID)
+}
+
+// AdminConfirmGiftRequest confirms payment of a pending gift purchase from the
+// mini app admin panel; the buyer gets the redemption link from the shared
+// helper.
+func (s *Service) AdminConfirmGiftRequest(ctx context.Context, telegramID, giftID int64) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	_, err := s.issueGiftRequest(ctx, giftID)
+	return err
+}
+
+// AdminRejectGiftRequest rejects a pending gift purchase from the mini app
+// admin panel; the buyer is notified by the shared helper.
+func (s *Service) AdminRejectGiftRequest(ctx context.Context, telegramID, giftID int64) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	_, err := s.rejectGiftRequest(ctx, giftID)
+	return err
+}
+
+// AdminApproveInviteRequest approves a pending invite request from the mini
+// app admin panel: creates the user in the panel and notifies the inviter via
+// the shared helper.
+func (s *Service) AdminApproveInviteRequest(ctx context.Context, telegramID, reqID int64) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	_, _, _, err := s.approveInviteRequest(ctx, reqID)
+	return err
+}
+
+// AdminRejectInviteRequest rejects a pending invite request from the mini app
+// admin panel; the inviter is notified by the shared helper.
+func (s *Service) AdminRejectInviteRequest(ctx context.Context, telegramID, reqID int64) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	_, err := s.rejectInviteRequest(ctx, reqID)
+	return err
 }

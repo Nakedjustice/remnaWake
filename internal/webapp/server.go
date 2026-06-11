@@ -39,6 +39,10 @@ type Admin interface {
 	AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error
 	AdminConfirmRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminRejectRequest(ctx context.Context, telegramID, reqID int64) error
+	AdminConfirmGiftRequest(ctx context.Context, telegramID, giftID int64) error
+	AdminRejectGiftRequest(ctx context.Context, telegramID, giftID int64) error
+	AdminApproveInviteRequest(ctx context.Context, telegramID, reqID int64) error
+	AdminRejectInviteRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminBroadcast(ctx context.Context, telegramID int64, text string) (*payments.WebBroadcastResult, error)
 }
 
@@ -78,6 +82,18 @@ func (s *Server) Handler() http.Handler {
 	}))
 	mux.HandleFunc("POST /api/admin/request/reject", s.adminIDAction("reject request", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminRejectRequest(ctx, tgID, id)
+	}))
+	mux.HandleFunc("POST /api/admin/gift-request/confirm", s.adminIDAction("confirm gift request", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminConfirmGiftRequest(ctx, tgID, id)
+	}))
+	mux.HandleFunc("POST /api/admin/gift-request/reject", s.adminIDAction("reject gift request", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminRejectGiftRequest(ctx, tgID, id)
+	}))
+	mux.HandleFunc("POST /api/admin/invite-request/confirm", s.adminIDAction("approve invite request", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminApproveInviteRequest(ctx, tgID, id)
+	}))
+	mux.HandleFunc("POST /api/admin/invite-request/reject", s.adminIDAction("reject invite request", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminRejectInviteRequest(ctx, tgID, id)
 	}))
 	return mux
 }
@@ -222,6 +238,9 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 		writeJSONError(w, http.StatusNotFound, "не найдено")
 	case errors.Is(err, payments.ErrRequestResolved):
 		writeJSONError(w, http.StatusConflict, "уже обработано")
+	case errors.Is(err, payments.ErrPanelCreateFailed):
+		s.logger.Error("webapp: admin "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
+		writeJSONError(w, http.StatusBadGateway, "ошибка создания пользователя в панели, попробуйте позже")
 	default:
 		s.logger.Error("webapp: admin "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusInternalServerError, "internal error, try again later")

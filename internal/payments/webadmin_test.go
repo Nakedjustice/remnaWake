@@ -29,6 +29,10 @@ func TestWebAdminRejectsNonAdmin(t *testing.T) {
 	calls["AdminRevokeGiftCode"] = svc.AdminRevokeGiftCode(ctx, userTG, 1)
 	calls["AdminConfirmRequest"] = svc.AdminConfirmRequest(ctx, userTG, 1)
 	calls["AdminRejectRequest"] = svc.AdminRejectRequest(ctx, userTG, 1)
+	calls["AdminConfirmGiftRequest"] = svc.AdminConfirmGiftRequest(ctx, userTG, 1)
+	calls["AdminRejectGiftRequest"] = svc.AdminRejectGiftRequest(ctx, userTG, 1)
+	calls["AdminApproveInviteRequest"] = svc.AdminApproveInviteRequest(ctx, userTG, 1)
+	calls["AdminRejectInviteRequest"] = svc.AdminRejectInviteRequest(ctx, userTG, 1)
 	for name, err := range calls {
 		if !errors.Is(err, ErrNotAdmin) {
 			t.Errorf("%s: err = %v, want ErrNotAdmin", name, err)
@@ -80,6 +84,20 @@ func TestAdminPanelData(t *testing.T) {
 		t.Fatalf("create request: %v", err)
 	}
 
+	pendingGiftID, err := st.CreateGiftCode(ctx, store.GiftCode{
+		Code: "GIFT2", BuyerTelegramID: userTG, BuyerUsername: "alice", Months: 1, Price: 150,
+	})
+	if err != nil {
+		t.Fatalf("create pending gift: %v", err)
+	}
+
+	invID, err := st.CreateInviteRequest(ctx, store.InviteRequest{
+		InviterTelegramID: userTG, InviterUsername: "alice", NewUsername: "bob", Months: 1, Price: 150,
+	})
+	if err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+
 	panel, err := svc.AdminPanelData(ctx, adminTG)
 	if err != nil {
 		t.Fatalf("panel: %v", err)
@@ -96,6 +114,139 @@ func TestAdminPanelData(t *testing.T) {
 	if len(panel.Requests) != 1 || panel.Requests[0].ID != reqID || panel.Requests[0].Username != "alice" ||
 		panel.Requests[0].Months != 3 || panel.Requests[0].ExpireAt != "01.07.2026" {
 		t.Fatalf("requests: %+v", panel.Requests)
+	}
+	if len(panel.GiftRequests) != 1 || panel.GiftRequests[0].ID != pendingGiftID ||
+		panel.GiftRequests[0].Code != "GIFT2" || panel.GiftRequests[0].Buyer != "alice" ||
+		panel.GiftRequests[0].Months != 1 || panel.GiftRequests[0].PriceLabel == "" {
+		t.Fatalf("gift requests: %+v", panel.GiftRequests)
+	}
+	if len(panel.InviteRequests) != 1 || panel.InviteRequests[0].ID != invID ||
+		panel.InviteRequests[0].Inviter != "alice" || panel.InviteRequests[0].NewUsername != "bob" ||
+		panel.InviteRequests[0].Months != 1 || panel.InviteRequests[0].PriceLabel == "" {
+		t.Fatalf("invite requests: %+v", panel.InviteRequests)
+	}
+}
+
+func TestAdminConfirmGiftRequest(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+
+	giftID, _ := st.CreateGiftCode(ctx, store.GiftCode{
+		Code: "GIFT1", BuyerTelegramID: userTG, BuyerUsername: "alice", Months: 3, Price: 450,
+	})
+
+	if err := svc.AdminConfirmGiftRequest(ctx, adminTG, giftID); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	g, _ := st.GetGiftCode(ctx, giftID)
+	if g.Status != "issued" {
+		t.Fatalf("status: %s", g.Status)
+	}
+	// Buyer gets the redemption code in chat.
+	var notified bool
+	for _, m := range bot.sent {
+		if m.ChatID == userTG && strings.Contains(m.Text, "GIFT1") {
+			notified = true
+		}
+	}
+	if !notified {
+		t.Fatalf("buyer not notified: %+v", bot.sent)
+	}
+	if err := svc.AdminConfirmGiftRequest(ctx, adminTG, giftID); !errors.Is(err, ErrRequestResolved) {
+		t.Fatalf("second confirm: err = %v, want ErrRequestResolved", err)
+	}
+	if err := svc.AdminConfirmGiftRequest(ctx, adminTG, 9999); !errors.Is(err, ErrRequestNotFound) {
+		t.Fatalf("missing: err = %v, want ErrRequestNotFound", err)
+	}
+}
+
+func TestAdminRejectGiftRequest(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+
+	giftID, _ := st.CreateGiftCode(ctx, store.GiftCode{
+		Code: "GIFT1", BuyerTelegramID: userTG, BuyerUsername: "alice", Months: 3, Price: 450,
+	})
+
+	if err := svc.AdminRejectGiftRequest(ctx, adminTG, giftID); err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	g, _ := st.GetGiftCode(ctx, giftID)
+	if g.Status != "rejected" {
+		t.Fatalf("status: %s", g.Status)
+	}
+	var notified bool
+	for _, m := range bot.sent {
+		if m.ChatID == userTG && strings.Contains(m.Text, "отклонена") {
+			notified = true
+		}
+	}
+	if !notified {
+		t.Fatalf("buyer not notified: %+v", bot.sent)
+	}
+	if err := svc.AdminConfirmGiftRequest(ctx, adminTG, giftID); !errors.Is(err, ErrRequestResolved) {
+		t.Fatalf("confirm after reject: err = %v, want ErrRequestResolved", err)
+	}
+}
+
+func TestAdminApproveInviteRequest(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+
+	invID, _ := st.CreateInviteRequest(ctx, store.InviteRequest{
+		InviterTelegramID: userTG, InviterUsername: "alice", NewUsername: "bob", Months: 1, Price: 150,
+	})
+
+	if err := svc.AdminApproveInviteRequest(ctx, adminTG, invID); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	req, _ := st.GetInviteRequest(ctx, invID)
+	if req.Status != "approved" {
+		t.Fatalf("status: %s", req.Status)
+	}
+	var notified bool
+	for _, m := range bot.sent {
+		if m.ChatID == userTG && strings.Contains(m.Text, "bob") && strings.Contains(m.Text, "одобрена") {
+			notified = true
+		}
+	}
+	if !notified {
+		t.Fatalf("inviter not notified: %+v", bot.sent)
+	}
+	if err := svc.AdminApproveInviteRequest(ctx, adminTG, invID); !errors.Is(err, ErrRequestResolved) {
+		t.Fatalf("second approve: err = %v, want ErrRequestResolved", err)
+	}
+	if err := svc.AdminApproveInviteRequest(ctx, adminTG, 9999); !errors.Is(err, ErrRequestNotFound) {
+		t.Fatalf("missing: err = %v, want ErrRequestNotFound", err)
+	}
+}
+
+func TestAdminRejectInviteRequest(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+
+	invID, _ := st.CreateInviteRequest(ctx, store.InviteRequest{
+		InviterTelegramID: userTG, InviterUsername: "alice", NewUsername: "bob", Months: 1, Price: 150,
+	})
+
+	if err := svc.AdminRejectInviteRequest(ctx, adminTG, invID); err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	req, _ := st.GetInviteRequest(ctx, invID)
+	if req.Status != "rejected" {
+		t.Fatalf("status: %s", req.Status)
+	}
+	var notified bool
+	for _, m := range bot.sent {
+		if m.ChatID == userTG && strings.Contains(m.Text, "отклонена") {
+			notified = true
+		}
+	}
+	if !notified {
+		t.Fatalf("inviter not notified: %+v", bot.sent)
+	}
+	if err := svc.AdminApproveInviteRequest(ctx, adminTG, invID); !errors.Is(err, ErrRequestResolved) {
+		t.Fatalf("approve after reject: err = %v, want ErrRequestResolved", err)
 	}
 }
 

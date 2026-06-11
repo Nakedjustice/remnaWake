@@ -20,6 +20,9 @@ var (
 	// not be marked confirmed in the database; confirming again would extend the
 	// subscription a second time.
 	ErrConfirmedNotMarked = errors.New("extension applied but request not marked confirmed")
+	// ErrPanelCreateFailed: the panel rejected the user creation; the invite
+	// request stays pending and can be approved again.
+	ErrPanelCreateFailed = errors.New("create user in panel failed")
 )
 
 // confirmPaymentRequest extends the subscription for a pending payment
