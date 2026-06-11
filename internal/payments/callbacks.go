@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
@@ -84,7 +85,7 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 func (s *Service) handlePay(ctx context.Context, cb *tg.CallbackQuery) bool {
 	userID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "pay:"), 10, 64)
 	if err != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать заявку.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать заявку."))
 		return true
 	}
 
@@ -93,13 +94,13 @@ func (s *Service) handlePay(ctx context.Context, cb *tg.CallbackQuery) bool {
 	req := s.requisites
 	s.mu.Unlock()
 	if req != "" && cb.Message != nil {
-		_ = s.bot.SendPlain(ctx, cb.Message.Chat.ID, "Реквизиты для оплаты:\n\n"+req)
+		_ = s.bot.SendPlain(ctx, cb.Message.Chat.ID, i18n.T("Реквизиты для оплаты:\n\n")+req)
 	}
 
 	tariffs, err := s.store.ListTariffs(ctx)
 	if err != nil {
 		s.logger.Error("list tariffs failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 
@@ -113,31 +114,31 @@ func (s *Service) handlePay(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if cb.Message != nil {
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, s.tariffKeyboard(userID, tariffs))
 	}
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Выберите количество месяцев.")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Выберите количество месяцев."))
 	return true
 }
 
 func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
 	parts := strings.Split(strings.TrimPrefix(cb.Data, "pick:"), ":")
 	if len(parts) != 2 {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать выбор.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
 	userID, err1 := strconv.ParseInt(parts[0], 10, 64)
 	months, err2 := strconv.Atoi(parts[1])
 	if err1 != nil || err2 != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать выбор.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
 
 	tariff, err := s.store.GetTariff(ctx, months)
 	if err != nil {
 		s.logger.Error("get tariff failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	if tariff == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Этот тариф больше недоступен.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
 		return true
 	}
 
@@ -148,7 +149,7 @@ func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
 func (s *Service) handleBack(ctx context.Context, cb *tg.CallbackQuery) bool {
 	userID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "back:"), 10, 64)
 	if err != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать заявку.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать заявку."))
 		return true
 	}
 	if cb.Message != nil {
@@ -164,16 +165,16 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 	u, err := s.store.GetNotifiedUser(ctx, userID)
 	if err != nil {
 		s.logger.Error("get notified user failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
 	if u == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось найти данные. Дождитесь следующего уведомления.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось найти данные. Дождитесь следующего уведомления."))
 		return
 	}
 
 	if _, err := s.createPaymentRequest(ctx, u, months, price); err != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка, попробуйте позже.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
 
@@ -181,7 +182,7 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 	if cb.Message != nil {
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка отправлена администратору.")
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка отправлена администратору."))
 }
 
 // createPaymentRequest writes a pending payment request and DMs all admins a
@@ -201,7 +202,7 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 	text := s.formatAdminRequest(u, months, price)
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: "Подтвердить оплату", CallbackData: fmt.Sprintf("ok:%d", reqID)}},
+			{{Text: i18n.T("Подтвердить оплату"), CallbackData: fmt.Sprintf("ok:%d", reqID)}},
 		},
 	}
 	var refs []adminMsgRef
@@ -220,49 +221,49 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
 		s.logger.Warn("unauthorized confirm attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Недостаточно прав для подтверждения оплаты.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав для подтверждения оплаты."))
 		return true
 	}
 
 	reqID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "ok:"), 10, 64)
 	if err != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Не удалось распознать заявку.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать заявку."))
 		return true
 	}
 
 	req, newExpireAt, err := s.confirmPaymentRequest(ctx, reqID)
 	switch {
 	case errors.Is(err, ErrRequestNotFound):
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Заявка не найдена.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка не найдена."))
 		return true
 	case errors.Is(err, ErrRequestResolved):
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подписка уже была продлена.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Подписка уже была продлена."))
 		return true
 	case errors.Is(err, ErrConfirmedNotMarked):
 		s.logger.Error("confirm payment request failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подписка продлена, но статус заявки не обновился.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Подписка продлена, но статус заявки не обновился."))
 		_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(
-			"⚠️ Подписка для %s продлена до %s, но заявку №%d не удалось отметить подтверждённой в базе. Не подтверждайте её повторно — это продлит подписку ещё раз.",
+			i18n.T("⚠️ Подписка для %s продлена до %s, но заявку №%d не удалось отметить подтверждённой в базе. Не подтверждайте её повторно — это продлит подписку ещё раз."),
 			req.Username, newExpireAt.Format("02.01.2006"), reqID))
 		return true
 	case err != nil:
 		s.logger.Error("confirm payment request failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Ошибка продления подписки. Проверьте логи.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка продления подписки. Проверьте логи."))
 		if req != nil {
 			_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(
-				"❌ Не удалось продлить подписку для %s (заявка №%d): ошибка панели.\nЗаявка осталась в ожидании — попробуйте подтвердить ещё раз.",
+				i18n.T("❌ Не удалось продлить подписку для %s (заявка №%d): ошибка панели.\nЗаявка осталась в ожидании — попробуйте подтвердить ещё раз."),
 				req.Username, reqID))
 		}
 		return true
 	}
 
 	if s.dryRun {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Подписка продлена (dry-run).")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Подписка продлена (dry-run)."))
 		return true
 	}
 
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "✅ Подписка продлена!")
-	_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf("✅ Подписка для %s продлена на %d мес. до %s",
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("✅ Подписка продлена!"))
+	_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(i18n.T("✅ Подписка для %s продлена на %d мес. до %s"),
 		req.Username, req.Months, newExpireAt.Format("02.01.2006")))
 	return true
 }
@@ -282,19 +283,19 @@ func (s *Service) tariffKeyboard(userID int64, tariffs []store.Tariff) *tg.Inlin
 	rows := make([][]tg.InlineKeyboardButton, 0, len(tariffs)+1)
 	for _, t := range tariffs {
 		rows = append(rows, []tg.InlineKeyboardButton{{
-			Text:         fmt.Sprintf("%d мес. — %s", t.Months, s.priceLabel(t.Price)),
+			Text:         fmt.Sprintf(i18n.T("%d мес. — %s"), t.Months, s.priceLabel(t.Price)),
 			CallbackData: fmt.Sprintf("pick:%d:%d", userID, t.Months),
 		}})
 	}
 	rows = append(rows, []tg.InlineKeyboardButton{{
-		Text: "← Назад", CallbackData: fmt.Sprintf("back:%d", userID),
+		Text: i18n.T("← Назад"), CallbackData: fmt.Sprintf("back:%d", userID),
 	}})
 	return &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
 
 func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "Недостаточно прав.")
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
 		return true
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
@@ -334,22 +335,22 @@ func (s *Service) sendAdminTariffs(ctx context.Context, chatID int64) {
 	tariffs, err := s.store.ListTariffs(ctx)
 	if err != nil {
 		s.logger.Error("admin: list tariffs failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка чтения тарифов.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения тарифов."))
 		return
 	}
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: "← Меню", CallbackData: "adm:menu"}},
+			{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}},
 		},
 	}
 	if len(tariffs) == 0 {
-		_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, "Тарифы не заданы.", kb)
+		_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, i18n.T("Тарифы не заданы."), kb)
 		return
 	}
 	var b strings.Builder
-	b.WriteString("Тарифы:\n")
+	b.WriteString(i18n.T("Тарифы:\n"))
 	for _, t := range tariffs {
-		b.WriteString(fmt.Sprintf("%d мес. — %s\n", t.Months, s.priceLabel(t.Price)))
+		b.WriteString(fmt.Sprintf(i18n.T("%d мес. — %s\n"), t.Months, s.priceLabel(t.Price)))
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, strings.TrimRight(b.String(), "\n"), kb)
 }
@@ -358,20 +359,20 @@ func (s *Service) sendAdminDelList(ctx context.Context, chatID int64) {
 	tariffs, err := s.store.ListTariffs(ctx)
 	if err != nil {
 		s.logger.Error("admin: list tariffs for delete failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка чтения тарифов.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения тарифов."))
 		return
 	}
 	rows := make([][]tg.InlineKeyboardButton, 0, len(tariffs)+1)
 	for _, t := range tariffs {
 		rows = append(rows, []tg.InlineKeyboardButton{{
-			Text:         fmt.Sprintf("%d мес. — %s", t.Months, s.priceLabel(t.Price)),
+			Text:         fmt.Sprintf(i18n.T("%d мес. — %s"), t.Months, s.priceLabel(t.Price)),
 			CallbackData: fmt.Sprintf("adm:del:%d", t.Months),
 		}})
 	}
-	rows = append(rows, []tg.InlineKeyboardButton{{Text: "← Меню", CallbackData: "adm:menu"}})
-	text := "Выберите тариф для удаления:"
+	rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}})
+	text := i18n.T("Выберите тариф для удаления:")
 	if len(tariffs) == 0 {
-		text = "Тарифы не заданы."
+		text = i18n.T("Тарифы не заданы.")
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
 }
@@ -382,12 +383,12 @@ func (s *Service) sendAdminRequisites(ctx context.Context, chatID int64) {
 	s.mu.Unlock()
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: "← Меню", CallbackData: "adm:menu"}},
+			{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}},
 		},
 	}
-	text := "Реквизиты не заданы."
+	text := i18n.T("Реквизиты не заданы.")
 	if req != "" {
-		text = "Реквизиты для оплаты:\n\n" + req
+		text = i18n.T("Реквизиты для оплаты:\n\n") + req
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
 }
@@ -396,19 +397,19 @@ func (s *Service) handleAdminDelTariff(ctx context.Context, chatID int64, data s
 	monthsStr := strings.TrimPrefix(data, "adm:del:")
 	months, err := strconv.Atoi(monthsStr)
 	if err != nil || months < 1 {
-		_ = s.bot.SendPlain(ctx, chatID, "Не удалось распознать тариф.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось распознать тариф."))
 		return
 	}
 	deleted, err := s.store.DeleteTariff(ctx, months)
 	if err != nil {
 		s.logger.Error("admin: delete tariff failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, "Ошибка удаления тарифа.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка удаления тарифа."))
 		return
 	}
 	if !deleted {
-		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf("Тариф на %d мес. не найден.", months))
+		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Тариф на %d мес. не найден."), months))
 	} else {
-		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf("Тариф на %d мес. удалён.", months))
+		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Тариф на %d мес. удалён."), months))
 	}
 	s.sendAdminDelList(ctx, chatID)
 }
@@ -419,7 +420,7 @@ func (s *Service) startSetRequisitesFlow(ctx context.Context, chatID int64) {
 	state.step = adminInputRequisites
 	s.adminInput[chatID] = state
 	s.mu.Unlock()
-	_ = s.bot.SendPlain(ctx, chatID, "Отправьте новый текст реквизитов:")
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отправьте новый текст реквизитов:"))
 }
 
 func (s *Service) startBroadcastFlow(ctx context.Context, chatID int64) {
@@ -429,7 +430,7 @@ func (s *Service) startBroadcastFlow(ctx context.Context, chatID int64) {
 	state.pendingBroadcast = ""
 	s.adminInput[chatID] = state
 	s.mu.Unlock()
-	_ = s.bot.SendPlain(ctx, chatID, "Отправьте текст рассылки следующим сообщением.")
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отправьте текст рассылки следующим сообщением."))
 }
 
 func (s *Service) handleBroadcastSend(ctx context.Context, chatID int64, cb *tg.CallbackQuery) {
@@ -443,21 +444,21 @@ func (s *Service) handleBroadcastSend(ctx context.Context, chatID int64, cb *tg.
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
 	if text == "" {
-		_ = s.bot.SendPlain(ctx, chatID, "Нет текста для рассылки. Начните заново через меню.")
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Нет текста для рассылки. Начните заново через меню."))
 		return
 	}
-	_ = s.bot.SendPlain(ctx, chatID, "Рассылка запущена…")
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Рассылка запущена…"))
 	// The update loop is sequential; a large broadcast paced at ~20 msg/s would
 	// block the bot for the whole run, so send in the background and report.
 	go func() {
 		sent, failed, err := s.broadcastMessage(ctx, text)
 		if err != nil {
 			s.logger.Error("broadcast: list users failed", "err", err.Error())
-			_ = s.bot.SendPlain(ctx, chatID, "Ошибка получения списка пользователей, рассылка не выполнена.")
+			_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка получения списка пользователей, рассылка не выполнена."))
 			return
 		}
 		_ = s.bot.SendPlain(ctx, chatID,
-			fmt.Sprintf("Рассылка завершена: отправлено %d, ошибок %d.", sent, failed))
+			fmt.Sprintf(i18n.T("Рассылка завершена: отправлено %d, ошибок %d."), sent, failed))
 	}()
 }
 
@@ -473,7 +474,7 @@ func (s *Service) handleBroadcastCancel(ctx context.Context, chatID int64, cb *t
 	if cb.Message != nil {
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
-	_ = s.bot.SendPlain(ctx, chatID, "Рассылка отменена.")
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Рассылка отменена."))
 }
 
 func (s *Service) startAddTariffFlow(ctx context.Context, chatID int64) {
@@ -482,21 +483,21 @@ func (s *Service) startAddTariffFlow(ctx context.Context, chatID int64) {
 	state.step = adminInputTariffMonths
 	s.adminInput[chatID] = state
 	s.mu.Unlock()
-	_ = s.bot.SendPlain(ctx, chatID, "Введите количество месяцев (целое ≥ 1):")
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите количество месяцев (целое ≥ 1):"))
 }
 
 func (s *Service) formatAdminRequest(u *store.NotifiedUser, months, price int) string {
 	var b strings.Builder
-	b.WriteString("💳 Заявка на оплату\n\n")
-	b.WriteString("Клиент: " + u.Username + "\n")
+	b.WriteString(i18n.T("💳 Заявка на оплату\n\n"))
+	b.WriteString(i18n.T("Клиент: ") + u.Username + "\n")
 	b.WriteString(fmt.Sprintf("Remnawave ID: %d\n", u.RemnawaveID))
 	b.WriteString("UUID: " + u.UUID + "\n")
 	b.WriteString(fmt.Sprintf("Telegram ID: %d\n", u.TelegramID))
-	b.WriteString("Подписка до: " + u.ExpireAt.Format("02.01.2006") + "\n")
+	b.WriteString(i18n.T("Подписка до: ") + u.ExpireAt.Format("02.01.2006") + "\n")
 	if price > 0 {
-		b.WriteString(fmt.Sprintf("Выбрано: %d мес. — %s", months, s.priceLabel(price)))
+		b.WriteString(fmt.Sprintf(i18n.T("Выбрано: %d мес. — %s"), months, s.priceLabel(price)))
 	} else {
-		b.WriteString(fmt.Sprintf("Выбрано: %d мес.", months))
+		b.WriteString(fmt.Sprintf(i18n.T("Выбрано: %d мес."), months))
 	}
 	return b.String()
 }

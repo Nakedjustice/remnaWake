@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
@@ -419,6 +420,22 @@ func TestAdminStatsCommand(t *testing.T) {
 		if !strings.Contains(report, want) {
 			t.Fatalf("report missing %q:\n%s", want, report)
 		}
+	}
+}
+
+// TestAdminMenuLocalizedEN spot-checks that a payments flow replies in
+// English when BOT_LANG=en is active.
+func TestAdminMenuLocalizedEN(t *testing.T) {
+	i18n.SetLang(i18n.EN)
+	t.Cleanup(func() { i18n.SetLang(i18n.RU) })
+
+	svc, bot, _, _ := newTestService(t)
+	svc.SendAdminMenu(context.Background(), 1000)
+	if len(bot.sent) != 1 || bot.sent[0].Text != "Admin menu" {
+		t.Fatalf("expected English admin menu, got %+v", bot.sent)
+	}
+	if got := bot.sent[0].Keyboard.InlineKeyboard[0][0].Text; got != "📊 Statistics" {
+		t.Fatalf("first button = %q, want 📊 Statistics", got)
 	}
 }
 

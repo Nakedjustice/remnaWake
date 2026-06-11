@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 )
 
 // WebAdminGift is one issued (revocable) gift code as shown in the mini app
@@ -268,7 +270,7 @@ func (s *Service) AdminRevokeGiftCode(ctx context.Context, telegramID, giftID in
 	}
 	if g.BuyerTelegramID != 0 {
 		_ = s.bot.SendPlain(ctx, g.BuyerTelegramID,
-			fmt.Sprintf("🚫 Ваш подарочный код %s отозван администратором.", g.Code))
+			fmt.Sprintf(i18n.T("🚫 Ваш подарочный код %s отозван администратором."), g.Code))
 	}
 	return nil
 }
@@ -285,7 +287,7 @@ func (s *Service) AdminConfirmRequest(ctx context.Context, telegramID, reqID int
 		// The extension itself succeeded; warn the admin in chat, because the
 		// webapp can only show a generic error for this state.
 		_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
-			"⚠️ Подписка для %s продлена до %s, но заявку №%d не удалось отметить подтверждённой в базе. Не подтверждайте её повторно — это продлит подписку ещё раз.",
+			i18n.T("⚠️ Подписка для %s продлена до %s, но заявку №%d не удалось отметить подтверждённой в базе. Не подтверждайте её повторно — это продлит подписку ещё раз."),
 			req.Username, newExpireAt.Format("02.01.2006"), reqID))
 	}
 	if err != nil {
@@ -293,7 +295,7 @@ func (s *Service) AdminConfirmRequest(ctx context.Context, telegramID, reqID int
 	}
 	if req.TelegramID != 0 {
 		_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
-			"✅ Подписка «%s» продлена на %d мес. до %s.",
+			i18n.T("✅ Подписка «%s» продлена на %d мес. до %s."),
 			req.Username, req.Months, newExpireAt.Format("02.01.2006")))
 	}
 	return nil

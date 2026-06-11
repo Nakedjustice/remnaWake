@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 )
 
@@ -89,7 +90,7 @@ func (s *Service) rejectPaymentRequest(ctx context.Context, reqID int64) error {
 	s.clearPayButtons(ctx, reqID)
 	if req.TelegramID != 0 {
 		_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
-			"❌ Заявка на продление «%s» на %d мес. отклонена администратором.",
+			i18n.T("❌ Заявка на продление «%s» на %d мес. отклонена администратором."),
 			req.Username, req.Months))
 	}
 	return nil
