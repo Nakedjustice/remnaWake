@@ -101,6 +101,12 @@ func main() {
 				logger.Error("mini app server failed", "err", err.Error())
 			}
 		}()
+	} else {
+		// The menu button persists on Telegram's side; drop a stale Mini App
+		// button left over from a run with WEBAPP_URL set.
+		if err := bot.ResetChatMenuButton(rootCtx); err != nil {
+			logger.Warn("reset chat menu button failed", "err", err.Error())
+		}
 	}
 
 	if cfg.RunOnStart {
