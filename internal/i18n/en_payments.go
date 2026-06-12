@@ -213,6 +213,7 @@ var enPayments = map[string]string{
 	"✅ Заявка с чеком отправлена администратору. После подтверждения оплаты подписка будет продлена.":                                   "✅ Your request with the receipt has been sent to the administrator. The subscription will be extended once the payment is confirmed.",
 	"Пожалуйста, отправьте фото (скриншот) или PDF-файл чека об оплате. Отменить: /cancel":                                              "Please send a photo (screenshot) or a PDF file of the payment receipt. Cancel: /cancel",
 	"Этот тип файла не подходит. Отправьте фото, скриншот или PDF-файл чека об оплате.":                                                 "This file type is not supported. Send a photo, screenshot or PDF file of the payment receipt.",
+	"⌛ Время ожидания чека истекло, заявка не создана. Выберите тариф и начните продление заново.":                                      "⌛ The receipt waiting time has expired and no request was created. Pick a tariff and start the renewal again.",
 	"🛡 Сквад по умолчанию": "🛡 Default squad",
 	"❌ Ваша заявка на подарочную подписку отклонена администратором.":                                                                  "❌ Your gift subscription request was rejected by the administrator.",
 	"❌ Ваша заявка на пользователя «%s» отклонена администратором.":                                                                    "❌ Your request for user “%s” was rejected by the administrator.",

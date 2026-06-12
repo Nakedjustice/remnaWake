@@ -284,22 +284,116 @@ func TestConfirmClearsPhotoMessageButtons(t *testing.T) {
 	}
 }
 
-func TestPhotoIgnoredWithoutStateAndAfterTTL(t *testing.T) {
-	svc, _, _, st := newTestService(t)
+func TestPhotoIgnoredWithoutState(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	rememberAlice(t, st)
 
 	if svc.HandlePhoto(ctx, photoMsg(777, "big-id")) {
 		t.Fatal("photo without state must be ignored")
 	}
-
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
-	svc.now = func() time.Time { return time.Now().Add(payPhotoTTL + time.Minute) }
-	if svc.HandlePhoto(ctx, photoMsg(777, "big-id")) {
-		t.Fatal("photo after TTL must be ignored")
+	if len(bot.sent) != 0 {
+		t.Fatalf("nothing should be sent: %+v", bot.sent)
 	}
 	if req, _ := st.GetPaymentRequest(ctx, 1); req != nil {
 		t.Fatalf("no request should exist: %+v", req)
+	}
+}
+
+func TestPhotoAfterTTLGetsExpiryNotice(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	bot.sent = nil
+	svc.now = func() time.Time { return time.Now().Add(payPhotoTTL + time.Minute) }
+
+	if !svc.HandlePhoto(ctx, photoMsg(777, "big-id")) {
+		t.Fatal("expired photo must be consumed with an expiry notice")
+	}
+	if req, _ := st.GetPaymentRequest(ctx, 1); req != nil {
+		t.Fatalf("no request should exist: %+v", req)
+	}
+	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "истек") {
+		t.Fatalf("expected expiry notice: %+v", bot.sent)
+	}
+	if len(bot.photos) != 0 {
+		t.Fatalf("admin must not be notified: %+v", bot.photos)
+	}
+
+	// The expired state was evicted with the notice; the next photo is a
+	// plain unrelated photo again.
+	bot.sent = nil
+	if svc.HandlePhoto(ctx, photoMsg(777, "big-id")) {
+		t.Fatal("photo after the notice must be ignored")
+	}
+	if len(bot.sent) != 0 {
+		t.Fatalf("no second notice expected: %+v", bot.sent)
+	}
+}
+
+func TestDocumentAfterTTLGetsExpiryNotice(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	bot.sent = nil
+	svc.now = func() time.Time { return time.Now().Add(payPhotoTTL + time.Minute) }
+
+	if !svc.HandleDocument(ctx, docMsg(777, "pdf-id", "application/pdf", "receipt.pdf")) {
+		t.Fatal("expired document must be consumed with an expiry notice")
+	}
+	if req, _ := st.GetPaymentRequest(ctx, 1); req != nil {
+		t.Fatalf("no request should exist: %+v", req)
+	}
+	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "истек") {
+		t.Fatalf("expected expiry notice: %+v", bot.sent)
+	}
+	if len(bot.docs) != 0 {
+		t.Fatalf("admin must not be notified: %+v", bot.docs)
+	}
+}
+
+func TestImageDocumentAccepted(t *testing.T) {
+	// Telegram's "send without compression" delivers screenshots as documents
+	// with an image MIME type; they must be accepted like PDFs.
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+	enableScreenshot(t, svc)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+
+	if !svc.HandleDocument(ctx, docMsg(777, "img-id", "image/png", "screenshot.png")) {
+		t.Fatal("image document should be handled")
+	}
+	req, _ := st.GetPaymentRequest(ctx, 1)
+	if req == nil || req.ScreenshotFileID != "img-id" {
+		t.Fatalf("request wrong: %+v", req)
+	}
+	if len(bot.docs) != 1 || bot.docs[0].FileID != "img-id" {
+		t.Fatalf("expected one admin document, got %+v", bot.docs)
+	}
+	if svc.getPayPhoto(777) != nil {
+		t.Fatal("state should be cleared after the image document")
+	}
+}
+
+func TestImageByFilenameAccepted(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+	enableScreenshot(t, svc)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+
+	if !svc.HandleDocument(ctx, docMsg(777, "img-id", "application/octet-stream", "IMG_1234.JPG")) {
+		t.Fatal("image-by-filename should be handled")
+	}
+	req, _ := st.GetPaymentRequest(ctx, 1)
+	if req == nil || req.ScreenshotFileID != "img-id" {
+		t.Fatalf("request wrong: %+v", req)
+	}
+	if len(bot.docs) != 1 {
+		t.Fatalf("expected one admin document, got %+v", bot.docs)
 	}
 }
 

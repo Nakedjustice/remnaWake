@@ -108,11 +108,13 @@ externally and you confirm manually.
 **Payment receipt (optional).** The admin can require proof of payment: toggle
 **«📸 Чек об оплате»** in the `/admin` menu or the switch in the Mini App admin
 panel. When enabled, after picking a tariff the user must send a **photo,
-screenshot, or PDF file** of the receipt (banks often export receipts as PDF)
-before the request is created; the admin then receives the request as a photo
-or document message with the receipt attached and the same confirm/reject
-buttons. Other file types are rejected with a hint. The pending attachment
-step expires after 10 minutes (`/cancel` aborts it). Renewals started from the
+screenshot, or PDF file** of the receipt (banks often export receipts as PDF;
+images sent as uncompressed files are accepted too) before the request is
+created; the admin then receives the request as a photo or document message
+with the receipt attached and the same confirm/reject buttons. Other file
+types are rejected with a hint. The pending attachment step expires after
+10 minutes (`/cancel` aborts it); a receipt arriving later gets a notice
+asking to start the renewal again. Renewals started from the
 Mini App switch to the bot chat for this step. With the toggle off the flow is
 unchanged.
 
