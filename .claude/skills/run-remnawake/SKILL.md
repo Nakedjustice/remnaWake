@@ -103,7 +103,11 @@ Not usable for verification without real credentials; use the driver instead.
   `key=value` pairs **sorted by key, joined with `\n`, hash excluded**, and the
   `user` value must be raw JSON in the HMAC but URL-encoded in the header. The
   driver's `New-InitData` is a known-good reference.
-- `server did not come up`: port already bound (another smoke left with
-  `-KeepRunning`?) — `Get-Process remnawake-smoke` and stop it, or pass
+- `a previous smoke server is still running`: a `-KeepRunning` server from an
+  earlier run holds the exe image and the port; stop it as the message says
+  (`Stop-Process -Name remnawake-smoke -Force`) and rerun.
+- `server exited early` / `server did not come up`: the log tail is printed
+  automatically; logs are per-run files in `%TEMP%\remnawake-smoke-<id>.log`
+  (kept on failure, swept on PASS). A different port can be forced with
   `-Port`.
 - Build artifacts land in `bin\` (gitignored).
