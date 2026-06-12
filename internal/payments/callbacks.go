@@ -176,15 +176,21 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 	}
 
 	// With the screenshot requirement on, the request is deferred until the
-	// user sends a payment photo; nothing reaches the admins yet.
-	if s.getRequireScreenshot() && cb.Message != nil {
-		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
+	// user sends a payment photo; nothing reaches the admins yet. A callback
+	// can arrive without its message (inaccessible/too old) — the tariff
+	// buttons live in the user's private chat, so cb.From.ID is the same chat.
+	if s.getRequireScreenshot() {
+		chatID := cb.From.ID
+		if cb.Message != nil {
+			chatID = cb.Message.Chat.ID
+			_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
+		}
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Прикрепите чек об оплате."))
-		s.startPayPhotoFlow(ctx, cb.Message.Chat.ID, userID, months, price)
+		s.startPayPhotoFlow(ctx, chatID, userID, months, price)
 		return
 	}
 
-	if _, err := s.createPaymentRequest(ctx, u, months, price, "", false); err != nil {
+	if _, err := s.createPaymentRequest(ctx, u, months, price, nil); err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
@@ -198,15 +204,19 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 
 // createPaymentRequest writes a pending payment request and DMs all admins a
 // confirm button (a photo or document message when a payment confirmation
-// file is attached; asDocument distinguishes PDF receipts from photos, since
-// Telegram file_ids are only valid with their own send method). Shared by the
-// chat callback flow, the photo/document flow and the mini app API.
-func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUser, months, price int, screenshotFileID string, asDocument bool) (int64, error) {
+// file is attached — att is nil in the plain flow). Shared by the chat
+// callback flow, the photo/document flow and the mini app API.
+func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUser, months, price int, att *receiptAttachment) (int64, error) {
+	var fileID string
+	var isDoc bool
+	if att != nil {
+		fileID, isDoc = att.fileID, att.asDocument
+	}
 	reqID, err := s.store.CreatePaymentRequest(ctx, store.PaymentRequest{
 		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
 		TelegramID: u.TelegramID, Months: months, Price: price,
 		ExpireAt: u.ExpireAt, Status: "pending",
-		ScreenshotFileID: screenshotFileID,
+		ScreenshotFileID: fileID, ScreenshotIsDocument: isDoc,
 	})
 	if err != nil {
 		s.logger.Error("create payment request failed", "err", err.Error())
@@ -215,6 +225,9 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 
 	// Notify all admins with details + confirm button.
 	text := s.formatAdminRequest(u, months, price)
+	if att != nil && att.note != "" {
+		text += "\n\n💬 " + att.note
+	}
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{{
 			{Text: i18n.T("✅ Подтвердить оплату"), CallbackData: fmt.Sprintf("ok:%d", reqID)},
@@ -225,10 +238,10 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 	for _, adminID := range s.adminIDs {
 		var msgID int64
 		switch {
-		case screenshotFileID != "" && asDocument:
-			msgID, err = s.bot.SendDocument(ctx, adminID, screenshotFileID, text, kb)
-		case screenshotFileID != "":
-			msgID, err = s.bot.SendPhoto(ctx, adminID, screenshotFileID, text, kb)
+		case fileID != "" && isDoc:
+			msgID, err = s.bot.SendDocument(ctx, adminID, fileID, text, kb)
+		case fileID != "":
+			msgID, err = s.bot.SendPhoto(ctx, adminID, fileID, text, kb)
 		default:
 			msgID, err = s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
 		}
@@ -237,6 +250,14 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 			continue
 		}
 		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
+	}
+	if len(refs) == 0 && len(s.adminIDs) > 0 {
+		// No admin got a confirm button, so reporting success would strand the
+		// request: withdraw it and let the caller ask the user to retry.
+		if _, derr := s.store.DeletePendingPaymentRequest(ctx, reqID); derr != nil {
+			s.logger.Error("withdraw unnotified request failed", "request_id", reqID, "err", derr.Error())
+		}
+		return 0, fmt.Errorf("payment request %d: notifying every admin failed", reqID)
 	}
 	s.putAdminMsgs(s.payMsgs, reqID, refs)
 	return reqID, nil
@@ -538,9 +559,9 @@ func (s *Service) handleAdminScreenshotToggle(ctx context.Context, chatID int64)
 		return
 	}
 	if on {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате теперь обязателен: заявка уходит администратору вместе с фото."))
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате теперь обязателен: заявка уходит администратору вместе с чеком (фото или PDF)."))
 	} else {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате отключён: заявки отправляются без фото."))
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате отключён: заявки отправляются без чека."))
 	}
 	s.SendAdminMenu(ctx, chatID)
 }

@@ -110,9 +110,6 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		return true
 	}
 
-	if s.remindPayPhoto(ctx, chatID) {
-		return true
-	}
 	if s.handleInviteUsernameInput(ctx, m) {
 		return true
 	}
@@ -120,6 +117,12 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		return true
 	}
 	if s.handleRegisterUsernameInput(ctx, m) {
+		return true
+	}
+	// The receipt nudge runs after the input handlers so an awaiting-receipt
+	// state (which the mini app can set remotely) never swallows a reply meant
+	// for another in-flight flow.
+	if s.remindPayPhoto(ctx, chatID) {
 		return true
 	}
 	// A pasted subscription link starts the linking flow even without /register.
