@@ -56,6 +56,13 @@ type sendPhotoRequest struct {
 	ReplyMarkup any    `json:"reply_markup,omitempty"`
 }
 
+type sendDocumentRequest struct {
+	ChatID      int64  `json:"chat_id"`
+	Document    string `json:"document"` // file_id of a document already on Telegram servers
+	Caption     string `json:"caption,omitempty"`
+	ReplyMarkup any    `json:"reply_markup,omitempty"`
+}
+
 type getUpdatesRequest struct {
 	Offset         int64    `json:"offset,omitempty"`
 	Timeout        int      `json:"timeout,omitempty"`
@@ -142,6 +149,15 @@ type Message struct {
 	// (Telegram orders them ascending — the last entry is the largest).
 	Photo   []PhotoSize `json:"photo,omitempty"`
 	Caption string      `json:"caption,omitempty"`
+	// Document is a generic file attachment (banks often send receipts as PDF).
+	Document *Document `json:"document,omitempty"`
+}
+
+// Document is a generic file attached to a message.
+type Document struct {
+	FileID   string `json:"file_id"`
+	FileName string `json:"file_name,omitempty"`
+	MimeType string `json:"mime_type,omitempty"`
 }
 
 // PhotoSize is one resolution variant of a photo attached to a message.
@@ -286,6 +302,21 @@ func (b *Bot) SendPhoto(ctx context.Context, chatID int64, fileID, caption strin
 		payload.ReplyMarkup = keyboard
 	}
 	return b.sendWithRetry(ctx, "sendPhoto", payload)
+}
+
+// SendDocument sends a document already stored on Telegram servers (by
+// file_id) with an optional caption and inline keyboard, returning the new
+// message ID.
+func (b *Bot) SendDocument(ctx context.Context, chatID int64, fileID, caption string, keyboard *InlineKeyboardMarkup) (int64, error) {
+	payload := sendDocumentRequest{
+		ChatID:   chatID,
+		Document: fileID,
+		Caption:  caption,
+	}
+	if keyboard != nil {
+		payload.ReplyMarkup = keyboard
+	}
+	return b.sendWithRetry(ctx, "sendDocument", payload)
 }
 
 // sendWithRetry posts payload to the given API method, waiting out 429s like

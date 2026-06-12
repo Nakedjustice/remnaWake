@@ -2,6 +2,7 @@ package payments
 
 import (
 	"context"
+	"strings"
 
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
@@ -68,7 +69,7 @@ func (s *Service) startPayPhotoFlow(ctx context.Context, chatID, userID int64, m
 		price:     price,
 		createdAt: s.now(),
 	})
-	_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Отправьте фото или скриншот чека об оплате следующим сообщением — после этого заявка уйдёт администратору.\n\nОтменить: /cancel"))
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Отправьте фото, скриншот или PDF-файл чека об оплате следующим сообщением — после этого заявка уйдёт администратору.\n\nОтменить: /cancel"))
 }
 
 // HandlePhoto consumes a photo message when the chat is awaiting a payment
@@ -83,7 +84,44 @@ func (s *Service) HandlePhoto(ctx context.Context, m *tg.Message) bool {
 	if st == nil {
 		return false
 	}
+	// Telegram lists photo sizes ascending; the last one is the original-size copy.
+	fileID := m.Photo[len(m.Photo)-1].FileID
+	return s.finishPayPhotoFlow(ctx, chatID, st, fileID, false)
+}
 
+// HandleDocument consumes a document message while a payment confirmation is
+// awaited: bank receipts often arrive as PDF files rather than photos. Only
+// PDFs are accepted; other file types get a reminder. Returns true only when
+// it handled the message.
+func (s *Service) HandleDocument(ctx context.Context, m *tg.Message) bool {
+	if m == nil || m.Document == nil {
+		return false
+	}
+	chatID := m.Chat.ID
+	st := s.getPayPhoto(chatID)
+	if st == nil {
+		return false
+	}
+	if !isPDFDocument(m.Document) {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот тип файла не подходит. Отправьте фото, скриншот или PDF-файл чека об оплате."))
+		return true
+	}
+	return s.finishPayPhotoFlow(ctx, chatID, st, m.Document.FileID, true)
+}
+
+// isPDFDocument accepts PDFs by MIME type or, failing that, by file extension
+// (some banks attach receipts with a generic octet-stream MIME type).
+func isPDFDocument(d *tg.Document) bool {
+	if strings.EqualFold(d.MimeType, "application/pdf") {
+		return true
+	}
+	return strings.HasSuffix(strings.ToLower(d.FileName), ".pdf")
+}
+
+// finishPayPhotoFlow completes a deferred renewal once the confirmation file
+// arrived: creates the pending request with the attachment and notifies the
+// admins (photo or document message depending on what the user sent).
+func (s *Service) finishPayPhotoFlow(ctx context.Context, chatID int64, st *payPhotoState, fileID string, asDocument bool) bool {
 	u, err := s.store.GetNotifiedUser(ctx, st.userID)
 	if err != nil {
 		s.logger.Error("pay photo: get notified user failed", "err", err.Error())
@@ -95,11 +133,8 @@ func (s *Service) HandlePhoto(ctx context.Context, m *tg.Message) bool {
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось найти данные. Начните продление заново."))
 		return true
 	}
-
-	// Telegram lists photo sizes ascending; the last one is the original-size copy.
-	fileID := m.Photo[len(m.Photo)-1].FileID
-	if _, err := s.createPaymentRequest(ctx, u, st.months, st.price, fileID); err != nil {
-		// Keep the state so the user can simply resend the photo.
+	if _, err := s.createPaymentRequest(ctx, u, st.months, st.price, fileID, asDocument); err != nil {
+		// Keep the state so the user can simply resend the file.
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
@@ -114,6 +149,6 @@ func (s *Service) remindPayPhoto(ctx context.Context, chatID int64) bool {
 	if s.getPayPhoto(chatID) == nil {
 		return false
 	}
-	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Пожалуйста, отправьте фото (скриншот) оплаты. Отменить: /cancel"))
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Пожалуйста, отправьте фото (скриншот) или PDF-файл чека об оплате. Отменить: /cancel"))
 	return true
 }

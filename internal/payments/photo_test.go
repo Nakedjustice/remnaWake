@@ -22,6 +22,14 @@ func photoMsg(chatID int64, fileIDs ...string) *tg.Message {
 	return m
 }
 
+func docMsg(chatID int64, fileID, mime, name string) *tg.Message {
+	return &tg.Message{
+		MessageID: 1,
+		Chat:      tg.Chat{ID: chatID},
+		Document:  &tg.Document{FileID: fileID, MimeType: mime, FileName: name},
+	}
+}
+
 func enableScreenshot(t *testing.T, svc *Service) {
 	t.Helper()
 	if err := svc.setRequireScreenshot(context.Background(), true); err != nil {
@@ -126,6 +134,125 @@ func TestPhotoCreatesRequestWithScreenshot(t *testing.T) {
 	}
 	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "отправлена администратору") {
 		t.Fatalf("expected user confirmation: %+v", bot.sent)
+	}
+}
+
+func TestPdfDocumentCreatesRequestWithScreenshot(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+	enableScreenshot(t, svc)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	bot.sent = nil
+
+	if !svc.HandleDocument(ctx, docMsg(777, "pdf-id", "application/pdf", "receipt.pdf")) {
+		t.Fatal("pdf document should be handled")
+	}
+	req, _ := st.GetPaymentRequest(ctx, 1)
+	if req == nil || req.Months != 3 || req.ScreenshotFileID != "pdf-id" {
+		t.Fatalf("request wrong: %+v", req)
+	}
+	if len(bot.docs) != 1 {
+		t.Fatalf("expected one admin document, got %+v", bot.docs)
+	}
+	d := bot.docs[0]
+	if d.ChatID != 1000 || d.FileID != "pdf-id" {
+		t.Fatalf("admin document wrong: %+v", d)
+	}
+	if !strings.Contains(d.Caption, "alice") {
+		t.Fatalf("caption should carry the request text: %q", d.Caption)
+	}
+	if d.Keyboard == nil || d.Keyboard.InlineKeyboard[0][0].CallbackData != "ok:1" {
+		t.Fatalf("expected confirm button on the document: %+v", d.Keyboard)
+	}
+	if svc.getPayPhoto(777) != nil {
+		t.Fatal("state should be cleared after the document")
+	}
+	if len(bot.photos) != 0 {
+		t.Fatalf("no photo message expected for a pdf: %+v", bot.photos)
+	}
+}
+
+func TestPdfByFilenameAccepted(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+	enableScreenshot(t, svc)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+
+	// Some banks send PDFs with a generic octet-stream mime type.
+	if !svc.HandleDocument(ctx, docMsg(777, "pdf-id", "application/octet-stream", "Чек.PDF")) {
+		t.Fatal("pdf-by-filename should be handled")
+	}
+	req, _ := st.GetPaymentRequest(ctx, 1)
+	if req == nil || req.ScreenshotFileID != "pdf-id" {
+		t.Fatalf("request wrong: %+v", req)
+	}
+	if len(bot.docs) != 1 {
+		t.Fatalf("expected one admin document, got %+v", bot.docs)
+	}
+}
+
+func TestNonPdfDocumentReminds(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+	enableScreenshot(t, svc)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	bot.sent = nil
+
+	if !svc.HandleDocument(ctx, docMsg(777, "zip-id", "application/zip", "archive.zip")) {
+		t.Fatal("non-pdf document should be consumed with a reminder")
+	}
+	if req, _ := st.GetPaymentRequest(ctx, 1); req != nil {
+		t.Fatalf("no request should be created for a non-pdf: %+v", req)
+	}
+	if svc.getPayPhoto(777) == nil {
+		t.Fatal("state must survive a non-pdf document")
+	}
+	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "PDF") {
+		t.Fatalf("expected pdf reminder: %+v", bot.sent)
+	}
+	if len(bot.docs) != 0 {
+		t.Fatalf("admin must not receive the rejected file: %+v", bot.docs)
+	}
+}
+
+func TestDocumentIgnoredWithoutState(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	if svc.HandleDocument(context.Background(), docMsg(777, "pdf-id", "application/pdf", "receipt.pdf")) {
+		t.Fatal("document without state must be ignored")
+	}
+	if len(bot.sent) != 0 || len(bot.docs) != 0 {
+		t.Fatalf("nothing should be sent: %+v %+v", bot.sent, bot.docs)
+	}
+}
+
+func TestConfirmClearsDocumentMessageButtons(t *testing.T) {
+	svc, bot, ext, st := newTestService(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+	enableScreenshot(t, svc)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	if !svc.HandleDocument(ctx, docMsg(777, "pdf-id", "application/pdf", "receipt.pdf")) {
+		t.Fatal("pdf document should be handled")
+	}
+	docMsgID := bot.docs[0].MsgID
+
+	if !svc.HandleCallback(ctx, cbq(1000, "ok:1")) {
+		t.Fatal("confirm should be handled")
+	}
+	if ext.calls != 1 {
+		t.Fatalf("subscription not extended: %d calls", ext.calls)
+	}
+	var cleared bool
+	for _, e := range bot.edits {
+		if e.ChatID == 1000 && e.MessageID == docMsgID && e.Keyboard == nil {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatalf("document message buttons not cleared: %+v", bot.edits)
 	}
 }
 

@@ -184,7 +184,7 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 		return
 	}
 
-	if _, err := s.createPaymentRequest(ctx, u, months, price, ""); err != nil {
+	if _, err := s.createPaymentRequest(ctx, u, months, price, "", false); err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
@@ -197,9 +197,11 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 }
 
 // createPaymentRequest writes a pending payment request and DMs all admins a
-// confirm button (a photo message when a payment screenshot is attached).
-// Shared by the chat callback flow, the photo flow and the mini app API.
-func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUser, months, price int, screenshotFileID string) (int64, error) {
+// confirm button (a photo or document message when a payment confirmation
+// file is attached; asDocument distinguishes PDF receipts from photos, since
+// Telegram file_ids are only valid with their own send method). Shared by the
+// chat callback flow, the photo/document flow and the mini app API.
+func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUser, months, price int, screenshotFileID string, asDocument bool) (int64, error) {
 	reqID, err := s.store.CreatePaymentRequest(ctx, store.PaymentRequest{
 		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
 		TelegramID: u.TelegramID, Months: months, Price: price,
@@ -222,9 +224,12 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 	var refs []adminMsgRef
 	for _, adminID := range s.adminIDs {
 		var msgID int64
-		if screenshotFileID != "" {
+		switch {
+		case screenshotFileID != "" && asDocument:
+			msgID, err = s.bot.SendDocument(ctx, adminID, screenshotFileID, text, kb)
+		case screenshotFileID != "":
 			msgID, err = s.bot.SendPhoto(ctx, adminID, screenshotFileID, text, kb)
-		} else {
+		default:
 			msgID, err = s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
 		}
 		if err != nil {
