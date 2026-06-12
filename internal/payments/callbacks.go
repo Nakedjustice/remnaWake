@@ -238,6 +238,14 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 		}
 		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
 	}
+	if len(refs) == 0 && len(s.adminIDs) > 0 {
+		// No admin got a confirm button, so reporting success would strand the
+		// request: withdraw it and let the caller ask the user to retry.
+		if _, derr := s.store.DeletePendingPaymentRequest(ctx, reqID); derr != nil {
+			s.logger.Error("withdraw unnotified request failed", "request_id", reqID, "err", derr.Error())
+		}
+		return 0, fmt.Errorf("payment request %d: notifying every admin failed", reqID)
+	}
 	s.putAdminMsgs(s.payMsgs, reqID, refs)
 	return reqID, nil
 }
@@ -538,9 +546,9 @@ func (s *Service) handleAdminScreenshotToggle(ctx context.Context, chatID int64)
 		return
 	}
 	if on {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате теперь обязателен: заявка уходит администратору вместе с фото."))
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате теперь обязателен: заявка уходит администратору вместе с чеком (фото или PDF)."))
 	} else {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате отключён: заявки отправляются без фото."))
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате отключён: заявки отправляются без чека."))
 	}
 	s.SendAdminMenu(ctx, chatID)
 }

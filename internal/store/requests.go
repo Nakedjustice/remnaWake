@@ -123,6 +123,20 @@ func (s *Store) ConfirmPaymentRequest(ctx context.Context, id int64, confirmedAt
 	return n > 0, err
 }
 
+// DeletePendingPaymentRequest removes a request nobody could act on (e.g.
+// every admin notification failed right after creation). Only pending rows
+// are deleted, so a concurrently confirmed/rejected request is left intact.
+func (s *Store) DeletePendingPaymentRequest(ctx context.Context, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM payment_requests WHERE id = ? AND status = 'pending'
+	`, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // RejectPaymentRequest transitions pending->rejected exactly once, storing the
 // resolution time in confirmed_at (it doubles as resolved-at).
 // Returns true only on the transition; false if already resolved or not found.

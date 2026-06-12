@@ -43,7 +43,7 @@ type fakeBot struct {
 	answers  []string
 	edits    []editCall
 	msgIDSeq int64
-	// sendErrs makes SendPlain fail for specific chat IDs.
+	// sendErrs makes every send method fail for specific chat IDs.
 	sendErrs map[int64]error
 }
 
@@ -55,16 +55,25 @@ func (f *fakeBot) SendPlain(_ context.Context, chatID int64, text string) error 
 	return nil
 }
 func (f *fakeBot) SendPlainWithKeyboard(_ context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error) {
+	if err := f.sendErrs[chatID]; err != nil {
+		return 0, err
+	}
 	f.msgIDSeq++
 	f.sent = append(f.sent, sentMsg{ChatID: chatID, Text: text, Keyboard: kb, MsgID: f.msgIDSeq})
 	return f.msgIDSeq, nil
 }
 func (f *fakeBot) SendPhoto(_ context.Context, chatID int64, fileID, caption string, kb *tg.InlineKeyboardMarkup) (int64, error) {
+	if err := f.sendErrs[chatID]; err != nil {
+		return 0, err
+	}
 	f.msgIDSeq++
 	f.photos = append(f.photos, sentPhoto{ChatID: chatID, FileID: fileID, Caption: caption, Keyboard: kb, MsgID: f.msgIDSeq})
 	return f.msgIDSeq, nil
 }
 func (f *fakeBot) SendDocument(_ context.Context, chatID int64, fileID, caption string, kb *tg.InlineKeyboardMarkup) (int64, error) {
+	if err := f.sendErrs[chatID]; err != nil {
+		return 0, err
+	}
 	f.msgIDSeq++
 	f.docs = append(f.docs, sentPhoto{ChatID: chatID, FileID: fileID, Caption: caption, Keyboard: kb, MsgID: f.msgIDSeq})
 	return f.msgIDSeq, nil

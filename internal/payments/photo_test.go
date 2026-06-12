@@ -397,6 +397,60 @@ func TestImageByFilenameAccepted(t *testing.T) {
 	}
 }
 
+func TestAllAdminNotifyFailedReportsError(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+	enableScreenshot(t, svc)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	bot.sent = nil
+	bot.sendErrs = map[int64]error{1000: errors.New("telegram down")}
+
+	if !svc.HandleDocument(ctx, docMsg(777, "pdf-id", "application/pdf", "receipt.pdf")) {
+		t.Fatal("document should be consumed")
+	}
+	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "Ошибка") {
+		t.Fatalf("user must get an error, not a success confirmation: %+v", bot.sent)
+	}
+	if svc.getPayPhoto(777) == nil {
+		t.Fatal("state must survive so the user can resend the receipt")
+	}
+	if req, _ := st.GetPaymentRequest(ctx, 1); req != nil {
+		t.Fatalf("the unnotified request must be withdrawn: %+v", req)
+	}
+
+	// Once Telegram recovers, resending the same file succeeds.
+	bot.sendErrs = nil
+	bot.sent = nil
+	if !svc.HandleDocument(ctx, docMsg(777, "pdf-id", "application/pdf", "receipt.pdf")) {
+		t.Fatal("retry should be handled")
+	}
+	if len(bot.docs) != 1 {
+		t.Fatalf("expected one admin document on retry, got %+v", bot.docs)
+	}
+	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "отправлена администратору") {
+		t.Fatalf("expected user confirmation on retry: %+v", bot.sent)
+	}
+}
+
+func TestPickAllAdminNotifyFailedAnswersError(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	rememberAlice(t, st)
+	_ = st.UpsertTariff(ctx, 3, 450)
+	bot.sendErrs = map[int64]error{1000: errors.New("telegram down")}
+
+	if !svc.HandleCallback(ctx, cbq(777, "pick:42:3")) {
+		t.Fatal("pick should be handled")
+	}
+	if len(bot.answers) == 0 || !strings.Contains(bot.answers[len(bot.answers)-1], "Ошибка") {
+		t.Fatalf("expected an error answer: %+v", bot.answers)
+	}
+	if req, _ := st.GetPaymentRequest(ctx, 1); req != nil {
+		t.Fatalf("the unnotified request must be withdrawn: %+v", req)
+	}
+}
+
 func TestPickWithoutScreenshotUnchanged(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
