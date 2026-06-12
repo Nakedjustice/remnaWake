@@ -105,6 +105,17 @@ Enabled only when `TELEGRAM_ADMIN_ID` is set:
 Prices are **informational** — the bot does not process money. The user pays you
 externally and you confirm manually.
 
+**Payment receipt (optional).** The admin can require proof of payment: toggle
+**«📸 Чек об оплате»** in the `/admin` menu or the switch in the Mini App admin
+panel. When enabled, after picking a tariff the user must send a **photo,
+screenshot, or PDF file** of the receipt (banks often export receipts as PDF)
+before the request is created; the admin then receives the request as a photo
+or document message with the receipt attached and the same confirm/reject
+buttons. Other file types are rejected with a hint. The pending attachment
+step expires after 10 minutes (`/cancel` aborts it). Renewals started from the
+Mini App switch to the bot chat for this step. With the toggle off the flow is
+unchanged.
+
 ### Commands
 
 **User commands** (anyone who messages the bot):

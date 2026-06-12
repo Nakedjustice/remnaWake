@@ -219,7 +219,7 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 		return ErrScreenshotRequired
 	}
 
-	if _, err := s.createPaymentRequest(ctx, u, months, price, ""); err != nil {
+	if _, err := s.createPaymentRequest(ctx, u, months, price, "", false); err != nil {
 		return err
 	}
 

@@ -193,6 +193,11 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 					continue
 				}
 			}
+			if u.Message != nil && u.Message.Document != nil {
+				if pay.HandleDocument(ctx, u.Message) {
+					continue
+				}
+			}
 			if u.Message != nil && u.Message.Text != "" {
 				text := strings.TrimSpace(u.Message.Text)
 				if text == "/start" || strings.HasPrefix(text, "/start ") {
