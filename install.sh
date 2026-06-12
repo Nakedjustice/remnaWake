@@ -41,12 +41,11 @@ ask() {
   [ -n "$default" ] && display_default=" ${DIM}[$default]${RESET}"
 
   while true; do
+    printf '%s' "${BOLD}${prompt}${RESET}${display_default}: " >&2
     if [ "$secret" = "secret" ]; then
-      printf '%s' "${BOLD}${prompt}${RESET}${display_default}: " >&2
       read -r -s input
       printf '\n' >&2
     else
-      printf '%s' "${BOLD}${prompt}${RESET}${display_default}: " >&2
       read -r input
     fi
 
@@ -88,8 +87,6 @@ v_url() {
     *) err "  → Must start with http:// or https://"; return 1 ;;
   esac
 }
-
-v_nonempty() { [ -n "$1" ] && return 0; err "  → Cannot be empty."; return 1; }
 
 v_https_url() {
   case "$1" in
@@ -176,6 +173,30 @@ v_bool() {
   esac
 }
 
+v_lang() {
+  case "$1" in
+    ru|en) return 0 ;;
+    *) err "  → One of: ru, en."; return 1 ;;
+  esac
+}
+
+v_days_list() {
+  local old_ifs="$IFS" token
+  IFS=','
+  for token in $1; do
+    IFS="$old_ifs"
+    token="$(printf '%s' "$token" | tr -d ' \t')"
+    [ -z "$token" ] && continue
+    if ! printf '%s' "$token" | grep -Eq '^[1-9][0-9]*$'; then
+      err "  → Each value must be a positive integer. Got: \"$token\""
+      IFS="$old_ifs"
+      return 1
+    fi
+  done
+  IFS="$old_ifs"
+  return 0
+}
+
 # --- Banner -----------------------------------------------------------------
 cat >&2 <<EOF
 ${BOLD}remnaWake installer${RESET}
@@ -201,7 +222,7 @@ info "── Remnawave panel ─────────────────
 ask REMNAWAVE_BASE_URL  "Remnawave panel URL (e.g. https://panel.example.com)" "" v_url
 # Normalise: drop any trailing slash (the bot does this too, but keep .env clean).
 REMNAWAVE_BASE_URL="${REMNAWAVE_BASE_URL%/}"
-ask REMNAWAVE_API_TOKEN "Remnawave API token (panel → API tokens)" "" v_nonempty secret
+ask REMNAWAVE_API_TOKEN "Remnawave API token (panel → API tokens)" "" "" secret
 
 printf '\n' >&2
 info "── Telegram ────────────────────────────────────────────────"
@@ -231,16 +252,22 @@ HTTP_TIMEOUT="15s"
 DRY_RUN="false"
 RUN_ON_START="true"
 CURRENCY="₽"
+BOT_LANG="ru"
+WINBACK_ENABLED="true"
+WINBACK_DAYS="1,3"
 
 printf '\n' >&2
-if ask_yes_no "Configure advanced options (parse mode, log level, timeout, dry-run, currency)?" "n"; then
+if ask_yes_no "Configure advanced options (parse mode, log level, timeout, dry-run, currency, language, win-back)?" "n"; then
   info "── Advanced ────────────────────────────────────────────────"
-  ask TELEGRAM_PARSE_MODE "Telegram parse mode (HTML / MarkdownV2)" "HTML"  v_nonempty
+  ask TELEGRAM_PARSE_MODE "Telegram parse mode (HTML / MarkdownV2)" "HTML"  ""
   ask LOG_LEVEL           "Log level (debug/info/warn/error)"       "info"  v_loglevel
   ask HTTP_TIMEOUT        "HTTP timeout (Go duration, e.g. 15s)"    "15s"   v_duration
   ask DRY_RUN             "Dry run? log instead of sending (true/false)"   "false" v_bool
   ask RUN_ON_START        "Run once immediately on start (true/false)"     "true"  v_bool
-  ask CURRENCY            "Currency label shown next to tariff prices"     "₽"     v_nonempty
+  ask CURRENCY            "Currency label shown next to tariff prices"     "₽"     ""
+  ask BOT_LANG            "Bot language (ru / en)"                         "ru"    v_lang
+  ask WINBACK_ENABLED     "Send win-back messages to expired users (true/false)" "true" v_bool
+  ask WINBACK_DAYS        "Days after expiry to send win-back (comma-separated, e.g. 1,3)" "1,3" v_days_list
 fi
 
 # --- Write .env atomically with strict permissions --------------------------
@@ -267,6 +294,11 @@ DRY_RUN=$DRY_RUN
 RUN_ON_START=$RUN_ON_START
 
 CURRENCY=$CURRENCY
+BOT_LANG=$BOT_LANG
+
+# Win-back notifications: messages sent to expired users N days after expiry.
+WINBACK_ENABLED=$WINBACK_ENABLED
+WINBACK_DAYS=$WINBACK_DAYS
 
 # Telegram Mini App: public HTTPS URL served by your reverse proxy
 # (empty = mini app disabled) and the local bind address behind it.
