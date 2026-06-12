@@ -63,6 +63,24 @@ func (s *Service) notifyPayPhotoExpired(ctx context.Context, chatID int64) {
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("⌛ Время ожидания чека истекло, заявка не создана. Выберите тариф и начните продление заново."))
 }
 
+// receiptAttachment is the payment confirmation file the user sent.
+type receiptAttachment struct {
+	fileID     string
+	asDocument bool   // document file_ids only work with sendDocument, photo ones with sendPhoto
+	note       string // user's caption on the receipt, forwarded to the admins
+}
+
+// cancelPayPhotoByCaption honors /cancel typed as a media caption — the only
+// way to cancel in the same message as a mistakenly attached file.
+func (s *Service) cancelPayPhotoByCaption(ctx context.Context, chatID int64, caption string) bool {
+	if strings.TrimSpace(caption) != "/cancel" {
+		return false
+	}
+	s.clearPayPhoto(chatID)
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отменено."))
+	return true
+}
+
 func (s *Service) setPayPhoto(chatID int64, p *payPhotoState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -103,9 +121,15 @@ func (s *Service) HandlePhoto(ctx context.Context, m *tg.Message) bool {
 		}
 		return false
 	}
+	if s.cancelPayPhotoByCaption(ctx, chatID, m.Caption) {
+		return true
+	}
 	// Telegram lists photo sizes ascending; the last one is the original-size copy.
 	fileID := m.Photo[len(m.Photo)-1].FileID
-	return s.finishPayPhotoFlow(ctx, chatID, st, fileID, false)
+	return s.finishPayPhotoFlow(ctx, chatID, st, &receiptAttachment{
+		fileID: fileID,
+		note:   strings.TrimSpace(m.Caption),
+	})
 }
 
 // HandleDocument consumes a document message while a payment confirmation is
@@ -125,11 +149,18 @@ func (s *Service) HandleDocument(ctx context.Context, m *tg.Message) bool {
 		}
 		return false
 	}
+	if s.cancelPayPhotoByCaption(ctx, chatID, m.Caption) {
+		return true
+	}
 	if !isReceiptDocument(m.Document) {
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот тип файла не подходит. Отправьте фото, скриншот или PDF-файл чека об оплате."))
 		return true
 	}
-	return s.finishPayPhotoFlow(ctx, chatID, st, m.Document.FileID, true)
+	return s.finishPayPhotoFlow(ctx, chatID, st, &receiptAttachment{
+		fileID:     m.Document.FileID,
+		asDocument: true,
+		note:       strings.TrimSpace(m.Caption),
+	})
 }
 
 // isReceiptDocument accepts files that plausibly carry a payment receipt:
@@ -151,7 +182,7 @@ func isReceiptDocument(d *tg.Document) bool {
 // finishPayPhotoFlow completes a deferred renewal once the confirmation file
 // arrived: creates the pending request with the attachment and notifies the
 // admins (photo or document message depending on what the user sent).
-func (s *Service) finishPayPhotoFlow(ctx context.Context, chatID int64, st *payPhotoState, fileID string, asDocument bool) bool {
+func (s *Service) finishPayPhotoFlow(ctx context.Context, chatID int64, st *payPhotoState, att *receiptAttachment) bool {
 	u, err := s.store.GetNotifiedUser(ctx, st.userID)
 	if err != nil {
 		s.logger.Error("pay photo: get notified user failed", "err", err.Error())
@@ -163,7 +194,7 @@ func (s *Service) finishPayPhotoFlow(ctx context.Context, chatID int64, st *payP
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось найти данные. Начните продление заново."))
 		return true
 	}
-	if _, err := s.createPaymentRequest(ctx, u, st.months, st.price, fileID, asDocument); err != nil {
+	if _, err := s.createPaymentRequest(ctx, u, st.months, st.price, att); err != nil {
 		// Keep the state so the user can simply resend the file.
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true
