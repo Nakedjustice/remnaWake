@@ -28,19 +28,29 @@ type PaymentRequest struct {
 	// (PDF or uncompressed image) rather than a photo — Telegram file_ids are
 	// only valid with their own send method, so any later re-send needs this.
 	ScreenshotIsDocument bool
+	// Provider names the payment provider that owns this request: "p2p"
+	// (manual admin confirmation, the default) or "platega" (automatic).
+	Provider string
+	// ProviderTxnID is the external gateway transaction id (Platega), used to
+	// correlate webhook callbacks with this request; empty for p2p.
+	ProviderTxnID string
 }
 
 func (s *Store) CreatePaymentRequest(ctx context.Context, r PaymentRequest) (int64, error) {
 	now := formatTime(time.Now())
+	provider := r.Provider
+	if provider == "" {
+		provider = "p2p"
+	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO payment_requests
 			(remnawave_user_id, uuid, username, telegram_id, months, price, expire_at,
 			 status, created_at, payer_telegram_id, payer_username, screenshot_file_id,
-			 screenshot_is_document)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 screenshot_is_document, provider, provider_txn_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.RemnawaveID, r.UUID, r.Username, r.TelegramID, r.Months, r.Price,
 		formatTime(r.ExpireAt), "pending", now, r.PayerTelegramID, r.PayerUsername, r.ScreenshotFileID,
-		r.ScreenshotIsDocument)
+		r.ScreenshotIsDocument, provider, r.ProviderTxnID)
 	if err != nil {
 		return 0, err
 	}
@@ -56,11 +66,11 @@ func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentReques
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document
+			screenshot_file_id, screenshot_is_document, provider, provider_txn_id
 		FROM payment_requests WHERE id = ?
 	`, id).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
 		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
-		&r.ScreenshotFileID, &r.ScreenshotIsDocument)
+		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -77,13 +87,58 @@ func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentReques
 	return &r, nil
 }
 
+// GetPaymentRequestByProviderTxn returns the request carrying the given external
+// gateway transaction id, or nil if none matches. Used by the Platega webhook to
+// correlate a callback (which carries only a transaction id) with its request.
+func (s *Store) GetPaymentRequestByProviderTxn(ctx context.Context, txnID string) (*PaymentRequest, error) {
+	if txnID == "" {
+		return nil, nil
+	}
+	var (
+		r            PaymentRequest
+		exp, created string
+		confirmed    sql.NullString
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
+			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
+			screenshot_file_id, screenshot_is_document, provider, provider_txn_id
+		FROM payment_requests WHERE provider_txn_id = ?
+	`, txnID).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
+		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
+		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.ExpireAt, _ = parseTime(exp)
+	r.CreatedAt, _ = parseTime(created)
+	if confirmed.Valid {
+		if ts, e := parseTime(confirmed.String); e == nil {
+			r.ConfirmedAt = &ts
+		}
+	}
+	return &r, nil
+}
+
+// SetPaymentRequestProviderTxn records the external gateway transaction id on a
+// request right after the gateway transaction is created.
+func (s *Store) SetPaymentRequestProviderTxn(ctx context.Context, id int64, txnID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE payment_requests SET provider_txn_id = ? WHERE id = ?
+	`, txnID, id)
+	return err
+}
+
 // ListPaymentRequestsByStatus returns all requests with the given status in
 // creation order.
 func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) ([]PaymentRequest, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document
+			screenshot_file_id, screenshot_is_document, provider, provider_txn_id
 		FROM payment_requests WHERE status = ? ORDER BY id
 	`, status)
 	if err != nil {
@@ -101,7 +156,7 @@ func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) 
 		if err := rows.Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID,
 			&r.Months, &r.Price, &exp, &r.Status, &created, &confirmed,
 			&r.PayerTelegramID, &r.PayerUsername, &r.ScreenshotFileID,
-			&r.ScreenshotIsDocument); err != nil {
+			&r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID); err != nil {
 			return nil, err
 		}
 		r.ExpireAt, _ = parseTime(exp)

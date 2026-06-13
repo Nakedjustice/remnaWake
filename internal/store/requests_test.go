@@ -33,6 +33,63 @@ func TestPaymentRequestRoundTripWithPayer(t *testing.T) {
 	}
 }
 
+func TestPaymentRequestProviderRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	id, err := st.CreatePaymentRequest(ctx, PaymentRequest{
+		RemnawaveID: 42, UUID: "u-42", Username: "bob", TelegramID: 555,
+		Months: 1, Price: 150, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+		Status: "pending", Provider: "platega",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got, err := st.GetPaymentRequest(ctx, id)
+	if err != nil || got == nil {
+		t.Fatalf("get: %v %+v", err, got)
+	}
+	if got.Provider != "platega" || got.ProviderTxnID != "" {
+		t.Fatalf("provider fields = %q/%q, want platega/empty", got.Provider, got.ProviderTxnID)
+	}
+
+	if err := st.SetPaymentRequestProviderTxn(ctx, id, "tx-abc"); err != nil {
+		t.Fatalf("set txn: %v", err)
+	}
+
+	byTxn, err := st.GetPaymentRequestByProviderTxn(ctx, "tx-abc")
+	if err != nil || byTxn == nil {
+		t.Fatalf("lookup by txn: %v %+v", err, byTxn)
+	}
+	if byTxn.ID != id || byTxn.ProviderTxnID != "tx-abc" {
+		t.Fatalf("unexpected lookup result: %+v", byTxn)
+	}
+
+	missing, err := st.GetPaymentRequestByProviderTxn(ctx, "nope")
+	if err != nil || missing != nil {
+		t.Fatalf("expected nil for unknown txn, got %+v err %v", missing, err)
+	}
+}
+
+func TestPaymentRequestDefaultsToP2P(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	id, err := st.CreatePaymentRequest(ctx, PaymentRequest{
+		RemnawaveID: 1, UUID: "u-1", Username: "a", TelegramID: 5,
+		Months: 1, Price: 0, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+		Status: "pending",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, _ := st.GetPaymentRequest(ctx, id)
+	if got.Provider != "p2p" {
+		t.Fatalf("Provider = %q, want default p2p", got.Provider)
+	}
+}
+
 func TestEnsurePaymentRequestColumnsAddsToLegacyDB(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	db, err := sql.Open("sqlite", "file:"+path)

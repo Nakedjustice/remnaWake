@@ -628,7 +628,7 @@ func TestWebRenewWithScreenshotRequired(t *testing.T) {
 	ctx := context.Background()
 	enableScreenshot(t, svc)
 
-	err = svc.CreateRenewRequest(ctx, 777, 42, 1)
+	_, err = svc.CreateRenewRequest(ctx, 777, 42, 1)
 	if !errors.Is(err, ErrScreenshotRequired) {
 		t.Fatalf("expected ErrScreenshotRequired, got %v", err)
 	}

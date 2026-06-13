@@ -12,11 +12,35 @@
 #
 set -euo pipefail
 
-# --- Resolve repo root (directory this script lives in) ---------------------
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-cd "$SCRIPT_DIR"
+# --- Reattach the terminal when piped (curl … | bash) -----------------------
+# Standalone use reads the script from a pipe, leaving stdin pointed at the
+# pipe; without this the prompts below would read no input. Probe that /dev/tty
+# is actually openable first (it is not under cron/CI) so we never abort here.
+if [ ! -t 0 ] && [ -e /dev/tty ] && (exec </dev/tty) 2>/dev/null; then
+  exec </dev/tty
+fi
 
-ENV_FILE="$SCRIPT_DIR/.env"
+# --- Where to install -------------------------------------------------------
+# The bot runs from the pre-built GHCR image, so the only files that need to
+# live on the server are ./docker-compose.yml and ./.env — not the source repo.
+# This script fetches docker-compose.yml on demand, so it works run straight
+# from a URL or from a cloned checkout (which reuses the files already there).
+REPO_RAW="${REMNAWAKE_REPO_RAW:-https://raw.githubusercontent.com/Nakedjustice/remnaWake/main}"
+
+# Install into this script's directory when run from a file, else the current
+# directory; override with REMNAWAKE_DIR.
+__src="${BASH_SOURCE[0]:-}"
+if [ -n "$__src" ] && [ -f "$__src" ]; then
+  INSTALL_DIR="$(cd -- "$(dirname -- "$__src")" >/dev/null 2>&1 && pwd)"
+else
+  INSTALL_DIR="$PWD"
+fi
+INSTALL_DIR="${REMNAWAKE_DIR:-$INSTALL_DIR}"
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
+
+ENV_FILE="$INSTALL_DIR/.env"
+COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
 
 # --- Colours (disabled when not a terminal) ---------------------------------
 if [ -t 1 ]; then
@@ -31,6 +55,18 @@ info()  { printf '%s\n' "${CYAN}$*${RESET}"; }
 ok()    { printf '%s\n' "${GREEN}$*${RESET}"; }
 warn()  { printf '%s\n' "${YELLOW}$*${RESET}" >&2; }
 err()   { printf '%s\n' "${RED}$*${RESET}" >&2; }
+
+# Download a URL to a file with curl or wget (whichever exists); 127 if neither.
+fetch() {
+  local url="$1" dest="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$dest"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$dest" "$url"
+  else
+    return 127
+  fi
+}
 
 # --- Prompt helpers ---------------------------------------------------------
 # Read a value, re-prompting until the validator passes.
@@ -197,6 +233,13 @@ v_days_list() {
   return 0
 }
 
+v_platega_method() {
+  case "$1" in
+    sbp|card|cards) return 0 ;;
+    *) err "  → One of: sbp, card."; return 1 ;;
+  esac
+}
+
 # --- Banner -----------------------------------------------------------------
 cat >&2 <<EOF
 ${BOLD}remnaWake installer${RESET}
@@ -243,6 +286,25 @@ WEBAPP_LISTEN=":8080"
 if ask_yes_no "Enable the Mini App personal cabinet? (needs an HTTPS reverse proxy in front)" "n"; then
   ask WEBAPP_URL "Public Mini App URL (e.g. https://bot.example.com)" "" v_https_url
   WEBAPP_URL="${WEBAPP_URL%/}"
+fi
+
+# --- Platega payment gateway (optional) -------------------------------------
+printf '\n' >&2
+info "── Platega payment gateway (optional) ──────────────────────"
+PLATEGA_MERCHANT_ID=""
+PLATEGA_SECRET=""
+PLATEGA_METHOD="sbp"
+PLATEGA_CURRENCY="RUB"
+PLATEGA_RETURN_URL="https://t.me"
+warn "Default is manual P2P (you confirm payments yourself). Platega adds online"
+warn "SBP/card payments; you can switch the active provider later from the admin menu."
+if ask_yes_no "Configure Platega online payments now?" "n"; then
+  ask PLATEGA_MERCHANT_ID "Platega merchant id (from the Platega dashboard)" "" ""
+  ask PLATEGA_SECRET      "Platega secret (X-Secret)" "" "" secret
+  ask PLATEGA_METHOD      "Payment method (sbp / card)" "sbp" v_platega_method
+  ask PLATEGA_CURRENCY    "Currency code sent to Platega (ISO, e.g. RUB)" "RUB" ""
+  ask PLATEGA_RETURN_URL  "Return URL after payment (e.g. your bot link)" "https://t.me" v_url
+  PLATEGA_RETURN_URL="${PLATEGA_RETURN_URL%/}"
 fi
 
 # --- Defaults for the rest (overridable via advanced section) ---------------
@@ -304,17 +366,41 @@ WINBACK_DAYS=$WINBACK_DAYS
 # (empty = mini app disabled) and the local bind address behind it.
 WEBAPP_URL=$WEBAPP_URL
 WEBAPP_LISTEN=$WEBAPP_LISTEN
+
+# Platega payment gateway (optional): online SBP/card payments as an alternative
+# to manual P2P. Empty merchant id/secret = Platega off (P2P only). The active
+# provider is switched at runtime from the bot /admin menu or the Mini App admin
+# panel. Set the Platega dashboard notification URL to <public-host>/platega/callback.
+PLATEGA_MERCHANT_ID=$PLATEGA_MERCHANT_ID
+PLATEGA_SECRET=$PLATEGA_SECRET
+PLATEGA_METHOD=$PLATEGA_METHOD
+PLATEGA_CURRENCY=$PLATEGA_CURRENCY
+PLATEGA_RETURN_URL=$PLATEGA_RETURN_URL
 EOF
 
 mv "$tmp_env" "$ENV_FILE"
 trap - EXIT
 chmod 600 "$ENV_FILE"
+umask 022  # back to normal perms for the (non-secret) compose file
 
 printf '\n' >&2
 ok "Wrote configuration to $ENV_FILE (permissions 600)."
 
+# --- Fetch docker-compose.yml (standalone: no repo checkout needed) ---------
+if [ ! -f "$COMPOSE_FILE" ]; then
+  info "Fetching docker-compose.yml…"
+  if ! fetch "$REPO_RAW/docker-compose.yml" "$COMPOSE_FILE"; then
+    err "Could not download docker-compose.yml (need curl or wget)."
+    err "Grab it manually next to .env:  $REPO_RAW/docker-compose.yml"
+    exit 1
+  fi
+  ok "Wrote docker-compose.yml"
+fi
+
 # --- Summary (secrets masked) -----------------------------------------------
 mask() { local s="$1"; [ "${#s}" -le 8 ] && { printf '****'; return; }; printf '%s…%s' "${s:0:4}" "${s: -4}"; }
+platega_summary="disabled (P2P only)"
+[ -n "$PLATEGA_MERCHANT_ID" ] && platega_summary="enabled ($PLATEGA_METHOD, $PLATEGA_CURRENCY)"
 cat >&2 <<EOF
 
 ${BOLD}Summary${RESET}
@@ -327,6 +413,7 @@ ${BOLD}Summary${RESET}
   Dry-run / on-start : $DRY_RUN / $RUN_ON_START
   Currency           : $CURRENCY
   Mini App           : ${WEBAPP_URL:-disabled}
+  Platega            : $platega_summary
 
 EOF
 
@@ -335,6 +422,17 @@ if [ -n "$WEBAPP_URL" ]; then
   warn "  1. Uncomment the 'ports' section in docker-compose.yml (exposes ${WEBAPP_LISTEN#:} on 127.0.0.1)."
   warn "  2. Point your HTTPS reverse proxy at it: $WEBAPP_URL → 127.0.0.1:${WEBAPP_LISTEN#:}"
   warn "     (nginx and Caddy templates are in the README, section «Telegram Mini App»)."
+fi
+
+if [ -n "$PLATEGA_MERCHANT_ID" ]; then
+  warn "Platega checklist:"
+  warn "  1. The webhook is served by the same HTTP server as the Mini App: uncomment the"
+  warn "     'ports' section in docker-compose.yml (exposes ${WEBAPP_LISTEN#:} on 127.0.0.1)"
+  warn "     and put an HTTPS reverse proxy in front of it."
+  warn "  2. In the Platega dashboard set the notification (webhook) URL to:"
+  warn "       https://<your-public-host>/platega/callback"
+  warn "  3. Switch the active provider to Platega from the bot /admin menu or the"
+  warn "     Mini App admin panel (the bot starts on P2P until you do)."
 fi
 
 # --- Detect Docker Compose --------------------------------------------------

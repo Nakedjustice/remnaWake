@@ -210,21 +210,35 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 	if s.getRequireScreenshot() {
 		shotLabel = i18n.T("📸 Чек об оплате: вкл")
 	}
-	kb := &tg.InlineKeyboardMarkup{
-		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: i18n.T("📊 Статистика"), CallbackData: "adm:stats"}},
-			{{Text: i18n.T("📋 Посмотреть тарифы"), CallbackData: "adm:tariffs"}},
-			{{Text: i18n.T("➕ Добавить тариф"), CallbackData: "adm:addtariff"}},
-			{{Text: i18n.T("❌ Удалить тариф"), CallbackData: "adm:del_list"}},
-			{{Text: i18n.T("💳 Посмотреть реквизиты"), CallbackData: "adm:req"}},
-			{{Text: i18n.T("🎁 Подарочные коды"), CallbackData: "adm:gifts"}},
-			{{Text: i18n.T("✏️ Изменить реквизиты"), CallbackData: "adm:setreq"}},
-			{{Text: shotLabel, CallbackData: "adm:shot_toggle"}},
-			{{Text: i18n.T("🛡 Сквад по умолчанию"), CallbackData: "adm:squad"}},
-			{{Text: i18n.T("📢 Рассылка всем"), CallbackData: "adm:bcast"}},
-		},
+	rows := [][]tg.InlineKeyboardButton{
+		{{Text: i18n.T("📊 Статистика"), CallbackData: "adm:stats"}},
+		{{Text: i18n.T("📋 Посмотреть тарифы"), CallbackData: "adm:tariffs"}},
+		{{Text: i18n.T("➕ Добавить тариф"), CallbackData: "adm:addtariff"}},
+		{{Text: i18n.T("❌ Удалить тариф"), CallbackData: "adm:del_list"}},
+		{{Text: i18n.T("💳 Посмотреть реквизиты"), CallbackData: "adm:req"}},
+		{{Text: i18n.T("🎁 Подарочные коды"), CallbackData: "adm:gifts"}},
+		{{Text: i18n.T("✏️ Изменить реквизиты"), CallbackData: "adm:setreq"}},
+		{{Text: shotLabel, CallbackData: "adm:shot_toggle"}},
+		{{Text: i18n.T("🛡 Сквад по умолчанию"), CallbackData: "adm:squad"}},
+		{{Text: i18n.T("📢 Рассылка всем"), CallbackData: "adm:bcast"}},
 	}
-	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, i18n.T("Меню администратора"), kb)
+	// The payment-provider toggle is only meaningful when Platega is configured.
+	if s.plategaConfigured() {
+		rows = append(rows, []tg.InlineKeyboardButton{
+			{Text: s.providerToggleLabel(), CallbackData: "adm:provider_toggle"},
+		})
+	}
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, i18n.T("Меню администратора"),
+		&tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+// providerToggleLabel renders the admin-menu label for the active payment
+// provider toggle.
+func (s *Service) providerToggleLabel() string {
+	if s.getPaymentProvider() == ProviderPlatega {
+		return i18n.T("💳 Провайдер оплаты: Platega")
+	}
+	return i18n.T("💳 Провайдер оплаты: P2P")
 }
 
 func (s *Service) cmdDelTariff(ctx context.Context, chatID int64, fields []string) {

@@ -20,6 +20,7 @@ type Config struct {
 	HTTP       HTTPConfig
 	WebApp     WebAppConfig
 	Winback    WinbackConfig
+	Platega    PlategaConfig
 	Lang       i18n.Lang
 	LogLevel   slog.Level
 	DryRun     bool
@@ -68,6 +69,35 @@ type WinbackConfig struct {
 	Days    []int
 }
 
+// PlategaConfig configures the optional Platega payment gateway. Credentials
+// come from the environment (like the Remnawave token); whether Platega is the
+// *active* provider is an admin runtime toggle, not config. Platega is only
+// available when both MerchantID and Secret are set.
+type PlategaConfig struct {
+	MerchantID string
+	Secret     string
+	Method     string // "sbp" or "card"
+	Currency   string // ISO code for the API (e.g. "RUB"); distinct from the CURRENCY label
+	ReturnURL  string // where Platega returns the user after payment
+}
+
+// Enabled reports whether Platega credentials are configured.
+func (p PlategaConfig) Enabled() bool {
+	return p.MerchantID != "" && p.Secret != ""
+}
+
+// MethodCode maps the configured Method to a Platega payment-method code.
+func (p PlategaConfig) MethodCode() (int, error) {
+	switch strings.ToLower(strings.TrimSpace(p.Method)) {
+	case "", "sbp":
+		return 2, nil // platega.MethodSBP (СБП/QR)
+	case "card", "cards":
+		return 11, nil // platega.MethodCards (карточный эквайринг)
+	default:
+		return 0, fmt.Errorf("invalid PLATEGA_METHOD: %q (supported: sbp, card)", p.Method)
+	}
+}
+
 func Load() (*Config, error) {
 	adminIDs, err := parseAdminIDs(os.Getenv("TELEGRAM_ADMIN_ID"))
 	if err != nil {
@@ -105,6 +135,13 @@ func Load() (*Config, error) {
 		Winback: WinbackConfig{
 			Enabled: getenvBool("WINBACK_ENABLED", true),
 			Days:    winbackDays,
+		},
+		Platega: PlategaConfig{
+			MerchantID: strings.TrimSpace(os.Getenv("PLATEGA_MERCHANT_ID")),
+			Secret:     strings.TrimSpace(os.Getenv("PLATEGA_SECRET")),
+			Method:     getenv("PLATEGA_METHOD", "sbp"),
+			Currency:   getenv("PLATEGA_CURRENCY", "RUB"),
+			ReturnURL:  strings.TrimRight(strings.TrimSpace(getenv("PLATEGA_RETURN_URL", "https://t.me")), "/"),
 		},
 		Lang:       lang,
 		LogLevel:   parseLogLevel(getenv("LOG_LEVEL", "info")),
@@ -154,6 +191,11 @@ func (c *Config) validate() error {
 	}
 	if _, err := time.LoadLocation(c.Scheduler.Timezone); err != nil {
 		return fmt.Errorf("invalid TZ: %q", c.Scheduler.Timezone)
+	}
+	if c.Platega.Enabled() {
+		if _, err := c.Platega.MethodCode(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

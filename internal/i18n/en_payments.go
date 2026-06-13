@@ -9,6 +9,22 @@ func init() {
 // enPayments translates the payments-package texts (user flows, admin flows,
 // gift/invite/register conversations, /stats). Merged into en at init.
 var enPayments = map[string]string{
+	// Platega payment gateway
+	"Не удалось переключить провайдера. Platega не настроен (нет ключей мерчанта)?":                  "Could not switch the provider. Is Platega configured (merchant keys present)?",
+	"💳 Провайдер оплаты: Platega. Продления оплачиваются онлайн (СБП/карта), подтверждение автоматическое.": "💳 Payment provider: Platega. Renewals are paid online (SBP/card) and confirmed automatically.",
+	"💳 Провайдер оплаты: P2P. Продления подтверждаются администратором вручную.":                     "💳 Payment provider: P2P. Renewals are confirmed by an admin manually.",
+	"💳 Провайдер оплаты: Platega":                                                                   "💳 Payment provider: Platega",
+	"💳 Провайдер оплаты: P2P":                                                                       "💳 Payment provider: P2P",
+	"Продление подписки «%s» на %d мес.":                                                             "Renewal of \"%s\" for %d mo.",
+	"💳 Оплата %s за %d мес. Нажмите «Оплатить», а после оплаты — «Проверить оплату».":               "💳 Payment of %s for %d mo. Tap \"Pay\", then after paying tap \"Check payment\".",
+	"💳 Оплатить":                       "💳 Pay",
+	"🔄 Проверить оплату":               "🔄 Check payment",
+	"✅ Оплата получена! Подписка для «%s» продлена до %s.": "✅ Payment received! Subscription for \"%s\" extended to %s.",
+	"✅ Подписка уже продлена.":                             "✅ Subscription already extended.",
+	"Ошибка проверки оплаты, попробуйте позже.":            "Payment check failed, try again later.",
+	"✅ Оплата получена, подписка продлена!":                "✅ Payment received, subscription extended!",
+	"Оплата ещё не поступила. Если вы оплатили — подождите минуту и нажмите снова.": "Payment has not arrived yet. If you have paid, wait a minute and tap again.",
+
 	" (%d на рассмотрении)":               " (%d pending review)",
 	" (осталось %d %s)":                   " (%d %s left)",
 	"%d ждёт активации":                   "%d awaiting activation",

@@ -34,6 +34,8 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleMenuCabinet(ctx, cb)
 	case strings.HasPrefix(cb.Data, "cab:pay:"):
 		return s.handleCabinetPay(ctx, cb)
+	case strings.HasPrefix(cb.Data, "plcheck:"):
+		return s.handlePlategaCheck(ctx, cb)
 	case cb.Data == "cab:cancel":
 		return s.handleCabinetCancel(ctx, cb)
 	case cb.Data == "menu:invite":
@@ -172,6 +174,13 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 	}
 	if u == nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось найти данные. Дождитесь следующего уведомления."))
+		return
+	}
+
+	// When Platega is the active provider, payment is automatic: open a Platega
+	// transaction and hand the user a pay link instead of the admin-confirm flow.
+	if s.activeProvider() == ProviderPlatega {
+		s.startPlategaAndPrompt(ctx, cb, u, months, price)
 		return
 	}
 
@@ -389,6 +398,8 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.startSetRequisitesFlow(ctx, chatID)
 	case cb.Data == "adm:shot_toggle":
 		s.handleAdminScreenshotToggle(ctx, chatID)
+	case cb.Data == "adm:provider_toggle":
+		s.handleAdminProviderToggle(ctx, chatID)
 	case cb.Data == "adm:addtariff":
 		s.startAddTariffFlow(ctx, chatID)
 	case cb.Data == "adm:gifts":
@@ -562,6 +573,26 @@ func (s *Service) handleAdminScreenshotToggle(ctx context.Context, chatID int64)
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате теперь обязателен: заявка уходит администратору вместе с чеком (фото или PDF)."))
 	} else {
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Чек об оплате отключён: заявки отправляются без чека."))
+	}
+	s.SendAdminMenu(ctx, chatID)
+}
+
+// handleAdminProviderToggle switches the active payment provider between P2P and
+// Platega from the adm:provider_toggle button and re-renders the menu.
+func (s *Service) handleAdminProviderToggle(ctx context.Context, chatID int64) {
+	next := ProviderPlatega
+	if s.getPaymentProvider() == ProviderPlatega {
+		next = ProviderP2P
+	}
+	if err := s.setPaymentProvider(ctx, next); err != nil {
+		s.logger.Error("admin: save payment provider failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось переключить провайдера. Platega не настроен (нет ключей мерчанта)?"))
+		return
+	}
+	if next == ProviderPlatega {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("💳 Провайдер оплаты: Platega. Продления оплачиваются онлайн (СБП/карта), подтверждение автоматическое."))
+	} else {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("💳 Провайдер оплаты: P2P. Продления подтверждаются администратором вручную."))
 	}
 	s.SendAdminMenu(ctx, chatID)
 }

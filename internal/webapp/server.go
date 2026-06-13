@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -23,7 +24,7 @@ const initDataMaxAge = 24 * time.Hour
 // Cabinet is the subset of *payments.Service the mini app user API needs.
 type Cabinet interface {
 	CabinetData(ctx context.Context, telegramID int64) (*payments.WebCabinet, error)
-	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int) error
+	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int) (string, error)
 	CreateGiftRequest(ctx context.Context, telegramID int64, months int) error
 	CreateInviteRequest(ctx context.Context, telegramID int64, username string) error
 }
@@ -37,6 +38,7 @@ type Admin interface {
 	AdminDeleteTariff(ctx context.Context, telegramID int64, months int) error
 	AdminSetRequisites(ctx context.Context, telegramID int64, text string) error
 	AdminSetRequireScreenshot(ctx context.Context, telegramID int64, on bool) error
+	AdminSetPaymentProvider(ctx context.Context, telegramID int64, provider string) error
 	AdminListSquads(ctx context.Context, telegramID int64) ([]payments.WebSquad, error)
 	AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error
 	AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error
@@ -49,18 +51,25 @@ type Admin interface {
 	AdminBroadcast(ctx context.Context, telegramID int64, text string) (*payments.WebBroadcastResult, error)
 }
 
+// Webhooks is the subset of *payments.Service the public (non-initData)
+// payment-gateway callbacks need. Optional: nil disables the webhook routes.
+type Webhooks interface {
+	HandlePlategaWebhook(ctx context.Context, body []byte) error
+}
+
 // Server hosts the Telegram Mini App: embedded static frontend plus the JSON
 // API authenticated via Telegram initData.
 type Server struct {
 	cabinet  Cabinet
 	admin    Admin
+	webhooks Webhooks
 	botToken string
 	logger   *slog.Logger
 	now      func() time.Time
 }
 
-func NewServer(cabinet Cabinet, admin Admin, botToken string, logger *slog.Logger) *Server {
-	return &Server{cabinet: cabinet, admin: admin, botToken: botToken, logger: logger, now: time.Now}
+func NewServer(cabinet Cabinet, admin Admin, webhooks Webhooks, botToken string, logger *slog.Logger) *Server {
+	return &Server{cabinet: cabinet, admin: admin, webhooks: webhooks, botToken: botToken, logger: logger, now: time.Now}
 }
 
 // Handler returns the mini app HTTP handler (static files + /api routes).
@@ -68,6 +77,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	static, _ := fs.Sub(staticFS, "static")
 	mux.Handle("/", http.FileServer(http.FS(static)))
+	// Public payment-gateway callback (no initData auth): Platega verifies the
+	// transaction itself via its API, so the body is trusted only for its id.
+	mux.HandleFunc("POST /platega/callback", s.handlePlategaCallback)
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("POST /api/renew", s.handleRenew)
 	mux.HandleFunc("POST /api/gift", s.handleGift)
@@ -77,6 +89,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/tariff/delete", s.handleAdminDeleteTariff)
 	mux.HandleFunc("POST /api/admin/requisites", s.handleAdminSetRequisites)
 	mux.HandleFunc("POST /api/admin/screenshot-toggle", s.handleAdminSetRequireScreenshot)
+	mux.HandleFunc("POST /api/admin/payment-provider", s.handleAdminSetPaymentProvider)
 	mux.HandleFunc("GET /api/admin/squads", s.handleAdminListSquads)
 	mux.HandleFunc("POST /api/admin/squad", s.handleAdminSetDefaultSquad)
 	mux.HandleFunc("POST /api/admin/broadcast", s.handleAdminBroadcast)
@@ -143,6 +156,29 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (int64, bo
 	return userID, true
 }
 
+// handlePlategaCallback receives Platega's webhook. The body carries only a
+// transaction id; the service re-fetches the real status from Platega's API.
+// It always answers 200 (unless the body is unreadable) so Platega does not
+// retry already-handled or not-yet-confirmed events.
+func (s *Server) handlePlategaCallback(w http.ResponseWriter, r *http.Request) {
+	if s.webhooks == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "platega not configured")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 256*1024))
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "unreadable body")
+		return
+	}
+	if err := s.webhooks.HandlePlategaWebhook(r.Context(), body); err != nil {
+		// Log and still 200: a 5xx would make Platega retry, but our errors here
+		// are transient verification failures the next callback (or the user's
+		// "check payment" button) will resolve.
+		s.logger.Error("webapp: platega webhook failed", "err", err.Error())
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	userID, ok := s.authenticate(w, r)
 	if !ok {
@@ -171,7 +207,7 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months)
+	payURL, err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months)
 	if errors.Is(err, payments.ErrScreenshotRequired) {
 		// Not an error for the user: the bot chat is waiting for the screenshot.
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "awaiting_screenshot"})
@@ -179,6 +215,11 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		s.writeCabinetError(w, "renew", userID, err)
+		return
+	}
+	if payURL != "" {
+		// Platega: hand the mini app a URL to open for online payment.
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "platega", "payment_url": payURL})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -347,6 +388,25 @@ func (s *Server) handleAdminSetRequireScreenshot(w http.ResponseWriter, r *http.
 	}
 	if err := s.admin.AdminSetRequireScreenshot(r.Context(), userID, req.Enabled); err != nil {
 		s.writeAdminError(w, "set screenshot requirement", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminSetPaymentProvider(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Provider string `json:"provider"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetPaymentProvider(r.Context(), userID, req.Provider); err != nil {
+		s.writeAdminError(w, "set payment provider", userID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

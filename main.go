@@ -14,6 +14,7 @@ import (
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/notify"
 	"github.com/Nakedjustice/remnaWake/internal/payments"
+	"github.com/Nakedjustice/remnaWake/internal/platega"
 	"github.com/Nakedjustice/remnaWake/internal/remnawave"
 	"github.com/Nakedjustice/remnaWake/internal/scheduler"
 	"github.com/Nakedjustice/remnaWake/internal/store"
@@ -63,6 +64,12 @@ func main() {
 	defer db.Close()
 
 	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, rwCreator{rwClient}, cfg.Telegram.AdminIDs, cfg.Currency, cfg.DryRun, logger)
+	if cfg.Platega.Enabled() {
+		method, _ := cfg.Platega.MethodCode() // already validated in config.Load
+		plClient := platega.New(cfg.Platega.MerchantID, cfg.Platega.Secret, cfg.HTTP.Timeout)
+		pay.SetPlatega(plategaGateway{plClient}, method, cfg.Platega.Currency, cfg.Platega.ReturnURL)
+		logger.Info("platega gateway configured", "method", cfg.Platega.Method, "currency", cfg.Platega.Currency)
+	}
 	var winbackDays []int
 	if cfg.Winback.Enabled {
 		winbackDays = cfg.Winback.Days
@@ -95,18 +102,24 @@ func main() {
 		if err := bot.SetChatMenuButton(rootCtx, i18n.T("Кабинет"), cfg.WebApp.PublicURL); err != nil {
 			logger.Warn("set chat menu button failed", "err", err.Error())
 		}
-		srv := webapp.NewServer(pay, pay, cfg.Telegram.BotToken, logger)
-		go func() {
-			if err := srv.Run(rootCtx, cfg.WebApp.Listen); err != nil {
-				logger.Error("mini app server failed", "err", err.Error())
-			}
-		}()
 	} else {
 		// The menu button persists on Telegram's side; drop a stale Mini App
 		// button left over from a run with WEBAPP_URL set.
 		if err := bot.ResetChatMenuButton(rootCtx); err != nil {
 			logger.Warn("reset chat menu button failed", "err", err.Error())
 		}
+	}
+
+	// The HTTP server hosts the Mini App and the Platega webhook. Start it when
+	// either is enabled; the /platega/callback route is always registered but
+	// only acts when Platega is configured.
+	if cfg.WebApp.Enabled() || cfg.Platega.Enabled() {
+		srv := webapp.NewServer(pay, pay, pay, cfg.Telegram.BotToken, logger)
+		go func() {
+			if err := srv.Run(rootCtx, cfg.WebApp.Listen); err != nil {
+				logger.Error("http server failed", "err", err.Error())
+			}
+		}()
 	}
 
 	if cfg.RunOnStart {
@@ -361,6 +374,26 @@ type rwRegistrar struct{ c *remnawave.Client }
 
 func (r rwRegistrar) SetTelegramID(ctx context.Context, uuid string, telegramID int64) error {
 	return r.c.SetTelegramID(ctx, uuid, telegramID)
+}
+
+// plategaGateway adapts *platega.Client to payments.PlategaGateway, flattening
+// the Transaction struct into the primitive returns the payments package wants.
+type plategaGateway struct{ c *platega.Client }
+
+func (g plategaGateway) CreateTransaction(ctx context.Context, method int, amount float64, currency, desc, returnURL, payload string) (string, string, error) {
+	tx, err := g.c.CreateTransaction(ctx, method, amount, currency, desc, returnURL, payload)
+	if err != nil {
+		return "", "", err
+	}
+	return tx.ID, tx.Redirect, nil
+}
+
+func (g plategaGateway) GetTransaction(ctx context.Context, id string) (string, error) {
+	tx, err := g.c.GetTransaction(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return tx.Status, nil
 }
 
 func toSubscriber(u remnawave.User) payments.Subscriber {

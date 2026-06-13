@@ -227,6 +227,13 @@ const EN = {
   'Выключено: заявки на оплату отправляются без чека.': 'Disabled: payment requests are sent without a receipt.',
   '🚫 Выключить требование чека': '🚫 Disable receipt requirement',
   '✅ Включить требование чека': '✅ Enable receipt requirement',
+  '💳 Провайдер оплаты': '💳 Payment provider',
+  'Активен Platega: продления оплачиваются онлайн (СБП/карта), подтверждение автоматическое.': 'Platega is active: renewals are paid online (SBP/card) and confirmed automatically.',
+  'Активен P2P: продления подтверждаются администратором вручную.': 'P2P is active: renewals are confirmed by an admin manually.',
+  'Переключить на P2P': 'Switch to P2P',
+  'Переключить на Platega': 'Switch to Platega',
+  '💳 Открываем оплату…': '💳 Opening payment…',
+  'Откроется страница оплаты. После оплаты подписка продлится автоматически.': 'A payment page will open. Your subscription will be renewed automatically after payment.',
   '📢 Рассылка': '📢 Broadcast',
   'Сообщение получат все пользователи с привязанным Telegram.': 'The message will be delivered to all users with a linked Telegram.',
   'Текст сообщения': 'Message text',
@@ -431,6 +438,12 @@ function renderRenew(p, data) {
       if (res.status === 'awaiting_screenshot') {
         pay.textContent = t('📸 Ждём чек в чате с ботом');
         tg.showAlert(t('Осталось прикрепить чек: перейдите в чат с ботом и отправьте фото, скриншот или PDF-файл чека об оплате — после этого заявка уйдёт администратору.'));
+      } else if (res.status === 'platega' && res.payment_url) {
+        pay.textContent = t('💳 Открываем оплату…');
+        tg.openLink(res.payment_url);
+        tg.showAlert(t('Откроется страница оплаты. После оплаты подписка продлится автоматически.'));
+        pay.disabled = false;
+        pay.textContent = t('💳 Оплатить / продлить');
       } else {
         pay.textContent = t('✅ Заявка отправлена');
         tg.showAlert(t('Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.'));
@@ -728,6 +741,21 @@ function renderAdminScreenshotToggle(data) {
   return card;
 }
 
+function renderAdminPaymentProvider(data) {
+  if (!data.platega_configured) return null;
+  const onPlatega = data.payment_provider === 'platega';
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('💳 Провайдер оплаты')));
+  card.appendChild(el('div', 'hint', onPlatega
+    ? t('Активен Platega: продления оплачиваются онлайн (СБП/карта), подтверждение автоматическое.')
+    : t('Активен P2P: продления подтверждаются администратором вручную.')));
+  const toggle = el('button', onPlatega ? 'secondary' : null,
+    onPlatega ? t('Переключить на P2P') : t('Переключить на Platega'));
+  toggle.onclick = () => adminAction('/api/admin/payment-provider', { provider: onPlatega ? 'p2p' : 'platega' });
+  card.appendChild(toggle);
+  return card;
+}
+
 function renderAdminBroadcast() {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, t('📢 Рассылка')));
@@ -930,6 +958,8 @@ function renderAdmin(data) {
   appEl.appendChild(renderAdminTariffs(data));
   appEl.appendChild(renderAdminRequisites(data));
   appEl.appendChild(renderAdminScreenshotToggle(data));
+  const provider = renderAdminPaymentProvider(data);
+  if (provider) appEl.appendChild(provider);
   appEl.appendChild(renderAdminSquad(data));
   appEl.appendChild(renderAdminGifts(data));
   appEl.appendChild(renderAdminBroadcast());

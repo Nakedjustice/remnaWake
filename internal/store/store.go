@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS payment_requests (
   payer_telegram_id INTEGER NOT NULL DEFAULT 0,
   payer_username    TEXT NOT NULL DEFAULT '',
   screenshot_file_id TEXT NOT NULL DEFAULT '',
-  screenshot_is_document INTEGER NOT NULL DEFAULT 0
+  screenshot_is_document INTEGER NOT NULL DEFAULT 0,
+  provider           TEXT NOT NULL DEFAULT 'p2p',
+  provider_txn_id    TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS invite_requests (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,6 +159,16 @@ func ensurePaymentRequestColumns(db *sql.DB) error {
 	}
 	if !existing["screenshot_is_document"] {
 		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN screenshot_is_document INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !existing["provider"] {
+		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN provider TEXT NOT NULL DEFAULT 'p2p'`); err != nil {
+			return err
+		}
+	}
+	if !existing["provider_txn_id"] {
+		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN provider_txn_id TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 	}

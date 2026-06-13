@@ -2,10 +2,15 @@
 #
 # Bootstrap downloader for remnaWake.
 #
-# Downloads the project source onto the current server and launches the
-# interactive installer (install.sh). Designed to be run straight from a URL:
+# Downloads only the interactive installer (install.sh) onto the server and
+# runs it; the installer in turn fetches docker-compose.yml and the bot runs
+# from the pre-built image — the full source repo is never needed. Designed to
+# be run straight from a URL:
 #
 #   curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | bash
+#
+# (Equivalent to piping install.sh directly; this wrapper just adds a tidy
+# install location and a root/permissions pre-check.)
 #
 # Overridable via environment variables:
 #   REPO=owner/name      (default: Nakedjustice/remnaWake)
@@ -52,37 +57,27 @@ if [ "$need_root" -eq 1 ] && [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-# --- Refuse to clobber a non-empty target dir -------------------------------
-if [ -e "$TARGET_DIR" ] && [ -n "$(ls -A "$TARGET_DIR" 2>/dev/null || true)" ]; then
-  err "Directory '$TARGET_DIR' already exists and is not empty."
-  err "Remove it, or re-run with TARGET_DIR=<other-path>."
-  exit 1
-fi
-
-# --- Download: prefer git, fall back to a tarball ---------------------------
-if command -v git >/dev/null 2>&1; then
-  git clone --depth 1 --branch "$BRANCH" "https://github.com/$REPO.git" "$TARGET_DIR"
+# --- Download just the installer (it fetches docker-compose.yml itself) -----
+mkdir -p "$TARGET_DIR"
+url="https://raw.githubusercontent.com/$REPO/$BRANCH/install.sh"
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "$url" -o "$TARGET_DIR/install.sh"
+elif command -v wget >/dev/null 2>&1; then
+  wget -qO "$TARGET_DIR/install.sh" "$url"
 else
-  warn "git not found — downloading a tarball instead."
-  mkdir -p "$TARGET_DIR"
-  url="https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" | tar -xz -C "$TARGET_DIR" --strip-components=1
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO- "$url" | tar -xz -C "$TARGET_DIR" --strip-components=1
-  else
-    err "Need one of: git, curl, or wget to download the project."
-    exit 1
-  fi
+  err "Need curl or wget to download the installer."
+  exit 1
 fi
 
 cd "$TARGET_DIR"
 chmod +x install.sh 2>/dev/null || true
-ok "Downloaded to $(pwd)"
+ok "Downloaded the installer to $(pwd)"
 
 # --- Launch the interactive installer ---------------------------------------
-# When this script is run via `curl ... | bash`, stdin is the pipe, so the
+# Point the installer at the same REPO/BRANCH so it fetches the matching
+# docker-compose.yml. When run via `curl ... | bash`, stdin is the pipe, so the
 # installer's prompts must be reattached to the real terminal via /dev/tty.
+export REMNAWAKE_REPO_RAW="https://raw.githubusercontent.com/$REPO/$BRANCH"
 run_installer() {
   if [ -t 0 ]; then
     bash install.sh
