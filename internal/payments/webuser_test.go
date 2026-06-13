@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 )
 
@@ -158,6 +159,23 @@ func TestCreateInviteRequestErrors(t *testing.T) {
 	}
 	if err := svc.CreateInviteRequest(ctx, 99, "newbie_01"); !errors.Is(err, ErrNotLinked) {
 		t.Fatalf("not linked: err=%v, want ErrNotLinked", err)
+	}
+}
+
+func TestCabinetDataExposesLang(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	ctx := context.Background()
+	svc.finder = linkedFinder(42, "alice")
+
+	i18n.SetLang(i18n.EN)
+	t.Cleanup(func() { i18n.SetLang(i18n.RU) })
+
+	data, err := svc.CabinetData(ctx, 42)
+	if err != nil {
+		t.Fatalf("CabinetData: %v", err)
+	}
+	if data.Lang != "en" {
+		t.Fatalf("Lang = %q, want en", data.Lang)
 	}
 }
 
