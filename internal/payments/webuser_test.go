@@ -179,6 +179,39 @@ func TestCabinetDataExposesLang(t *testing.T) {
 	}
 }
 
+func TestCabinetDataRedeemedGiftExposesRedeemer(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	svc.finder = linkedFinder(42, "alice")
+
+	id, _ := st.CreateGiftCode(ctx, store.GiftCode{
+		Code: "REDEEMED00000001", BuyerTelegramID: 42, BuyerUsername: "alice", Months: 1,
+	})
+	if ok, err := st.IssueGiftCode(ctx, id, svc.now()); err != nil || !ok {
+		t.Fatalf("issue: ok=%v err=%v", ok, err)
+	}
+	if ok, err := st.RedeemGiftCode(ctx, "REDEEMED00000001", 77, "bob", svc.now()); err != nil || !ok {
+		t.Fatalf("redeem: ok=%v err=%v", ok, err)
+	}
+
+	data, err := svc.CabinetData(ctx, 42)
+	if err != nil {
+		t.Fatalf("CabinetData: %v", err)
+	}
+	var g *WebGift
+	for i := range data.Gifts {
+		if data.Gifts[i].Code == "REDEEMED00000001" {
+			g = &data.Gifts[i]
+		}
+	}
+	if g == nil {
+		t.Fatalf("redeemed gift not found in %+v", data.Gifts)
+	}
+	if g.Status != "redeemed" || g.RedeemedUsername != "bob" {
+		t.Fatalf("status=%q redeemed_username=%q, want redeemed/bob", g.Status, g.RedeemedUsername)
+	}
+}
+
 func TestCabinetDataIssuedGiftHasLink(t *testing.T) {
 	svc, _, _, st := newTestService(t)
 	ctx := context.Background()
