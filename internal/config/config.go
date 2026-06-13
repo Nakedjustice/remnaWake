@@ -90,9 +90,9 @@ func (p PlategaConfig) Enabled() bool {
 func (p PlategaConfig) MethodCode() (int, error) {
 	switch strings.ToLower(strings.TrimSpace(p.Method)) {
 	case "", "sbp":
-		return 2, nil // platega.MethodSBP
+		return 2, nil // platega.MethodSBP (СБП/QR)
 	case "card", "cards":
-		return 10, nil // platega.MethodCards
+		return 11, nil // platega.MethodCards (карточный эквайринг)
 	default:
 		return 0, fmt.Errorf("invalid PLATEGA_METHOD: %q (supported: sbp, card)", p.Method)
 	}

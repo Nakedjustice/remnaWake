@@ -245,8 +245,8 @@ func TestLoadPlategaCardMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if code, err := cfg.Platega.MethodCode(); err != nil || code != 10 {
-		t.Fatalf("MethodCode = %d, %v; want 10 (cards), nil", code, err)
+	if code, err := cfg.Platega.MethodCode(); err != nil || code != 11 {
+		t.Fatalf("MethodCode = %d, %v; want 11 (cards), nil", code, err)
 	}
 }
 

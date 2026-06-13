@@ -20,10 +20,11 @@ import (
 // the client at an httptest server.
 var BaseURL = "https://app.platega.io"
 
-// Payment method codes accepted by /transaction/process.
+// Payment method codes accepted by /transaction/process (per docs.platega.io
+// PaymentMethodInt: 2=СБП/QR, 3=ЕРИП, 11=карточный эквайринг, 12=межд., 13=крипто).
 const (
 	MethodSBP   = 2
-	MethodCards = 10
+	MethodCards = 11
 )
 
 // Client talks to the Platega API with a fixed merchant id / secret.
