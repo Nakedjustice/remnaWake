@@ -331,9 +331,10 @@ send a renewal request straight to the admin.
 
 The Mini App has a **language selector** (🇷🇺 Russian / 🇬🇧 English) in the top
 right corner. It defaults to the user's Telegram language (falling back to
-`BOT_LANG`) and remembers an explicit choice in the browser. The switch only
-affects the Mini App interface; server-provided labels (subscription status,
-prices) follow `BOT_LANG`.
+`BOT_LANG`) and remembers an explicit choice in the browser. The switch
+translates the whole Mini App interface, including subscription and gift
+statuses. Free-form admin text (payment requisites) is shown exactly as the
+admin entered it.
 
 Requirements:
 

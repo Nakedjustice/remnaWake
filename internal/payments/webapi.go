@@ -43,12 +43,13 @@ type WebTariff struct {
 
 // WebGift is one bought gift code as shown in the mini app.
 type WebGift struct {
-	Code        string `json:"code"`
-	Months      int    `json:"months"`
-	Status      string `json:"status"`
-	StatusLabel string `json:"status_label"`
-	CreatedAt   string `json:"created_at"`     // DD.MM.YYYY
-	Link        string `json:"link,omitempty"` // t.me redemption deep link, issued gifts only
+	Code             string `json:"code"`
+	Months           int    `json:"months"`
+	Status           string `json:"status"`
+	StatusLabel      string `json:"status_label"`
+	RedeemedUsername string `json:"redeemed_username,omitempty"` // who activated a redeemed gift
+	CreatedAt        string `json:"created_at"`                  // DD.MM.YYYY
+	Link             string `json:"link,omitempty"`              // t.me redemption deep link, issued gifts only
 }
 
 // WebInvites is the invite-requests summary shown in the mini app.
@@ -129,11 +130,12 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 	for i := range gifts {
 		g := &gifts[i]
 		wg := WebGift{
-			Code:        g.Code,
-			Months:      g.Months,
-			Status:      g.Status,
-			StatusLabel: giftStatusLabel(g),
-			CreatedAt:   g.CreatedAt.Format("02.01.2006"),
+			Code:             g.Code,
+			Months:           g.Months,
+			Status:           g.Status,
+			StatusLabel:      giftStatusLabel(g),
+			RedeemedUsername: g.RedeemedUsername,
+			CreatedAt:        g.CreatedAt.Format("02.01.2006"),
 		}
 		if g.Status == "issued" {
 			wg.Link = s.giftDeepLink(g.Code)

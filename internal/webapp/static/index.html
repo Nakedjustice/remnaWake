@@ -155,6 +155,17 @@ const EN = {
   'Статус': 'Status',
   'Действует до': 'Valid until',
   'осталось {n} {word}': '{n} {word} left',
+  // Profile statuses (mirror the server's subStatusLabel).
+  '✅ Активна': '✅ Active',
+  '⛔ Истекла': '⛔ Expired',
+  '🚫 Отключена': '🚫 Disabled',
+  '⚠️ Превышен лимит трафика': '⚠️ Traffic limit exceeded',
+  // Per-item gift statuses (mirror the server's giftStatusLabel).
+  '⏳ Ожидает подтверждения оплаты': '⏳ Awaiting payment confirmation',
+  '📨 Выдан, ожидает активации': '📨 Issued, awaiting redemption',
+  '✅ Активирован': '✅ Redeemed',
+  '❌ Отклонён': '❌ Rejected',
+  '🚫 Отозван': '🚫 Revoked',
   '📋 Скопировать ссылку': '📋 Copy link',
   '✅ Скопировано': '✅ Copied',
   'Не удалось скопировать, выделите ссылку вручную.': 'Could not copy, please select the link manually.',
@@ -332,10 +343,35 @@ function daysWord(n) {
   }
 }
 
+// statusLabel and giftStatusLabel mirror the server's subStatusLabel /
+// giftStatusLabel so the labels follow the selected language rather than
+// BOT_LANG. The server still sends *_label fields (in BOT_LANG); we build
+// them from the raw status here instead.
+function statusLabel(status) {
+  switch (status) {
+    case 'ACTIVE': return t('✅ Активна');
+    case 'EXPIRED': return t('⛔ Истекла');
+    case 'DISABLED': return t('🚫 Отключена');
+    case 'LIMITED': return t('⚠️ Превышен лимит трафика');
+  }
+  return status || '—';
+}
+
+function giftStatusLabel(g) {
+  switch (g.status) {
+    case 'pending': return t('⏳ Ожидает подтверждения оплаты');
+    case 'issued': return t('📨 Выдан, ожидает активации');
+    case 'redeemed': return t('✅ Активирован') + (g.redeemed_username ? ` (${g.redeemed_username})` : '');
+    case 'rejected': return t('❌ Отклонён');
+    case 'revoked': return t('🚫 Отозван');
+  }
+  return g.status;
+}
+
 function renderProfile(p, data) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, '📡 ' + p.username));
-  const st = row(card, t('Статус'), p.status_label);
+  const st = row(card, t('Статус'), statusLabel(p.status));
   st.querySelector('.v').classList.add('badge');
   if (p.expire_at) {
     let v = p.expire_at;
@@ -510,7 +546,7 @@ function renderMyGifts(data) {
     list.forEach(g => {
       const d = el('div', 'gift');
       d.appendChild(el('div', 'code', `${g.code} — ${t('{months} мес.', { months: g.months })} (${g.created_at})`));
-      d.appendChild(el('div', 'st', g.status_label));
+      d.appendChild(el('div', 'st', giftStatusLabel(g)));
       if (g.link) {
         const a = el('a', 'sub-link', g.link);
         a.href = g.link;
