@@ -240,6 +240,48 @@ v_platega_method() {
   esac
 }
 
+v_domain() {
+  # A bare hostname (no scheme, no path), e.g. bot.example.com.
+  if printf '%s' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$'; then
+    return 0
+  fi
+  err "  → Enter a bare domain like bot.example.com (no http://, no path)."
+  return 1
+}
+
+# --- Alongside-Remnawave helpers --------------------------------------------
+# Big, can't-miss warning: the Caddy/network auto-config assumes a MANUAL
+# Remnawave install with the documented layout.
+print_alongside_warning() {
+  printf '\n' >&2
+  warn "════════════════════════════════════════════════════════════════════════"
+  warn "  ⚠  AUTO-CONFIG SUPPORTS *MANUAL* REMNAWAVE INSTALLS ONLY"
+  warn "────────────────────────────────────────────────────────────────────────"
+  warn "  It assumes the documented layout: an external docker network named"
+  warn "  'remnawave-network' and a Caddyfile at /opt/remnawave/caddy/Caddyfile."
+  warn ""
+  warn "  Panels set up by one-click installer SCRIPTS (xxphantom, DigneZzZ, …)"
+  warn "  often use a different network name, Caddyfile path, or even nginx —"
+  warn "  the steps below may NOT match your setup."
+  warn ""
+  warn "  Verify the network name (docker network ls) and your Caddyfile path"
+  warn "  before relying on this, or wire the reverse proxy by hand."
+  warn "════════════════════════════════════════════════════════════════════════"
+}
+
+# Show the manual Caddy site block + reload steps (used when we can't or
+# shouldn't edit the Caddyfile automatically). Uses $caddy_host / $CADDYFILE.
+print_caddy_manual() {
+  warn "Add this site to your Remnawave Caddyfile (next to the panel entries):"
+  warn ""
+  warn "    https://${caddy_host} {"
+  warn "        reverse_proxy remnaWake-bot:8080"
+  warn "    }"
+  warn ""
+  warn "Then make sure ${caddy_host} resolves to this server and reload Caddy:"
+  warn "  cd \"$(dirname "$CADDYFILE")\" && docker compose restart caddy"
+}
+
 # --- Banner -----------------------------------------------------------------
 cat >&2 <<EOF
 ${BOLD}remnaWake installer${RESET}
@@ -305,6 +347,28 @@ if ask_yes_no "Configure Platega online payments now?" "n"; then
   ask PLATEGA_CURRENCY    "Currency code sent to Platega (ISO, e.g. RUB)" "RUB" ""
   ask PLATEGA_RETURN_URL  "Return URL after payment (e.g. your bot link)" "https://t.me" v_url
   PLATEGA_RETURN_URL="${PLATEGA_RETURN_URL%/}"
+fi
+
+# --- Reverse proxy (only when the web server is actually used) ---------------
+# The Mini App and the Platega webhook both need the bot's HTTP server reachable
+# over HTTPS. Ask the topology so we can wire docker-compose.yml (and, for the
+# alongside case, the Remnawave Caddyfile) automatically.
+ALONGSIDE_REMNAWAVE="no"
+caddy_host=""
+if [ -n "$WEBAPP_URL" ] || [ -n "$PLATEGA_MERCHANT_ID" ]; then
+  printf '\n' >&2
+  info "── Reverse proxy ───────────────────────────────────────────"
+  warn "The Mini App / Platega webhook need the bot's web server reachable over HTTPS."
+  if ask_yes_no "Is this bot on the SAME server as your Remnawave panel, behind its containerised Caddy?" "n"; then
+    ALONGSIDE_REMNAWAVE="yes"
+    print_alongside_warning
+    if [ -n "$WEBAPP_URL" ]; then
+      caddy_host="$(printf '%s' "$WEBAPP_URL" | sed -E 's#^https?://##; s#/.*$##')"
+    else
+      printf '\n' >&2
+      ask caddy_host "Public domain for the bot (e.g. bot.example.com)" "" v_domain
+    fi
+  fi
 fi
 
 # --- Defaults for the rest (overridable via advanced section) ---------------
@@ -397,6 +461,59 @@ if [ ! -f "$COMPOSE_FILE" ]; then
   ok "Wrote docker-compose.yml"
 fi
 
+# --- Wire the reverse proxy into docker-compose.yml -------------------------
+if [ "$ALONGSIDE_REMNAWAVE" = "yes" ]; then
+  # Join Remnawave's external network so its Caddy reaches remnaWake-bot:8080;
+  # do NOT publish the port (inside the Caddy container 127.0.0.1 is Caddy).
+  sed -i \
+    -e 's|^    # networks:|    networks:|' \
+    -e 's|^    #   - remnawave-network|      - remnawave-network|' \
+    -e 's|^# networks:|networks:|' \
+    -e 's|^#   remnawave-network:|  remnawave-network:|' \
+    -e 's|^#     name: remnawave-network|    name: remnawave-network|' \
+    -e 's|^#     external: true|    external: true|' \
+    "$COMPOSE_FILE"
+  if grep -q '^    networks:' "$COMPOSE_FILE" && grep -q '^  remnawave-network:' "$COMPOSE_FILE"; then
+    ok "docker-compose.yml: joined the external 'remnawave-network'."
+  else
+    warn "Could not auto-edit docker-compose.yml — uncomment the two 'networks:' blocks by hand"
+    warn "(see README, section «Running alongside remnawave»)."
+  fi
+elif [ -n "$WEBAPP_URL" ] || [ -n "$PLATEGA_MERCHANT_ID" ]; then
+  # Host-level proxy: publish the port on loopback for nginx / standalone Caddy.
+  sed -i \
+    -e 's|^    # ports:|    ports:|' \
+    -e 's|^    #   - "127.0.0.1:8080:8080"|      - "127.0.0.1:8080:8080"|' \
+    "$COMPOSE_FILE"
+  if grep -q '^    ports:' "$COMPOSE_FILE"; then
+    ok "docker-compose.yml: published 127.0.0.1:8080 for your reverse proxy."
+  else
+    warn "Could not auto-edit docker-compose.yml — uncomment the 'ports:' block by hand."
+  fi
+fi
+
+# --- Wire the bot site into the Remnawave Caddyfile (alongside case) ---------
+if [ "$ALONGSIDE_REMNAWAVE" = "yes" ] && [ -n "$caddy_host" ]; then
+  CADDYFILE="${REMNAWAVE_CADDYFILE:-/opt/remnawave/caddy/Caddyfile}"
+  if [ -f "$CADDYFILE" ] && [ -w "$CADDYFILE" ]; then
+    if grep -q 'reverse_proxy remnaWake-bot:8080' "$CADDYFILE"; then
+      ok "Caddyfile already proxies remnaWake-bot:8080 — left unchanged."
+    elif ask_yes_no "Append a Caddy site for $caddy_host to $CADDYFILE?" "y"; then
+      cp "$CADDYFILE" "$CADDYFILE.bak.$(date +%Y%m%d%H%M%S)"
+      printf '\nhttps://%s {\n    reverse_proxy remnaWake-bot:8080\n}\n' "$caddy_host" >>"$CADDYFILE"
+      ok "Added the bot site to $CADDYFILE (backup kept)."
+      warn "Make sure $caddy_host resolves to this server, then reload Caddy:"
+      warn "  cd \"$(dirname "$CADDYFILE")\" && docker compose restart caddy"
+    else
+      print_caddy_manual
+    fi
+  else
+    warn "Remnawave Caddyfile not found or not writable at $CADDYFILE"
+    warn "(override the path with REMNAWAVE_CADDYFILE=/path/to/Caddyfile)."
+    print_caddy_manual
+  fi
+fi
+
 # --- Summary (secrets masked) -----------------------------------------------
 mask() { local s="$1"; [ "${#s}" -le 8 ] && { printf '****'; return; }; printf '%s…%s' "${s:0:4}" "${s: -4}"; }
 platega_summary="disabled (P2P only)"
@@ -417,22 +534,30 @@ ${BOLD}Summary${RESET}
 
 EOF
 
-if [ -n "$WEBAPP_URL" ]; then
-  warn "Mini App checklist:"
-  warn "  1. Uncomment the 'ports' section in docker-compose.yml (exposes ${WEBAPP_LISTEN#:} on 127.0.0.1)."
-  warn "  2. Point your HTTPS reverse proxy at it: $WEBAPP_URL → 127.0.0.1:${WEBAPP_LISTEN#:}"
-  warn "     (nginx and Caddy templates are in the README, section «Telegram Mini App»)."
+# --- Reverse-proxy / Platega checklist --------------------------------------
+if [ -n "$WEBAPP_URL" ] || [ -n "$PLATEGA_MERCHANT_ID" ]; then
+  webhook_host="${caddy_host:-$(printf '%s' "$WEBAPP_URL" | sed -E 's#^https?://##; s#/.*$##')}"
+  [ -z "$webhook_host" ] && webhook_host="<your-public-host>"
+  if [ "$ALONGSIDE_REMNAWAVE" = "yes" ]; then
+    warn "Reverse proxy (alongside Remnawave / containerised Caddy):"
+    warn "  • docker-compose.yml now joins the external 'remnawave-network' — confirm"
+    warn "    that is the network your Remnawave Caddy actually uses:  docker network ls"
+    warn "  • Caddy site $webhook_host → remnaWake-bot:8080 (added above, or shown to add by hand)."
+    warn "  • Make sure $webhook_host resolves to this server in DNS before reloading Caddy."
+  else
+    warn "Reverse proxy (host-level nginx / standalone Caddy):"
+    warn "  • docker-compose.yml now publishes 127.0.0.1:8080."
+    warn "  • Point your HTTPS reverse proxy at it: ${WEBAPP_URL:-https://$webhook_host} → 127.0.0.1:8080"
+    warn "    (nginx and Caddy templates are in the README, section «Telegram Mini App»)."
+  fi
+  if [ -n "$PLATEGA_MERCHANT_ID" ]; then
+    warn "  • Platega: set the dashboard notification URL to https://$webhook_host/platega/callback"
+  fi
 fi
 
 if [ -n "$PLATEGA_MERCHANT_ID" ]; then
-  warn "Platega checklist:"
-  warn "  1. The webhook is served by the same HTTP server as the Mini App: uncomment the"
-  warn "     'ports' section in docker-compose.yml (exposes ${WEBAPP_LISTEN#:} on 127.0.0.1)"
-  warn "     and put an HTTPS reverse proxy in front of it."
-  warn "  2. In the Platega dashboard set the notification (webhook) URL to:"
-  warn "       https://<your-public-host>/platega/callback"
-  warn "  3. Switch the active provider to Platega from the bot /admin menu or the"
-  warn "     Mini App admin panel (the bot starts on P2P until you do)."
+  warn "Platega: the bot starts on P2P — switch the active provider to Platega from the"
+  warn "  bot /admin menu or the Mini App admin panel."
 fi
 
 # --- Detect Docker Compose --------------------------------------------------
