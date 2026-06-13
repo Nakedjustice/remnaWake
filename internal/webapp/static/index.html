@@ -23,7 +23,9 @@
     background: var(--secondary-bg);
     color: var(--text);
   }
+  #header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   h1 { font-size: 20px; margin: 8px 4px 16px; }
+  #lang { width: auto; margin: 0; padding: 6px 8px; font-size: 13px; flex-shrink: 0; border-radius: 10px; }
   .card {
     background: var(--bg);
     border-radius: 14px;
@@ -118,7 +120,13 @@
 </style>
 </head>
 <body>
-<h1>👤 Личный кабинет</h1>
+<div id="header">
+  <h1 id="title">👤 Личный кабинет</h1>
+  <select id="lang" aria-label="Language">
+    <option value="ru">Русский</option>
+    <option value="en">English</option>
+  </select>
+</div>
 <div id="status">Загрузка…</div>
 <div id="app" hidden></div>
 
@@ -129,6 +137,160 @@ tg.expand();
 
 const statusEl = document.getElementById('status');
 const appEl = document.getElementById('app');
+const titleEl = document.getElementById('title');
+const langSel = document.getElementById('lang');
+
+// --- Client-side i18n. Mirrors the gettext-style server package: the Russian
+// source string doubles as the lookup key, EN holds the English translation,
+// and {placeholders} are substituted via t(key, params). Server-sent labels
+// (status_label, price_label, gift/requisites) stay in BOT_LANG and are not
+// translated here. ---
+const LANG_KEY = 'remnawake_lang';
+const EN = {
+  'Личный кабинет': 'My account',
+  '👤 Личный кабинет': '👤 My account',
+  'Загрузка…': 'Loading…',
+  'Откройте это приложение из Telegram.': 'Open this app from Telegram.',
+  'Ошибка {n}': 'Error {n}',
+  'Статус': 'Status',
+  'Действует до': 'Valid until',
+  'осталось {n} {word}': '{n} {word} left',
+  '📋 Скопировать ссылку': '📋 Copy link',
+  '✅ Скопировано': '✅ Copied',
+  'Не удалось скопировать, выделите ссылку вручную.': 'Could not copy, please select the link manually.',
+  'Продление — выберите период:': 'Renewal — choose a period:',
+  '{months} мес.': '{months} mo.',
+  '{months} мес. — {price}': '{months} mo. — {price}',
+  '💳 Оплатить / продлить': '💳 Pay / renew',
+  'Отправка…': 'Sending…',
+  '📸 Ждём чек в чате с ботом': '📸 Waiting for the receipt in the bot chat',
+  'Осталось прикрепить чек: перейдите в чат с ботом и отправьте фото, скриншот или PDF-файл чека об оплате — после этого заявка уйдёт администратору.': 'One step left: open the chat with the bot and send a photo, screenshot or PDF of the payment receipt — then your request will go to the administrator.',
+  '✅ Заявка отправлена': '✅ Request sent',
+  'Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.': 'Your request has been sent to the administrator. Once paid and confirmed, your subscription will be extended.',
+  '🎁 Подарить подписку': '🎁 Gift a subscription',
+  'Выберите период. После подтверждения оплаты администратором вы получите код и ссылку для подарка.': 'Choose a period. Once the administrator confirms payment, you will receive a gift code and link.',
+  '🎁 Отправить заявку': '🎁 Send request',
+  'Оформить подарочную подписку на {months} мес.?': 'Order a gift subscription for {months} mo.?',
+  'Заявка отправлена администратору. После подтверждения оплаты вы получите код и ссылку.': 'Your request has been sent to the administrator. Once payment is confirmed, you will receive the code and link.',
+  '👥 Пригласить пользователя': '👥 Invite a user',
+  'Имя нового пользователя: буквы, цифры и «_», от 3 до 32 символов. Заявку рассмотрит администратор.': 'New user name: letters, digits and "_", 3 to 32 characters. The administrator will review the request.',
+  'Имя пользователя': 'Username',
+  '👥 Отправить заявку': '👥 Send request',
+  'Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов.': 'Invalid name: only letters, digits and "_", 3 to 32 characters.',
+  'Отправить заявку на пользователя «{name}»?': 'Send a request for user "{name}"?',
+  'Заявка отправлена администратору.': 'Your request has been sent to the administrator.',
+  '⏳ Ожидают оплаты': '⏳ Awaiting payment',
+  '📨 Выданные': '📨 Issued',
+  '✅ Активированные': '✅ Redeemed',
+  '❌ Отклонённые': '❌ Rejected',
+  '🚫 Отозванные': '🚫 Revoked',
+  '📦 Мои подарки': '📦 My gifts',
+  'Аккаунт не привязан': 'Account not linked',
+  'Ваш Telegram пока не привязан к профилю подписки. Привяжите аккаунт в чате с ботом командой /register — и здесь появятся статус, дата окончания и ссылка.': 'Your Telegram is not linked to a subscription profile yet. Link your account in the bot chat with the /register command — then status, expiry date and link will appear here.',
+  '🔗 Привязать в чате': '🔗 Link in chat',
+  '⚙️ Администрирование': '⚙️ Administration',
+  'Тарифы, реквизиты, подарочные коды и заявки на оплату.': 'Tariffs, payment details, gift codes and payment requests.',
+  '⚙️ Открыть админ-панель': '⚙️ Open admin panel',
+  '💳 Реквизиты для оплаты': '💳 Payment details',
+  '👥 Приглашения': '👥 Invitations',
+  'Всего': 'Total',
+  '{n} на рассмотрении': '{n} pending',
+  'Действия в чате': 'Chat actions',
+  'Привязка профиля и активация подарочных кодов оформляются в диалоге с ботом.': 'Linking a profile and redeeming gift codes are done in the chat with the bot.',
+  '💬 Вернуться в чат': '💬 Back to chat',
+  '📋 Тарифы': '📋 Tariffs',
+  '🗑 Удалить': '🗑 Delete',
+  'Удалить тариф на {months} мес.?': 'Delete the {months} mo. tariff?',
+  'Тарифы не заданы.': 'No tariffs configured.',
+  'Добавить или обновить тариф:': 'Add or update a tariff:',
+  'Месяцев': 'Months',
+  'Цена': 'Price',
+  '💾 Сохранить тариф': '💾 Save tariff',
+  'Введите количество месяцев и цену (целые ≥ 1).': 'Enter the number of months and a price (integers ≥ 1).',
+  '💳 Реквизиты': '💳 Payment details',
+  'Текст реквизитов': 'Payment details text',
+  '💾 Сохранить реквизиты': '💾 Save details',
+  'Текст реквизитов не может быть пустым.': 'Payment details text cannot be empty.',
+  '📸 Чек об оплате': '📸 Payment receipt',
+  'Включено: перед отправкой заявки пользователь обязан прикрепить чек (фото, скриншот или PDF-файл), админы получают заявку вместе с чеком в Telegram.': 'Enabled: before sending a request the user must attach a receipt (photo, screenshot or PDF), and admins receive the request together with the receipt in Telegram.',
+  'Выключено: заявки на оплату отправляются без чека.': 'Disabled: payment requests are sent without a receipt.',
+  '🚫 Выключить требование чека': '🚫 Disable receipt requirement',
+  '✅ Включить требование чека': '✅ Enable receipt requirement',
+  '📢 Рассылка': '📢 Broadcast',
+  'Сообщение получат все пользователи с привязанным Telegram.': 'The message will be delivered to all users with a linked Telegram.',
+  'Текст сообщения': 'Message text',
+  '📢 Отправить всем': '📢 Send to all',
+  'Текст рассылки не может быть пустым.': 'Broadcast text cannot be empty.',
+  'Отправить сообщение всем пользователям?': 'Send the message to all users?',
+  'Рассылка завершена: отправлено {sent}, ошибок {failed}.': 'Broadcast finished: sent {sent}, failed {failed}.',
+  '🎁 Активные подарочные коды': '🎁 Active gift codes',
+  'Активных подарочных кодов нет.': 'No active gift codes.',
+  'от {buyer} ({date})': 'from {buyer} ({date})',
+  '🚫 Отозвать': '🚫 Revoke',
+  'Отозвать код {code}?': 'Revoke code {code}?',
+  '💰 Заявки на оплату': '💰 Payment requests',
+  'Ожидающих заявок нет.': 'No pending requests.',
+  'заявка от {date}': 'request from {date}',
+  ', подписка до {date}': ', subscription until {date}',
+  ' · чек отправлен в чат админам': ' · receipt sent to the admin chat',
+  'Подтвердить оплату «{username}» на {months} мес.?': 'Confirm payment for "{username}" for {months} mo.?',
+  'Отклонить заявку «{username}»?': 'Reject the request for "{username}"?',
+  '🎁 Заявки на подарки': '🎁 Gift requests',
+  'код {code}, заявка от {date}': 'code {code}, request from {date}',
+  'Подтвердить оплату подарка от «{buyer}» на {months} мес.?': 'Confirm gift payment from "{buyer}" for {months} mo.?',
+  'Отклонить заявку на подарок от «{buyer}»?': 'Reject the gift request from "{buyer}"?',
+  '👤 Заявки на приглашения': '👤 Invite requests',
+  'от {inviter}, заявка от {date}': 'from {inviter}, request from {date}',
+  'Создать пользователя «{username}» по заявке от «{inviter}»?': 'Create user "{username}" from the request by "{inviter}"?',
+  'Отклонить заявку на пользователя «{username}»?': 'Reject the request for user "{username}"?',
+  '🛡 Сквад по умолчанию': '🛡 Default squad',
+  'Новые пользователи добавляются в сквад «{name}».': 'New users are added to the "{name}" squad.',
+  'Сквад не выбран: используется сквад «Default-Squad», если он есть в панели.': 'No squad selected: the "Default-Squad" is used if it exists in the panel.',
+  '💾 Сохранить сквад': '💾 Save squad',
+  'Выберите сквад.': 'Select a squad.',
+  'В панели нет сквадов': 'No squads in the panel',
+  '— не выбран —': '— none —',
+  'Ошибка загрузки сквадов': 'Failed to load squads',
+  '⚙️ Админ-панель': '⚙️ Admin panel',
+  '← Назад в кабинет': '← Back to account',
+};
+
+function resolveLang(serverLang) {
+  const saved = localStorage.getItem(LANG_KEY);
+  if (saved === 'ru' || saved === 'en') return saved;
+  const tgLang = ((tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.language_code) || '').toLowerCase();
+  if (tgLang.startsWith('ru')) return 'ru';
+  if (tgLang.startsWith('en')) return 'en';
+  if (serverLang === 'ru' || serverLang === 'en') return serverLang;
+  return 'ru';
+}
+
+let LANG = resolveLang(null);
+
+// t translates the Russian source string into the current language and
+// substitutes {placeholders} with params. split/join avoids the special
+// handling of `$` that String.replaceAll would apply to replacements.
+function t(key, params) {
+  let s = (LANG === 'en' && EN[key] !== undefined) ? EN[key] : key;
+  if (params) for (const k in params) s = s.split('{' + k + '}').join(params[k]);
+  return s;
+}
+
+function applyStaticText() {
+  document.documentElement.lang = LANG;
+  document.title = t('Личный кабинет');
+  titleEl.textContent = t('👤 Личный кабинет');
+}
+
+// currentRender re-runs the active view after a language switch.
+let currentRender = showCabinet;
+langSel.value = LANG;
+langSel.onchange = () => {
+  LANG = langSel.value === 'en' ? 'en' : 'ru';
+  localStorage.setItem(LANG_KEY, LANG);
+  applyStaticText();
+  currentRender();
+};
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -155,11 +317,12 @@ async function api(path, opts = {}) {
     },
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || ('Ошибка ' + res.status));
+  if (!res.ok) throw new Error(body.error || t('Ошибка {n}', { n: res.status }));
   return body;
 }
 
 function daysWord(n) {
+  if (LANG === 'en') return n === 1 ? 'day' : 'days';
   const last = n % 100;
   if (last >= 11 && last <= 14) return 'дней';
   switch (n % 10) {
@@ -172,25 +335,25 @@ function daysWord(n) {
 function renderProfile(p, data) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, '📡 ' + p.username));
-  const st = row(card, 'Статус', p.status_label);
+  const st = row(card, t('Статус'), p.status_label);
   st.querySelector('.v').classList.add('badge');
   if (p.expire_at) {
     let v = p.expire_at;
-    if (p.days_left > 0) v += ` (осталось ${p.days_left} ${daysWord(p.days_left)})`;
-    row(card, 'Действует до', v);
+    if (p.days_left > 0) v += ` (${t('осталось {n} {word}', { n: p.days_left, word: daysWord(p.days_left) })})`;
+    row(card, t('Действует до'), v);
   }
   if (p.subscription_url) {
     const a = el('a', 'sub-link', p.subscription_url);
     a.href = p.subscription_url;
     a.target = '_blank';
     card.appendChild(a);
-    const copy = el('button', 'secondary', '📋 Скопировать ссылку');
+    const copy = el('button', 'secondary', t('📋 Скопировать ссылку'));
     copy.onclick = async () => {
       try {
         await navigator.clipboard.writeText(p.subscription_url);
-        copy.textContent = '✅ Скопировано';
-        setTimeout(() => copy.textContent = '📋 Скопировать ссылку', 1500);
-      } catch { tg.showAlert('Не удалось скопировать, выделите ссылку вручную.'); }
+        copy.textContent = t('✅ Скопировано');
+        setTimeout(() => copy.textContent = t('📋 Скопировать ссылку'), 1500);
+      } catch { tg.showAlert(t('Не удалось скопировать, выделите ссылку вручную.')); }
     };
     card.appendChild(copy);
   }
@@ -203,12 +366,12 @@ function renderRenew(p, data) {
   let months = 0;
   const tariffs = data.tariffs || [];
   if (tariffs.length) {
-    wrap.appendChild(el('div', 'hint', 'Продление — выберите период:'));
+    wrap.appendChild(el('div', 'hint', t('Продление — выберите период:')));
     const grid = el('div', 'tariffs');
-    tariffs.forEach(t => {
-      const b = el('button', 'secondary', `${t.months} мес. — ${t.price_label}`);
+    tariffs.forEach(tf => {
+      const b = el('button', 'secondary', t('{months} мес. — {price}', { months: tf.months, price: tf.price_label }));
       b.onclick = () => {
-        months = t.months;
+        months = tf.months;
         grid.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
         b.classList.add('selected');
         pay.disabled = false;
@@ -219,26 +382,26 @@ function renderRenew(p, data) {
   } else {
     months = 1;
   }
-  const pay = el('button', null, '💳 Оплатить / продлить');
+  const pay = el('button', null, t('💳 Оплатить / продлить'));
   pay.disabled = tariffs.length > 0;
   pay.onclick = async () => {
     pay.disabled = true;
-    pay.textContent = 'Отправка…';
+    pay.textContent = t('Отправка…');
     try {
       const res = await api('/api/renew', {
         method: 'POST',
         body: JSON.stringify({ remnawave_id: p.remnawave_id, months }),
       });
       if (res.status === 'awaiting_screenshot') {
-        pay.textContent = '📸 Ждём чек в чате с ботом';
-        tg.showAlert('Осталось прикрепить чек: перейдите в чат с ботом и отправьте фото, скриншот или PDF-файл чека об оплате — после этого заявка уйдёт администратору.');
+        pay.textContent = t('📸 Ждём чек в чате с ботом');
+        tg.showAlert(t('Осталось прикрепить чек: перейдите в чат с ботом и отправьте фото, скриншот или PDF-файл чека об оплате — после этого заявка уйдёт администратору.'));
       } else {
-        pay.textContent = '✅ Заявка отправлена';
-        tg.showAlert('Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.');
+        pay.textContent = t('✅ Заявка отправлена');
+        tg.showAlert(t('Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.'));
       }
     } catch (e) {
       pay.disabled = false;
-      pay.textContent = '💳 Оплатить / продлить';
+      pay.textContent = t('💳 Оплатить / продлить');
       tg.showAlert(e.message);
     }
   };
@@ -250,17 +413,19 @@ function renderRenew(p, data) {
 // to the admins, the code and link arrive after payment confirmation.
 function renderGiftBuy(data) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '🎁 Подарить подписку'));
+  card.appendChild(el('h2', null, t('🎁 Подарить подписку')));
   card.appendChild(el('div', 'hint',
-    'Выберите период. После подтверждения оплаты администратором вы получите код и ссылку для подарка.'));
+    t('Выберите период. После подтверждения оплаты администратором вы получите код и ссылку для подарка.')));
   let months = 0;
   const tariffs = (data.tariffs || []).length ? data.tariffs : [{ months: 1, price: 0 }];
   const grid = el('div', 'tariffs');
-  tariffs.forEach(t => {
-    const label = t.price > 0 ? `${t.months} мес. — ${t.price_label}` : `${t.months} мес.`;
+  tariffs.forEach(tf => {
+    const label = tf.price > 0
+      ? t('{months} мес. — {price}', { months: tf.months, price: tf.price_label })
+      : t('{months} мес.', { months: tf.months });
     const b = el('button', 'secondary', label);
     b.onclick = () => {
-      months = t.months;
+      months = tf.months;
       grid.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
       b.classList.add('selected');
       send.disabled = false;
@@ -268,20 +433,20 @@ function renderGiftBuy(data) {
     grid.appendChild(b);
   });
   card.appendChild(grid);
-  const send = el('button', null, '🎁 Отправить заявку');
+  const send = el('button', null, t('🎁 Отправить заявку'));
   send.disabled = true;
   send.onclick = async () => {
-    if (!(await confirmDialog(`Оформить подарочную подписку на ${months} мес.?`))) return;
+    if (!(await confirmDialog(t('Оформить подарочную подписку на {months} мес.?', { months })))) return;
     send.disabled = true;
-    send.textContent = 'Отправка…';
+    send.textContent = t('Отправка…');
     try {
       await api('/api/gift', { method: 'POST', body: JSON.stringify({ months }) });
-      tg.showAlert('Заявка отправлена администратору. После подтверждения оплаты вы получите код и ссылку.');
+      tg.showAlert(t('Заявка отправлена администратору. После подтверждения оплаты вы получите код и ссылку.'));
       await showCabinet();
     } catch (e) {
       tg.showAlert(e.message);
       send.disabled = false;
-      send.textContent = '🎁 Отправить заявку';
+      send.textContent = t('🎁 Отправить заявку');
     }
   };
   card.appendChild(send);
@@ -292,30 +457,30 @@ function renderGiftBuy(data) {
 // goes to the admins for approval.
 function renderInvite() {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '👥 Пригласить пользователя'));
+  card.appendChild(el('h2', null, t('👥 Пригласить пользователя')));
   card.appendChild(el('div', 'hint',
-    'Имя нового пользователя: буквы, цифры и «_», от 3 до 32 символов. Заявку рассмотрит администратор.'));
-  const input = Object.assign(el('input'), { placeholder: 'Имя пользователя' });
+    t('Имя нового пользователя: буквы, цифры и «_», от 3 до 32 символов. Заявку рассмотрит администратор.')));
+  const input = Object.assign(el('input'), { placeholder: t('Имя пользователя') });
   card.appendChild(input);
-  const send = el('button', null, '👥 Отправить заявку');
+  const send = el('button', null, t('👥 Отправить заявку'));
   send.onclick = async () => {
     const name = input.value.trim();
     if (!/^[\p{L}\p{N}_]{3,32}$/u.test(name)) {
-      tg.showAlert('Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов.');
+      tg.showAlert(t('Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов.'));
       return;
     }
-    if (!(await confirmDialog(`Отправить заявку на пользователя «${name}»?`))) return;
+    if (!(await confirmDialog(t('Отправить заявку на пользователя «{name}»?', { name })))) return;
     send.disabled = true;
-    send.textContent = 'Отправка…';
+    send.textContent = t('Отправка…');
     try {
       await api('/api/invite', { method: 'POST', body: JSON.stringify({ username: name }) });
-      tg.showAlert('Заявка отправлена администратору.');
+      tg.showAlert(t('Заявка отправлена администратору.'));
       input.value = '';
       await showCabinet();
       return;
     } catch (e) { tg.showAlert(e.message); }
     send.disabled = false;
-    send.textContent = '👥 Отправить заявку';
+    send.textContent = t('👥 Отправить заявку');
   };
   card.appendChild(send);
   return card;
@@ -336,28 +501,28 @@ function renderMyGifts(data) {
   const gifts = data.gifts || [];
   if (!gifts.length) return null;
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '📦 Мои подарки'));
+  card.appendChild(el('h2', null, t('📦 Мои подарки')));
   giftStatuses.forEach(([status, label]) => {
     const list = gifts.filter(g => g.status === status);
     if (!list.length) return;
     const det = el('details');
-    det.appendChild(el('summary', null, `${label} (${list.length})`));
+    det.appendChild(el('summary', null, `${t(label)} (${list.length})`));
     list.forEach(g => {
       const d = el('div', 'gift');
-      d.appendChild(el('div', 'code', `${g.code} — ${g.months} мес. (${g.created_at})`));
+      d.appendChild(el('div', 'code', `${g.code} — ${t('{months} мес.', { months: g.months })} (${g.created_at})`));
       d.appendChild(el('div', 'st', g.status_label));
       if (g.link) {
         const a = el('a', 'sub-link', g.link);
         a.href = g.link;
         a.target = '_blank';
         d.appendChild(a);
-        const copy = el('button', 'secondary', '📋 Скопировать ссылку');
+        const copy = el('button', 'secondary', t('📋 Скопировать ссылку'));
         copy.onclick = async () => {
           try {
             await navigator.clipboard.writeText(g.link);
-            copy.textContent = '✅ Скопировано';
-            setTimeout(() => copy.textContent = '📋 Скопировать ссылку', 1500);
-          } catch { tg.showAlert('Не удалось скопировать, выделите ссылку вручную.'); }
+            copy.textContent = t('✅ Скопировано');
+            setTimeout(() => copy.textContent = t('📋 Скопировать ссылку'), 1500);
+          } catch { tg.showAlert(t('Не удалось скопировать, выделите ссылку вручную.')); }
         };
         d.appendChild(copy);
       }
@@ -370,10 +535,10 @@ function renderMyGifts(data) {
 
 function renderUnlinked() {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, 'Аккаунт не привязан'));
+  card.appendChild(el('h2', null, t('Аккаунт не привязан')));
   card.appendChild(el('div', 'hint',
-    'Ваш Telegram пока не привязан к профилю подписки. Привяжите аккаунт в чате с ботом командой /register — и здесь появятся статус, дата окончания и ссылка.'));
-  const b = el('button', null, '🔗 Привязать в чате');
+    t('Ваш Telegram пока не привязан к профилю подписки. Привяжите аккаунт в чате с ботом командой /register — и здесь появятся статус, дата окончания и ссылка.')));
+  const b = el('button', null, t('🔗 Привязать в чате'));
   b.onclick = () => tg.close();
   card.appendChild(b);
   return card;
@@ -384,9 +549,9 @@ function render(data) {
 
   if (data.is_admin) {
     const card = el('div', 'card');
-    card.appendChild(el('h2', null, '⚙️ Администрирование'));
-    card.appendChild(el('div', 'hint', 'Тарифы, реквизиты, подарочные коды и заявки на оплату.'));
-    const open = el('button', null, '⚙️ Открыть админ-панель');
+    card.appendChild(el('h2', null, t('⚙️ Администрирование')));
+    card.appendChild(el('div', 'hint', t('Тарифы, реквизиты, подарочные коды и заявки на оплату.')));
+    const open = el('button', null, t('⚙️ Открыть админ-панель'));
     open.onclick = showAdmin;
     card.appendChild(open);
     appEl.appendChild(card);
@@ -400,7 +565,7 @@ function render(data) {
 
   if (data.requisites) {
     const card = el('div', 'card');
-    card.appendChild(el('h2', null, '💳 Реквизиты для оплаты'));
+    card.appendChild(el('h2', null, t('💳 Реквизиты для оплаты')));
     card.appendChild(Object.assign(el('pre', 'requisites'), { textContent: data.requisites }));
     appEl.appendChild(card);
   }
@@ -415,17 +580,17 @@ function render(data) {
 
   if (data.invites) {
     const card = el('div', 'card');
-    card.appendChild(el('h2', null, '👥 Приглашения'));
+    card.appendChild(el('h2', null, t('👥 Приглашения')));
     let v = String(data.invites.total);
-    if (data.invites.pending > 0) v += ` (${data.invites.pending} на рассмотрении)`;
-    row(card, 'Всего', v);
+    if (data.invites.pending > 0) v += ` (${t('{n} на рассмотрении', { n: data.invites.pending })})`;
+    row(card, t('Всего'), v);
     appEl.appendChild(card);
   }
 
   const actions = el('div', 'card');
-  actions.appendChild(el('h2', null, 'Действия в чате'));
-  actions.appendChild(el('div', 'hint', 'Привязка профиля и активация подарочных кодов оформляются в диалоге с ботом.'));
-  const back = el('button', 'secondary', '💬 Вернуться в чат');
+  actions.appendChild(el('h2', null, t('Действия в чате')));
+  actions.appendChild(el('div', 'hint', t('Привязка профиля и активация подарочных кодов оформляются в диалоге с ботом.')));
+  const back = el('button', 'secondary', t('💬 Вернуться в чат'));
   back.onclick = () => tg.close();
   actions.appendChild(back);
   appEl.appendChild(actions);
@@ -444,12 +609,14 @@ function confirmDialog(message) {
 }
 
 async function showCabinet() {
+  currentRender = showCabinet;
   try {
     render(await api('/api/me'));
   } catch (e) { tg.showAlert(e.message); }
 }
 
 async function showAdmin() {
+  currentRender = showAdmin;
   try {
     renderAdmin(await api('/api/admin'));
   } catch (e) { tg.showAlert(e.message); }
@@ -467,31 +634,31 @@ async function adminAction(path, payload, message) {
 
 function renderAdminTariffs(data) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '📋 Тарифы'));
+  card.appendChild(el('h2', null, t('📋 Тарифы')));
   if ((data.tariffs || []).length) {
-    data.tariffs.forEach(t => {
+    data.tariffs.forEach(tf => {
       const item = el('div', 'item');
-      item.appendChild(el('div', 'info', `${t.months} мес. — ${t.price_label}`));
-      const del = el('button', 'secondary', '🗑 Удалить');
-      del.onclick = () => adminAction('/api/admin/tariff/delete', { months: t.months },
-        `Удалить тариф на ${t.months} мес.?`);
+      item.appendChild(el('div', 'info', t('{months} мес. — {price}', { months: tf.months, price: tf.price_label })));
+      const del = el('button', 'secondary', t('🗑 Удалить'));
+      del.onclick = () => adminAction('/api/admin/tariff/delete', { months: tf.months },
+        t('Удалить тариф на {months} мес.?', { months: tf.months }));
       item.appendChild(del);
       card.appendChild(item);
     });
   } else {
-    card.appendChild(el('div', 'hint', 'Тарифы не заданы.'));
+    card.appendChild(el('div', 'hint', t('Тарифы не заданы.')));
   }
-  card.appendChild(el('div', 'hint', 'Добавить или обновить тариф:'));
+  card.appendChild(el('div', 'hint', t('Добавить или обновить тариф:')));
   const pair = el('div', 'pair');
-  const months = Object.assign(el('input'), { type: 'number', min: '1', placeholder: 'Месяцев' });
-  const price = Object.assign(el('input'), { type: 'number', min: '1', placeholder: 'Цена' });
+  const months = Object.assign(el('input'), { type: 'number', min: '1', placeholder: t('Месяцев') });
+  const price = Object.assign(el('input'), { type: 'number', min: '1', placeholder: t('Цена') });
   pair.appendChild(months);
   pair.appendChild(price);
   card.appendChild(pair);
-  const save = el('button', null, '💾 Сохранить тариф');
+  const save = el('button', null, t('💾 Сохранить тариф'));
   save.onclick = () => {
     const m = parseInt(months.value, 10), p = parseInt(price.value, 10);
-    if (!(m >= 1) || !(p >= 1)) { tg.showAlert('Введите количество месяцев и цену (целые ≥ 1).'); return; }
+    if (!(m >= 1) || !(p >= 1)) { tg.showAlert(t('Введите количество месяцев и цену (целые ≥ 1).')); return; }
     adminAction('/api/admin/tariff', { months: m, price: p });
   };
   card.appendChild(save);
@@ -500,12 +667,12 @@ function renderAdminTariffs(data) {
 
 function renderAdminRequisites(data) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '💳 Реквизиты'));
-  const text = Object.assign(el('textarea'), { value: data.requisites || '', placeholder: 'Текст реквизитов' });
+  card.appendChild(el('h2', null, t('💳 Реквизиты')));
+  const text = Object.assign(el('textarea'), { value: data.requisites || '', placeholder: t('Текст реквизитов') });
   card.appendChild(text);
-  const save = el('button', null, '💾 Сохранить реквизиты');
+  const save = el('button', null, t('💾 Сохранить реквизиты'));
   save.onclick = () => {
-    if (!text.value.trim()) { tg.showAlert('Текст реквизитов не может быть пустым.'); return; }
+    if (!text.value.trim()) { tg.showAlert(t('Текст реквизитов не может быть пустым.')); return; }
     adminAction('/api/admin/requisites', { text: text.value });
   };
   card.appendChild(save);
@@ -514,12 +681,12 @@ function renderAdminRequisites(data) {
 
 function renderAdminScreenshotToggle(data) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '📸 Чек об оплате'));
+  card.appendChild(el('h2', null, t('📸 Чек об оплате')));
   card.appendChild(el('div', 'hint', data.require_screenshot
-    ? 'Включено: перед отправкой заявки пользователь обязан прикрепить чек (фото, скриншот или PDF-файл), админы получают заявку вместе с чеком в Telegram.'
-    : 'Выключено: заявки на оплату отправляются без чека.'));
+    ? t('Включено: перед отправкой заявки пользователь обязан прикрепить чек (фото, скриншот или PDF-файл), админы получают заявку вместе с чеком в Telegram.')
+    : t('Выключено: заявки на оплату отправляются без чека.')));
   const toggle = el('button', data.require_screenshot ? 'secondary' : null,
-    data.require_screenshot ? '🚫 Выключить требование чека' : '✅ Включить требование чека');
+    data.require_screenshot ? t('🚫 Выключить требование чека') : t('✅ Включить требование чека'));
   toggle.onclick = () => adminAction('/api/admin/screenshot-toggle', { enabled: !data.require_screenshot });
   card.appendChild(toggle);
   return card;
@@ -527,26 +694,26 @@ function renderAdminScreenshotToggle(data) {
 
 function renderAdminBroadcast() {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '📢 Рассылка'));
-  card.appendChild(el('div', 'hint', 'Сообщение получат все пользователи с привязанным Telegram.'));
-  const text = Object.assign(el('textarea'), { placeholder: 'Текст сообщения' });
+  card.appendChild(el('h2', null, t('📢 Рассылка')));
+  card.appendChild(el('div', 'hint', t('Сообщение получат все пользователи с привязанным Telegram.')));
+  const text = Object.assign(el('textarea'), { placeholder: t('Текст сообщения') });
   card.appendChild(text);
-  const send = el('button', null, '📢 Отправить всем');
+  const send = el('button', null, t('📢 Отправить всем'));
   send.onclick = async () => {
-    if (!text.value.trim()) { tg.showAlert('Текст рассылки не может быть пустым.'); return; }
-    if (!(await confirmDialog('Отправить сообщение всем пользователям?'))) return;
+    if (!text.value.trim()) { tg.showAlert(t('Текст рассылки не может быть пустым.')); return; }
+    if (!(await confirmDialog(t('Отправить сообщение всем пользователям?')))) return;
     send.disabled = true;
-    send.textContent = 'Отправка…';
+    send.textContent = t('Отправка…');
     try {
       const res = await api('/api/admin/broadcast', {
         method: 'POST',
         body: JSON.stringify({ message: text.value }),
       });
       text.value = '';
-      tg.showAlert(`Рассылка завершена: отправлено ${res.sent}, ошибок ${res.failed}.`);
+      tg.showAlert(t('Рассылка завершена: отправлено {sent}, ошибок {failed}.', { sent: res.sent, failed: res.failed }));
     } catch (e) { tg.showAlert(e.message); }
     send.disabled = false;
-    send.textContent = '📢 Отправить всем';
+    send.textContent = t('📢 Отправить всем');
   };
   card.appendChild(send);
   return card;
@@ -554,20 +721,20 @@ function renderAdminBroadcast() {
 
 function renderAdminGifts(data) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '🎁 Активные подарочные коды'));
+  card.appendChild(el('h2', null, t('🎁 Активные подарочные коды')));
   if (!(data.gifts || []).length) {
-    card.appendChild(el('div', 'hint', 'Активных подарочных кодов нет.'));
+    card.appendChild(el('div', 'hint', t('Активных подарочных кодов нет.')));
     return card;
   }
   data.gifts.forEach(g => {
     const item = el('div', 'item');
     const info = el('div', 'info');
-    info.appendChild(el('div', 'code', `${g.code} — ${g.months} мес.`));
-    info.appendChild(el('div', 'st', `от ${g.buyer} (${g.created_at})`));
+    info.appendChild(el('div', 'code', `${g.code} — ${t('{months} мес.', { months: g.months })}`));
+    info.appendChild(el('div', 'st', t('от {buyer} ({date})', { buyer: g.buyer, date: g.created_at })));
     item.appendChild(info);
-    const revoke = el('button', 'secondary', '🚫 Отозвать');
+    const revoke = el('button', 'secondary', t('🚫 Отозвать'));
     revoke.onclick = () => adminAction('/api/admin/gift/revoke', { id: g.id },
-      `Отозвать код ${g.code}?`);
+      t('Отозвать код {code}?', { code: g.code }));
     item.appendChild(revoke);
     card.appendChild(item);
   });
@@ -576,30 +743,30 @@ function renderAdminGifts(data) {
 
 function renderAdminRequests(data) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '💰 Заявки на оплату'));
+  card.appendChild(el('h2', null, t('💰 Заявки на оплату')));
   if (!(data.requests || []).length) {
-    card.appendChild(el('div', 'hint', 'Ожидающих заявок нет.'));
+    card.appendChild(el('div', 'hint', t('Ожидающих заявок нет.')));
     return card;
   }
   data.requests.forEach(r => {
     const item = el('div', 'item');
     const info = el('div', 'info');
-    let line = `${r.username} — ${r.months} мес.`;
+    let line = `${r.username} — ${t('{months} мес.', { months: r.months })}`;
     if (r.price_label) line += ` (${r.price_label})`;
     if (r.has_screenshot) line += ' 📸';
     info.appendChild(el('div', null, line));
-    let st = `заявка от ${r.created_at}`;
-    if (r.expire_at) st += `, подписка до ${r.expire_at}`;
-    if (r.has_screenshot) st += ' · чек отправлен в чат админам';
+    let st = t('заявка от {date}', { date: r.created_at });
+    if (r.expire_at) st += t(', подписка до {date}', { date: r.expire_at });
+    if (r.has_screenshot) st += t(' · чек отправлен в чат админам');
     info.appendChild(el('div', 'st', st));
     item.appendChild(info);
     const btns = el('div', 'btns');
     const ok = el('button', null, '✅');
     ok.onclick = () => adminAction('/api/admin/request/confirm', { id: r.id },
-      `Подтвердить оплату «${r.username}» на ${r.months} мес.?`);
+      t('Подтвердить оплату «{username}» на {months} мес.?', { username: r.username, months: r.months }));
     const rej = el('button', 'secondary', '❌');
     rej.onclick = () => adminAction('/api/admin/request/reject', { id: r.id },
-      `Отклонить заявку «${r.username}»?`);
+      t('Отклонить заявку «{username}»?', { username: r.username }));
     btns.appendChild(ok);
     btns.appendChild(rej);
     item.appendChild(btns);
@@ -610,26 +777,26 @@ function renderAdminRequests(data) {
 
 function renderAdminGiftRequests(data) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '🎁 Заявки на подарки'));
+  card.appendChild(el('h2', null, t('🎁 Заявки на подарки')));
   if (!(data.gift_requests || []).length) {
-    card.appendChild(el('div', 'hint', 'Ожидающих заявок нет.'));
+    card.appendChild(el('div', 'hint', t('Ожидающих заявок нет.')));
     return card;
   }
   data.gift_requests.forEach(r => {
     const item = el('div', 'item');
     const info = el('div', 'info');
-    let line = `${r.buyer} — ${r.months} мес.`;
+    let line = `${r.buyer} — ${t('{months} мес.', { months: r.months })}`;
     if (r.price_label) line += ` (${r.price_label})`;
     info.appendChild(el('div', null, line));
-    info.appendChild(el('div', 'st', `код ${r.code}, заявка от ${r.created_at}`));
+    info.appendChild(el('div', 'st', t('код {code}, заявка от {date}', { code: r.code, date: r.created_at })));
     item.appendChild(info);
     const btns = el('div', 'btns');
     const ok = el('button', null, '✅');
     ok.onclick = () => adminAction('/api/admin/gift-request/confirm', { id: r.id },
-      `Подтвердить оплату подарка от «${r.buyer}» на ${r.months} мес.?`);
+      t('Подтвердить оплату подарка от «{buyer}» на {months} мес.?', { buyer: r.buyer, months: r.months }));
     const rej = el('button', 'secondary', '❌');
     rej.onclick = () => adminAction('/api/admin/gift-request/reject', { id: r.id },
-      `Отклонить заявку на подарок от «${r.buyer}»?`);
+      t('Отклонить заявку на подарок от «{buyer}»?', { buyer: r.buyer }));
     btns.appendChild(ok);
     btns.appendChild(rej);
     item.appendChild(btns);
@@ -640,26 +807,26 @@ function renderAdminGiftRequests(data) {
 
 function renderAdminInviteRequests(data) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '👤 Заявки на приглашения'));
+  card.appendChild(el('h2', null, t('👤 Заявки на приглашения')));
   if (!(data.invite_requests || []).length) {
-    card.appendChild(el('div', 'hint', 'Ожидающих заявок нет.'));
+    card.appendChild(el('div', 'hint', t('Ожидающих заявок нет.')));
     return card;
   }
   data.invite_requests.forEach(r => {
     const item = el('div', 'item');
     const info = el('div', 'info');
-    let line = `${r.new_username} — ${r.months} мес.`;
+    let line = `${r.new_username} — ${t('{months} мес.', { months: r.months })}`;
     if (r.price_label) line += ` (${r.price_label})`;
     info.appendChild(el('div', null, line));
-    info.appendChild(el('div', 'st', `от ${r.inviter}, заявка от ${r.created_at}`));
+    info.appendChild(el('div', 'st', t('от {inviter}, заявка от {date}', { inviter: r.inviter, date: r.created_at })));
     item.appendChild(info);
     const btns = el('div', 'btns');
     const ok = el('button', null, '✅');
     ok.onclick = () => adminAction('/api/admin/invite-request/confirm', { id: r.id },
-      `Создать пользователя «${r.new_username}» по заявке от «${r.inviter}»?`);
+      t('Создать пользователя «{username}» по заявке от «{inviter}»?', { username: r.new_username, inviter: r.inviter }));
     const rej = el('button', 'secondary', '❌');
     rej.onclick = () => adminAction('/api/admin/invite-request/reject', { id: r.id },
-      `Отклонить заявку на пользователя «${r.new_username}»?`);
+      t('Отклонить заявку на пользователя «{username}»?', { username: r.new_username }));
     btns.appendChild(ok);
     btns.appendChild(rej);
     item.appendChild(btns);
@@ -670,18 +837,18 @@ function renderAdminInviteRequests(data) {
 
 function renderAdminSquad(data) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '🛡 Сквад по умолчанию'));
+  card.appendChild(el('h2', null, t('🛡 Сквад по умолчанию')));
   card.appendChild(el('div', 'hint', data.default_squad_name
-    ? `Новые пользователи добавляются в сквад «${data.default_squad_name}».`
-    : 'Сквад не выбран: используется сквад «Default-Squad», если он есть в панели.'));
+    ? t('Новые пользователи добавляются в сквад «{name}».', { name: data.default_squad_name })
+    : t('Сквад не выбран: используется сквад «Default-Squad», если он есть в панели.')));
   const select = el('select');
-  select.appendChild(Object.assign(el('option', null, 'Загрузка…'), { value: '' }));
+  select.appendChild(Object.assign(el('option', null, t('Загрузка…')), { value: '' }));
   select.disabled = true;
   card.appendChild(select);
-  const save = el('button', null, '💾 Сохранить сквад');
+  const save = el('button', null, t('💾 Сохранить сквад'));
   save.disabled = true;
   save.onclick = () => {
-    if (!select.value) { tg.showAlert('Выберите сквад.'); return; }
+    if (!select.value) { tg.showAlert(t('Выберите сквад.')); return; }
     adminAction('/api/admin/squad', { uuid: select.value });
   };
   card.appendChild(save);
@@ -689,7 +856,7 @@ function renderAdminSquad(data) {
     select.textContent = '';
     const squads = res.squads || [];
     if (!squads.length) {
-      select.appendChild(Object.assign(el('option', null, 'В панели нет сквадов'), { value: '' }));
+      select.appendChild(Object.assign(el('option', null, t('В панели нет сквадов')), { value: '' }));
       return;
     }
     squads.forEach(sq => {
@@ -698,14 +865,14 @@ function renderAdminSquad(data) {
       select.appendChild(opt);
     });
     if (!squads.some(sq => sq.selected)) {
-      select.insertBefore(Object.assign(el('option', null, '— не выбран —'),
+      select.insertBefore(Object.assign(el('option', null, t('— не выбран —')),
         { value: '', selected: true }), select.firstChild);
     }
     select.disabled = false;
     save.disabled = false;
   }).catch(e => {
     select.textContent = '';
-    select.appendChild(Object.assign(el('option', null, 'Ошибка загрузки сквадов'), { value: '' }));
+    select.appendChild(Object.assign(el('option', null, t('Ошибка загрузки сквадов')), { value: '' }));
     tg.showAlert(e.message);
   });
   return card;
@@ -715,8 +882,8 @@ function renderAdmin(data) {
   appEl.textContent = '';
 
   const top = el('div', 'card');
-  top.appendChild(el('h2', null, '⚙️ Админ-панель'));
-  const back = el('button', 'secondary', '← Назад в кабинет');
+  top.appendChild(el('h2', null, t('⚙️ Админ-панель')));
+  const back = el('button', 'secondary', t('← Назад в кабинет'));
   back.onclick = showCabinet;
   top.appendChild(back);
   appEl.appendChild(top);
@@ -736,12 +903,22 @@ function renderAdmin(data) {
 }
 
 (async () => {
+  applyStaticText();
+  statusEl.textContent = t('Загрузка…');
   if (!tg.initData) {
-    statusEl.textContent = 'Откройте это приложение из Telegram.';
+    statusEl.textContent = t('Откройте это приложение из Telegram.');
     return;
   }
   try {
-    render(await api('/api/me'));
+    const data = await api('/api/me');
+    // With no saved choice and no Telegram-language match, fall back to the
+    // bot's configured language (BOT_LANG) exposed in the payload.
+    if (!localStorage.getItem(LANG_KEY)) {
+      LANG = resolveLang(data.lang);
+      langSel.value = LANG;
+      applyStaticText();
+    }
+    render(data);
   } catch (e) {
     statusEl.textContent = '⚠️ ' + e.message;
   }

@@ -23,6 +23,10 @@ var current = RU
 // SetLang selects the language used by T. Call once at startup.
 func SetLang(l Lang) { current = l }
 
+// Current returns the language selected via SetLang (BOT_LANG). The mini app
+// exposes it so the client-side selector can fall back to the bot's language.
+func Current() Lang { return current }
+
 // Parse normalizes a language code from configuration; ok is false for
 // unsupported values (the caller should reject them).
 func Parse(s string) (Lang, bool) {

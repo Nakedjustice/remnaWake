@@ -41,6 +41,19 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestCurrentReflectsSetLang(t *testing.T) {
+	t.Cleanup(func() { SetLang(RU) })
+
+	SetLang(EN)
+	if got := Current(); got != EN {
+		t.Fatalf("Current() = %q, want %q", got, EN)
+	}
+	SetLang(RU)
+	if got := Current(); got != RU {
+		t.Fatalf("Current() = %q, want %q", got, RU)
+	}
+}
+
 func TestTTranslatesAndFallsBack(t *testing.T) {
 	SetLang(EN)
 	t.Cleanup(func() { SetLang(RU) })

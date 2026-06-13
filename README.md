@@ -318,7 +318,7 @@ through linking an account step by step (no link = no notifications), plus a
 | `WEBAPP_LISTEN`        | no       | `:8080`          | Local bind address for the mini app server (behind your reverse proxy) |
 | `WINBACK_ENABLED`      | no       | `true`           | Send "subscription expired" win-back messages after expiry   |
 | `WINBACK_DAYS`         | no       | `1,3`            | Days **after** expiry to send the win-back message (comma-separated) |
-| `BOT_LANG`             | no       | `ru`             | Bot chat language: `ru` / `en` (the Mini App frontend stays Russian) |
+| `BOT_LANG`             | no       | `ru`             | Bot chat language: `ru` / `en`; also the Mini App's default language until the user picks one |
 
 ## Telegram Mini App
 
@@ -328,6 +328,12 @@ cabinet and registers it as the chat **menu button** (plus an
 profiles with status and expiry, the subscription link with one-tap copy,
 payment requisites, gift/invite summaries, and lets the user pick a tariff and
 send a renewal request straight to the admin.
+
+The Mini App has a **language selector** (🇷🇺 Russian / 🇬🇧 English) in the top
+right corner. It defaults to the user's Telegram language (falling back to
+`BOT_LANG`) and remembers an explicit choice in the browser. The switch only
+affects the Mini App interface; server-provided labels (subscription status,
+prices) follow `BOT_LANG`.
 
 Requirements:
 
