@@ -191,6 +191,82 @@ func TestLoadWinbackRejectsBadDays(t *testing.T) {
 	}
 }
 
+func TestLoadPlategaDisabledByDefault(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Platega.Enabled() {
+		t.Fatal("Platega should be disabled without merchant id/secret")
+	}
+}
+
+func TestLoadPlategaEnabledWithDefaults(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("PLATEGA_MERCHANT_ID", " m1 ")
+	t.Setenv("PLATEGA_SECRET", " s1 ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Platega.Enabled() {
+		t.Fatal("Platega should be enabled with merchant id + secret")
+	}
+	if cfg.Platega.MerchantID != "m1" || cfg.Platega.Secret != "s1" {
+		t.Fatalf("creds = %q/%q, want m1/s1 (trimmed)", cfg.Platega.MerchantID, cfg.Platega.Secret)
+	}
+	if cfg.Platega.Currency != "RUB" {
+		t.Fatalf("Currency = %q, want RUB", cfg.Platega.Currency)
+	}
+	if cfg.Platega.ReturnURL != "https://t.me" {
+		t.Fatalf("ReturnURL = %q, want https://t.me", cfg.Platega.ReturnURL)
+	}
+	if code, err := cfg.Platega.MethodCode(); err != nil || code != 2 {
+		t.Fatalf("MethodCode = %d, %v; want 2 (sbp), nil", code, err)
+	}
+}
+
+func TestLoadPlategaCardMethod(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("PLATEGA_MERCHANT_ID", "m1")
+	t.Setenv("PLATEGA_SECRET", "s1")
+	t.Setenv("PLATEGA_METHOD", "card")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if code, err := cfg.Platega.MethodCode(); err != nil || code != 10 {
+		t.Fatalf("MethodCode = %d, %v; want 10 (cards), nil", code, err)
+	}
+}
+
+func TestLoadPlategaRejectsBadMethod(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("PLATEGA_MERCHANT_ID", "m1")
+	t.Setenv("PLATEGA_SECRET", "s1")
+	t.Setenv("PLATEGA_METHOD", "bitcoin")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load should fail with an unknown PLATEGA_METHOD")
+	}
+	if !strings.Contains(err.Error(), "PLATEGA_METHOD") {
+		t.Fatalf("error = %q, want mention of PLATEGA_METHOD", err.Error())
+	}
+}
+
 func TestLoadAdminIDInvalidToken(t *testing.T) {
 	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
 	t.Setenv("REMNAWAVE_API_TOKEN", "tok")

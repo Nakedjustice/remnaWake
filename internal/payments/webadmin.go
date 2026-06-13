@@ -73,6 +73,11 @@ type WebAdminPanel struct {
 	DefaultSquadName string `json:"default_squad_name"`
 	// RequireScreenshot mirrors the "payment screenshot required" toggle.
 	RequireScreenshot bool `json:"require_screenshot"`
+	// PaymentProvider is the selected active provider ("p2p" or "platega").
+	PaymentProvider string `json:"payment_provider"`
+	// PlategaConfigured reports whether Platega credentials are wired in; the UI
+	// hides/disables the provider switch when false.
+	PlategaConfigured bool `json:"platega_configured"`
 }
 
 // WebSquad is one panel internal squad offered in the mini app default-squad
@@ -112,6 +117,11 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	s.mu.Lock()
 	out.Requisites = s.requisites
 	out.RequireScreenshot = s.requireScreenshot
+	out.PlategaConfigured = s.platega != nil
+	out.PaymentProvider = ProviderP2P
+	if s.paymentProvider == ProviderPlatega {
+		out.PaymentProvider = ProviderPlatega
+	}
 	s.mu.Unlock()
 
 	_, out.DefaultSquadName = s.defaultSquadSelection(ctx)
@@ -254,6 +264,19 @@ func (s *Service) AdminSetRequireScreenshot(ctx context.Context, telegramID int6
 	}
 	if err := s.setRequireScreenshot(ctx, on); err != nil {
 		return fmt.Errorf("save screenshot setting: %w", err)
+	}
+	return nil
+}
+
+// AdminSetPaymentProvider switches the active payment provider ("p2p" or
+// "platega") from the mini app admin panel (same setting as the
+// adm:provider_toggle button). Selecting "platega" requires it to be configured.
+func (s *Service) AdminSetPaymentProvider(ctx context.Context, telegramID int64, provider string) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	if err := s.setPaymentProvider(ctx, provider); err != nil {
+		return err
 	}
 	return nil
 }

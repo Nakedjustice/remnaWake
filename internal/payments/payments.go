@@ -58,6 +58,24 @@ type Registrar interface {
 	SetTelegramID(ctx context.Context, uuid string, telegramID int64) error
 }
 
+// PlategaGateway is the subset of *platega.Client the payment flow needs. Kept
+// payments-local (primitive returns) so this package stays decoupled from the
+// platega package; main.go adapts the concrete client to it.
+type PlategaGateway interface {
+	// CreateTransaction opens a payment and returns its id and redirect URL.
+	CreateTransaction(ctx context.Context, method int, amount float64, currency, desc, returnURL, payload string) (id, redirect string, err error)
+	// GetTransaction returns the current status of a transaction ("CONFIRMED",
+	// "PENDING", ...), used to verify webhook callbacks.
+	GetTransaction(ctx context.Context, id string) (status string, err error)
+}
+
+// Payment providers. "p2p" is the manual admin-confirmed flow (default);
+// "platega" is the automatic Platega gateway.
+const (
+	ProviderP2P     = "p2p"
+	ProviderPlatega = "platega"
+)
+
 // Subscriber is the minimal user view the gift flow needs, kept payments-local
 // so this package stays decoupled from the remnawave package.
 type Subscriber struct {
@@ -188,6 +206,17 @@ type Service struct {
 	// attach a payment screenshot before the request reaches the admins.
 	requireScreenshot bool // protected by mu
 
+	// paymentProvider mirrors the persisted active-provider setting ("p2p" or
+	// "platega"). Switching to "platega" is only honored when platega != nil.
+	paymentProvider string // protected by mu
+
+	// platega and its parameters are wired once at startup via SetPlatega when
+	// Platega credentials are configured; nil = Platega unavailable.
+	platega          PlategaGateway // protected by mu
+	plategaMethod    int            // protected by mu
+	plategaCurrency  string         // protected by mu
+	plategaReturnURL string         // protected by mu
+
 	// resolvedSquadUUID caches a successful by-name fallback lookup of the
 	// default squad, so user creation doesn't hit the panel's squad listing
 	// every time while no squad is explicitly selected. Protected by mu;
@@ -202,6 +231,10 @@ const requisitesKey = "payment_requisites"
 // requireScreenshotKey is the settings-table key for the "payment screenshot
 // required" toggle ("1" = on, anything else / absent = off).
 const requireScreenshotKey = "require_payment_screenshot"
+
+// paymentProviderKey is the settings-table key for the active payment provider
+// ("platega"; anything else / absent = "p2p").
+const paymentProviderKey = "payment_provider"
 
 // defaultSquadUUIDKey / defaultSquadNameKey are the settings-table keys for
 // the admin-selected internal squad assigned to newly created users. The name
@@ -247,7 +280,72 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 	} else if found {
 		s.requireScreenshot = value == "1"
 	}
+	if value, found, err := st.GetSetting(context.Background(), paymentProviderKey); err != nil {
+		logger.Error("load payment provider setting failed", "err", err.Error())
+	} else if found && value == ProviderPlatega {
+		s.paymentProvider = ProviderPlatega
+	}
 	return s
+}
+
+// SetPlatega wires the Platega gateway and its parameters. Called once at
+// startup when Platega credentials are configured; until then Platega is
+// unavailable and the active provider stays p2p regardless of the setting.
+func (s *Service) SetPlatega(gw PlategaGateway, method int, currency, returnURL string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.platega = gw
+	s.plategaMethod = method
+	s.plategaCurrency = currency
+	s.plategaReturnURL = returnURL
+}
+
+// plategaConfigured reports whether a Platega gateway is wired in.
+func (s *Service) plategaConfigured() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.platega != nil
+}
+
+// activeProvider returns the effective payment provider: "platega" only when it
+// is both selected and configured, otherwise "p2p". This guarantees behaviour
+// is identical to the legacy flow whenever Platega is not wired in.
+func (s *Service) activeProvider() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.paymentProvider == ProviderPlatega && s.platega != nil {
+		return ProviderPlatega
+	}
+	return ProviderP2P
+}
+
+// getPaymentProvider returns the raw selected provider setting (independent of
+// whether Platega is configured), used to render the admin toggle state.
+func (s *Service) getPaymentProvider() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.paymentProvider == ProviderPlatega {
+		return ProviderPlatega
+	}
+	return ProviderP2P
+}
+
+// setPaymentProvider persists the active-provider toggle and refreshes the
+// in-memory cache. Selecting "platega" is rejected when it is not configured.
+func (s *Service) setPaymentProvider(ctx context.Context, name string) error {
+	if name != ProviderP2P && name != ProviderPlatega {
+		return ErrBadInput
+	}
+	if name == ProviderPlatega && !s.plategaConfigured() {
+		return ErrBadInput
+	}
+	if err := s.store.UpsertSetting(ctx, paymentProviderKey, name); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.paymentProvider = name
+	s.mu.Unlock()
+	return nil
 }
 
 // SetBotUsername stores the bot's own username (from getMe) used to build

@@ -76,6 +76,7 @@ type InlineKeyboardMarkup struct {
 type InlineKeyboardButton struct {
 	Text         string      `json:"text"`
 	CallbackData string      `json:"callback_data,omitempty"`
+	URL          string      `json:"url,omitempty"`
 	WebApp       *WebAppInfo `json:"web_app,omitempty"`
 }
 

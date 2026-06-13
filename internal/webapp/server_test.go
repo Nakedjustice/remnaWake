@@ -13,9 +13,10 @@ import (
 )
 
 type fakeCabinet struct {
-	data      *payments.WebCabinet
-	renewErr  error
-	renewed   []int64
+	data       *payments.WebCabinet
+	renewErr   error
+	renewPayURL string
+	renewed    []int64
 	giftErr   error
 	gifted    []int
 	inviteErr error
@@ -26,9 +27,9 @@ func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabi
 	return f.data, nil
 }
 
-func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int) error {
+func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int) (string, error) {
 	f.renewed = append(f.renewed, remnawaveID)
-	return f.renewErr
+	return f.renewPayURL, f.renewErr
 }
 
 func (f *fakeCabinet) CreateGiftRequest(_ context.Context, _ int64, months int) error {
@@ -75,6 +76,11 @@ func (f *fakeAdmin) AdminSetRequireScreenshot(_ context.Context, tgID int64, on 
 		b = 1
 	}
 	f.calls = append(f.calls, adminCall{Name: "setshot", A: tgID, B: b})
+	return f.err
+}
+
+func (f *fakeAdmin) AdminSetPaymentProvider(_ context.Context, tgID int64, _ string) error {
+	f.calls = append(f.calls, adminCall{Name: "setprovider", A: tgID})
 	return f.err
 }
 func (f *fakeAdmin) AdminListSquads(_ context.Context, tgID int64) ([]payments.WebSquad, error) {
@@ -127,12 +133,27 @@ func (f *fakeAdmin) AdminBroadcast(_ context.Context, tgID int64, text string) (
 	return &payments.WebBroadcastResult{Sent: 3, Failed: 1}, nil
 }
 
+// fakeWebhooks records Platega webhook bodies handed to the service.
+type fakeWebhooks struct {
+	bodies [][]byte
+	err    error
+}
+
+func (f *fakeWebhooks) HandlePlategaWebhook(_ context.Context, body []byte) error {
+	f.bodies = append(f.bodies, body)
+	return f.err
+}
+
 func newTestServer(cab *fakeCabinet) *Server {
 	return newTestServerWithAdmin(cab, &fakeAdmin{})
 }
 
 func newTestServerWithAdmin(cab *fakeCabinet, adm *fakeAdmin) *Server {
-	s := NewServer(cab, adm, testToken, slog.New(slog.DiscardHandler))
+	return newTestServerFull(cab, adm, &fakeWebhooks{})
+}
+
+func newTestServerFull(cab *fakeCabinet, adm *fakeAdmin, wh Webhooks) *Server {
+	s := NewServer(cab, adm, wh, testToken, slog.New(slog.DiscardHandler))
 	s.now = func() time.Time { return time.Unix(1700000000, 0) }
 	return s
 }
@@ -156,6 +177,23 @@ func TestHandleMeUnauthorized(t *testing.T) {
 		if w.Code != 401 {
 			t.Errorf("auth %q: status = %d, want 401", auth, w.Code)
 		}
+	}
+}
+
+func TestPlategaCallbackNoAuth(t *testing.T) {
+	wh := &fakeWebhooks{}
+	srv := newTestServerFull(&fakeCabinet{}, &fakeAdmin{}, wh)
+
+	body := `{"transactionId":"tx-1"}`
+	req := httptest.NewRequest("POST", "/platega/callback", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200 (webhook needs no initData)", w.Code)
+	}
+	if len(wh.bodies) != 1 || string(wh.bodies[0]) != body {
+		t.Fatalf("webhook body not forwarded: %v", wh.bodies)
 	}
 }
 

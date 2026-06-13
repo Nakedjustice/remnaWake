@@ -162,18 +162,19 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 
 // CreateRenewRequest creates a pending payment request from the mini app:
 // verifies the profile belongs to telegramID, resolves the tariff price and
-// notifies the admins. It also confirms in the user's chat so the request has
-// a visible trace outside the mini app.
-func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int) error {
+// either notifies the admins (p2p) or opens a Platega transaction. The returned
+// string is a non-empty payment URL only for the Platega provider; for p2p it is
+// empty and the request reaches the admins (with a trace in the user's chat).
+func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int) (string, error) {
 	if !s.isEnabled() {
-		return ErrPaymentsDisabled
+		return "", ErrPaymentsDisabled
 	}
 	subs, err := s.finder.FindByTelegramID(ctx, telegramID)
 	if err != nil {
-		return fmt.Errorf("find by telegram id: %w", err)
+		return "", fmt.Errorf("find by telegram id: %w", err)
 	}
 	if len(subs) == 0 {
-		return ErrNotLinked
+		return "", ErrNotLinked
 	}
 	var sub *Subscriber
 	for i := range subs {
@@ -183,21 +184,21 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 		}
 	}
 	if sub == nil {
-		return ErrProfileUnknown
+		return "", ErrProfileUnknown
 	}
 
 	price := 0
 	tariffs, err := s.store.ListTariffs(ctx)
 	if err != nil {
-		return fmt.Errorf("list tariffs: %w", err)
+		return "", fmt.Errorf("list tariffs: %w", err)
 	}
 	if len(tariffs) > 0 {
 		tariff, err := s.store.GetTariff(ctx, months)
 		if err != nil {
-			return fmt.Errorf("get tariff: %w", err)
+			return "", fmt.Errorf("get tariff: %w", err)
 		}
 		if tariff == nil {
-			return ErrTariffUnknown
+			return "", ErrTariffUnknown
 		}
 		price = tariff.Price
 	} else if months < 1 {
@@ -215,21 +216,31 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 		s.logger.Error("webapp: remember user failed", "err", err.Error(), "user_id", sub.RemnawaveID)
 	}
 
+	// Platega: open an online transaction and return its pay URL for the mini app
+	// to open. The screenshot requirement does not apply (payment is automatic).
+	if s.activeProvider() == ProviderPlatega {
+		_, payURL, err := s.startPlategaPayment(ctx, u, months, price)
+		if err != nil {
+			return "", err
+		}
+		return payURL, nil
+	}
+
 	// With the screenshot requirement on, the request is deferred: the mini app
 	// cannot upload photos to the bot, so the user finishes in the bot chat.
 	if s.getRequireScreenshot() {
 		s.startPayPhotoFlow(ctx, telegramID, sub.RemnawaveID, months, price)
-		return ErrScreenshotRequired
+		return "", ErrScreenshotRequired
 	}
 
 	if _, err := s.createPaymentRequest(ctx, u, months, price, nil); err != nil {
-		return err
+		return "", err
 	}
 
 	_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
 		i18n.T("✅ Заявка на продление «%s» на %d мес. отправлена администратору. После подтверждения оплаты подписка будет продлена."),
 		sub.Username, months))
-	return nil
+	return "", nil
 }
 
 // giftDeepLink returns the t.me redemption link for a gift code, or "" when
