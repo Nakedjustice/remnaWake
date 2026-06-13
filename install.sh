@@ -197,6 +197,13 @@ v_days_list() {
   return 0
 }
 
+v_platega_method() {
+  case "$1" in
+    sbp|card|cards) return 0 ;;
+    *) err "  → One of: sbp, card."; return 1 ;;
+  esac
+}
+
 # --- Banner -----------------------------------------------------------------
 cat >&2 <<EOF
 ${BOLD}remnaWake installer${RESET}
@@ -243,6 +250,25 @@ WEBAPP_LISTEN=":8080"
 if ask_yes_no "Enable the Mini App personal cabinet? (needs an HTTPS reverse proxy in front)" "n"; then
   ask WEBAPP_URL "Public Mini App URL (e.g. https://bot.example.com)" "" v_https_url
   WEBAPP_URL="${WEBAPP_URL%/}"
+fi
+
+# --- Platega payment gateway (optional) -------------------------------------
+printf '\n' >&2
+info "── Platega payment gateway (optional) ──────────────────────"
+PLATEGA_MERCHANT_ID=""
+PLATEGA_SECRET=""
+PLATEGA_METHOD="sbp"
+PLATEGA_CURRENCY="RUB"
+PLATEGA_RETURN_URL="https://t.me"
+warn "Default is manual P2P (you confirm payments yourself). Platega adds online"
+warn "SBP/card payments; you can switch the active provider later from the admin menu."
+if ask_yes_no "Configure Platega online payments now?" "n"; then
+  ask PLATEGA_MERCHANT_ID "Platega merchant id (from the Platega dashboard)" "" ""
+  ask PLATEGA_SECRET      "Platega secret (X-Secret)" "" "" secret
+  ask PLATEGA_METHOD      "Payment method (sbp / card)" "sbp" v_platega_method
+  ask PLATEGA_CURRENCY    "Currency code sent to Platega (ISO, e.g. RUB)" "RUB" ""
+  ask PLATEGA_RETURN_URL  "Return URL after payment (e.g. your bot link)" "https://t.me" v_url
+  PLATEGA_RETURN_URL="${PLATEGA_RETURN_URL%/}"
 fi
 
 # --- Defaults for the rest (overridable via advanced section) ---------------
@@ -304,6 +330,16 @@ WINBACK_DAYS=$WINBACK_DAYS
 # (empty = mini app disabled) and the local bind address behind it.
 WEBAPP_URL=$WEBAPP_URL
 WEBAPP_LISTEN=$WEBAPP_LISTEN
+
+# Platega payment gateway (optional): online SBP/card payments as an alternative
+# to manual P2P. Empty merchant id/secret = Platega off (P2P only). The active
+# provider is switched at runtime from the bot /admin menu or the Mini App admin
+# panel. Set the Platega dashboard notification URL to <public-host>/platega/callback.
+PLATEGA_MERCHANT_ID=$PLATEGA_MERCHANT_ID
+PLATEGA_SECRET=$PLATEGA_SECRET
+PLATEGA_METHOD=$PLATEGA_METHOD
+PLATEGA_CURRENCY=$PLATEGA_CURRENCY
+PLATEGA_RETURN_URL=$PLATEGA_RETURN_URL
 EOF
 
 mv "$tmp_env" "$ENV_FILE"
@@ -315,6 +351,8 @@ ok "Wrote configuration to $ENV_FILE (permissions 600)."
 
 # --- Summary (secrets masked) -----------------------------------------------
 mask() { local s="$1"; [ "${#s}" -le 8 ] && { printf '****'; return; }; printf '%s…%s' "${s:0:4}" "${s: -4}"; }
+platega_summary="disabled (P2P only)"
+[ -n "$PLATEGA_MERCHANT_ID" ] && platega_summary="enabled ($PLATEGA_METHOD, $PLATEGA_CURRENCY)"
 cat >&2 <<EOF
 
 ${BOLD}Summary${RESET}
@@ -327,6 +365,7 @@ ${BOLD}Summary${RESET}
   Dry-run / on-start : $DRY_RUN / $RUN_ON_START
   Currency           : $CURRENCY
   Mini App           : ${WEBAPP_URL:-disabled}
+  Platega            : $platega_summary
 
 EOF
 
@@ -335,6 +374,17 @@ if [ -n "$WEBAPP_URL" ]; then
   warn "  1. Uncomment the 'ports' section in docker-compose.yml (exposes ${WEBAPP_LISTEN#:} on 127.0.0.1)."
   warn "  2. Point your HTTPS reverse proxy at it: $WEBAPP_URL → 127.0.0.1:${WEBAPP_LISTEN#:}"
   warn "     (nginx and Caddy templates are in the README, section «Telegram Mini App»)."
+fi
+
+if [ -n "$PLATEGA_MERCHANT_ID" ]; then
+  warn "Platega checklist:"
+  warn "  1. The webhook is served by the same HTTP server as the Mini App: uncomment the"
+  warn "     'ports' section in docker-compose.yml (exposes ${WEBAPP_LISTEN#:} on 127.0.0.1)"
+  warn "     and put an HTTPS reverse proxy in front of it."
+  warn "  2. In the Platega dashboard set the notification (webhook) URL to:"
+  warn "       https://<your-public-host>/platega/callback"
+  warn "  3. Switch the active provider to Platega from the bot /admin menu or the"
+  warn "     Mini App admin panel (the bot starts on P2P until you do)."
 fi
 
 # --- Detect Docker Compose --------------------------------------------------
