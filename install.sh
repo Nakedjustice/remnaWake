@@ -12,11 +12,35 @@
 #
 set -euo pipefail
 
-# --- Resolve repo root (directory this script lives in) ---------------------
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-cd "$SCRIPT_DIR"
+# --- Reattach the terminal when piped (curl … | bash) -----------------------
+# Standalone use reads the script from a pipe, leaving stdin pointed at the
+# pipe; without this the prompts below would read no input. Probe that /dev/tty
+# is actually openable first (it is not under cron/CI) so we never abort here.
+if [ ! -t 0 ] && [ -e /dev/tty ] && (exec </dev/tty) 2>/dev/null; then
+  exec </dev/tty
+fi
 
-ENV_FILE="$SCRIPT_DIR/.env"
+# --- Where to install -------------------------------------------------------
+# The bot runs from the pre-built GHCR image, so the only files that need to
+# live on the server are ./docker-compose.yml and ./.env — not the source repo.
+# This script fetches docker-compose.yml on demand, so it works run straight
+# from a URL or from a cloned checkout (which reuses the files already there).
+REPO_RAW="${REMNAWAKE_REPO_RAW:-https://raw.githubusercontent.com/Nakedjustice/remnaWake/main}"
+
+# Install into this script's directory when run from a file, else the current
+# directory; override with REMNAWAKE_DIR.
+__src="${BASH_SOURCE[0]:-}"
+if [ -n "$__src" ] && [ -f "$__src" ]; then
+  INSTALL_DIR="$(cd -- "$(dirname -- "$__src")" >/dev/null 2>&1 && pwd)"
+else
+  INSTALL_DIR="$PWD"
+fi
+INSTALL_DIR="${REMNAWAKE_DIR:-$INSTALL_DIR}"
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
+
+ENV_FILE="$INSTALL_DIR/.env"
+COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
 
 # --- Colours (disabled when not a terminal) ---------------------------------
 if [ -t 1 ]; then
@@ -31,6 +55,18 @@ info()  { printf '%s\n' "${CYAN}$*${RESET}"; }
 ok()    { printf '%s\n' "${GREEN}$*${RESET}"; }
 warn()  { printf '%s\n' "${YELLOW}$*${RESET}" >&2; }
 err()   { printf '%s\n' "${RED}$*${RESET}" >&2; }
+
+# Download a URL to a file with curl or wget (whichever exists); 127 if neither.
+fetch() {
+  local url="$1" dest="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$dest"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$dest" "$url"
+  else
+    return 127
+  fi
+}
 
 # --- Prompt helpers ---------------------------------------------------------
 # Read a value, re-prompting until the validator passes.
@@ -345,9 +381,21 @@ EOF
 mv "$tmp_env" "$ENV_FILE"
 trap - EXIT
 chmod 600 "$ENV_FILE"
+umask 022  # back to normal perms for the (non-secret) compose file
 
 printf '\n' >&2
 ok "Wrote configuration to $ENV_FILE (permissions 600)."
+
+# --- Fetch docker-compose.yml (standalone: no repo checkout needed) ---------
+if [ ! -f "$COMPOSE_FILE" ]; then
+  info "Fetching docker-compose.yml…"
+  if ! fetch "$REPO_RAW/docker-compose.yml" "$COMPOSE_FILE"; then
+    err "Could not download docker-compose.yml (need curl or wget)."
+    err "Grab it manually next to .env:  $REPO_RAW/docker-compose.yml"
+    exit 1
+  fi
+  ok "Wrote docker-compose.yml"
+fi
 
 # --- Summary (secrets masked) -----------------------------------------------
 mask() { local s="$1"; [ "${#s}" -le 8 ] && { printf '****'; return; }; printf '%s…%s' "${s:0:4}" "${s: -4}"; }

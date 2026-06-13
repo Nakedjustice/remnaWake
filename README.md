@@ -488,8 +488,10 @@ Caddy can't issue the certificate.
 
 ### Install on your server (recommended)
 
-One command downloads the project to **`/opt/remnaWake`** and launches the
-interactive installer. Installing under `/opt` needs root, so run it as root or
+The bot runs from the pre-built GHCR image, so the only files that land on your
+server are `docker-compose.yml` and `.env` — **not** the source repo. One
+command runs the interactive installer, which writes those two files into
+**`/opt/remnaWake`**. Installing under `/opt` needs root, so run it as root or
 with `sudo`:
 
 ```bash
@@ -502,18 +504,19 @@ To install somewhere else (a writable path needs no root), set `TARGET_DIR`:
 curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | TARGET_DIR="$HOME/remnaWake" bash
 ```
 
-Prefer to do it by hand?
+Or run the installer directly — it installs into the current directory (override
+with `REMNAWAKE_DIR`) and fetches `docker-compose.yml` itself:
 
 ```bash
-sudo git clone https://github.com/Nakedjustice/remnaWake.git /opt/remnaWake
-cd /opt/remnaWake
-sudo ./install.sh
+mkdir -p ~/remnaWake && cd ~/remnaWake
+curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/install.sh | bash
 ```
 
 The installer asks for the panel URL, API token, bot token, admin Telegram ID,
-timezone and run time, writes a locked-down `.env` (mode `600`), and offers to
-pull the pre-built image and start the container with Docker Compose. Requires
-`git` (or `curl`/`wget`) plus Docker Engine + the Compose plugin.
+timezone and run time (plus optional Mini App and Platega payment settings),
+writes a locked-down `.env` (mode `600`) and `docker-compose.yml`, and offers to
+pull the pre-built image and start the container. Requires `curl` (or `wget`)
+plus Docker Engine + the Compose plugin — no `git` or source checkout needed.
 
 ### Local (development)
 

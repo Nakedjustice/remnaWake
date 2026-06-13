@@ -495,9 +495,11 @@ docker compose restart caddy    # в каталоге caddy
 
 ### Установка на сервер (рекомендуется)
 
-Одна команда скачивает проект в **`/opt/remnaWake`** и запускает интерактивный
-установщик. Для установки в `/opt` нужны права root, поэтому запускайте от root
-или через `sudo`:
+Бот работает из готового образа GHCR, поэтому на сервер попадают только два
+файла — `docker-compose.yml` и `.env`, **а не** исходный код. Одна команда
+запускает интерактивный установщик, который записывает эти файлы в
+**`/opt/remnaWake`**. Для установки в `/opt` нужны права root, поэтому запускайте
+от root или через `sudo`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | sudo bash
@@ -510,18 +512,19 @@ curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh 
 curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/get.sh | TARGET_DIR="$HOME/remnaWake" bash
 ```
 
-Предпочитаете вручную?
+Либо запустите установщик напрямую — он ставит в текущий каталог (переопределяется
+через `REMNAWAKE_DIR`) и сам скачивает `docker-compose.yml`:
 
 ```bash
-sudo git clone https://github.com/Nakedjustice/remnaWake.git /opt/remnaWake
-cd /opt/remnaWake
-sudo ./install.sh
+mkdir -p ~/remnaWake && cd ~/remnaWake
+curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/install.sh | bash
 ```
 
 Установщик спросит URL панели, API-токен, токен бота, Telegram ID администратора,
-таймзону и время запуска, запишет `.env` (с правами `600`) и предложит скачать
-готовый образ и запустить контейнер через Docker Compose. Нужны `git` (либо
-`curl`/`wget`) и Docker Engine с плагином Compose.
+таймзону и время запуска (а также опциональные настройки Mini App и платежей
+Platega), запишет `.env` (с правами `600`) и `docker-compose.yml` и предложит
+скачать готовый образ и запустить контейнер. Нужны `curl` (либо `wget`) и Docker
+Engine с плагином Compose — `git` и копия исходников не требуются.
 
 ### Локально (разработка)
 
