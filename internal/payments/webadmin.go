@@ -9,14 +9,25 @@ import (
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
 )
 
-// WebAdminGift is one issued (revocable) gift code as shown in the mini app
-// admin panel.
+// WebAdminGift is one active gift code as shown in the mini app admin panel.
+// Not-used (issued) codes are revocable; used (redeemed) codes carry redeemer
+// info instead.
 type WebAdminGift struct {
 	ID        int64  `json:"id"`
 	Code      string `json:"code"`
 	Months    int    `json:"months"`
 	Buyer     string `json:"buyer"`
-	CreatedAt string `json:"created_at"` // DD.MM.YYYY
+	CreatedAt string `json:"created_at"`         // DD.MM.YYYY
+	Redeemer  string `json:"redeemer,omitempty"` // set for used codes
+}
+
+// WebAdminGiftBuyer groups one buyer's active gift codes into Not used and Used
+// buckets for the mini app admin gift browser.
+type WebAdminGiftBuyer struct {
+	BuyerTelegramID int64          `json:"buyer_telegram_id"`
+	Buyer           string         `json:"buyer"`
+	NotUsed         []WebAdminGift `json:"not_used"`
+	Used            []WebAdminGift `json:"used"`
 }
 
 // WebAdminRequest is one pending payment request as shown in the mini app
@@ -62,7 +73,7 @@ type WebAdminInviteRequest struct {
 type WebAdminPanel struct {
 	Tariffs        []WebTariff             `json:"tariffs"`
 	Requisites     string                  `json:"requisites"`
-	Gifts          []WebAdminGift          `json:"gifts"`
+	GiftBuyers     []WebAdminGiftBuyer     `json:"gift_buyers"`
 	Requests       []WebAdminRequest       `json:"requests"`
 	GiftRequests   []WebAdminGiftRequest   `json:"gift_requests"`
 	InviteRequests []WebAdminInviteRequest `json:"invite_requests"`
@@ -126,19 +137,43 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 
 	_, out.DefaultSquadName = s.defaultSquadSelection(ctx)
 
-	gifts, err := s.store.ListGiftCodesByStatus(ctx, "issued")
+	buyers, err := s.store.ListGiftBuyers(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list gift codes: %w", err)
+		return nil, fmt.Errorf("list gift buyers: %w", err)
 	}
-	for i := range gifts {
-		g := &gifts[i]
-		out.Gifts = append(out.Gifts, WebAdminGift{
-			ID:        g.ID,
-			Code:      g.Code,
-			Months:    g.Months,
-			Buyer:     g.BuyerUsername,
-			CreatedAt: g.CreatedAt.Format("02.01.2006"),
-		})
+	for _, b := range buyers {
+		name := b.BuyerUsername
+		if name == "" {
+			name = fmt.Sprintf("%d", b.BuyerTelegramID)
+		}
+		group := WebAdminGiftBuyer{BuyerTelegramID: b.BuyerTelegramID, Buyer: name}
+
+		notUsed, err := s.store.ListGiftCodesByBuyerStatus(ctx, b.BuyerTelegramID, "issued", b.NotUsed, 0)
+		if err != nil {
+			return nil, fmt.Errorf("list not-used gifts: %w", err)
+		}
+		for i := range notUsed {
+			g := &notUsed[i]
+			group.NotUsed = append(group.NotUsed, WebAdminGift{
+				ID: g.ID, Code: g.Code, Months: g.Months, Buyer: name,
+				CreatedAt: g.CreatedAt.Format("02.01.2006"),
+			})
+		}
+
+		used, err := s.store.ListGiftCodesByBuyerStatus(ctx, b.BuyerTelegramID, "redeemed", b.Used, 0)
+		if err != nil {
+			return nil, fmt.Errorf("list used gifts: %w", err)
+		}
+		for i := range used {
+			g := &used[i]
+			group.Used = append(group.Used, WebAdminGift{
+				ID: g.ID, Code: g.Code, Months: g.Months, Buyer: name,
+				CreatedAt: g.CreatedAt.Format("02.01.2006"),
+				Redeemer:  g.RedeemedUsername,
+			})
+		}
+
+		out.GiftBuyers = append(out.GiftBuyers, group)
 	}
 
 	requests, err := s.store.ListPaymentRequestsByStatus(ctx, "pending")

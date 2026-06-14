@@ -114,6 +114,8 @@
   .gift:first-of-type { border-top: 0; }
   .gift .code { font-family: ui-monospace, monospace; }
   .gift .st { color: var(--hint); font-size: 13px; }
+  .gift-buyer { border-top: 1px solid var(--secondary-bg); padding: 4px 0; }
+  .gift-buyer > summary { cursor: pointer; padding: 8px 0; font-weight: 500; }
   details { border-top: 1px solid var(--secondary-bg); }
   details:first-of-type { border-top: 0; }
   summary { cursor: pointer; padding: 8px 0; font-size: 15px; font-weight: 600; }
@@ -244,6 +246,10 @@ const EN = {
   '🎁 Активные подарочные коды': '🎁 Active gift codes',
   'Активных подарочных кодов нет.': 'No active gift codes.',
   'от {buyer} ({date})': 'from {buyer} ({date})',
+  '{buyer} — 🆕 {n} / ✅ {m}': '{buyer} — 🆕 {n} / ✅ {m}',
+  '🆕 Не использованы': '🆕 Not used',
+  '✅ Использованы': '✅ Used',
+  'активирован: {user} ({date})': 'redeemed: {user} ({date})',
   '🚫 Отозвать': '🚫 Revoke',
   'Отозвать код {code}?': 'Revoke code {code}?',
   '💰 Заявки на оплату': '💰 Payment requests',
@@ -786,21 +792,48 @@ function renderAdminBroadcast() {
 function renderAdminGifts(data) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, t('🎁 Активные подарочные коды')));
-  if (!(data.gifts || []).length) {
+  const buyers = data.gift_buyers || [];
+  if (!buyers.length) {
     card.appendChild(el('div', 'hint', t('Активных подарочных кодов нет.')));
     return card;
   }
-  data.gifts.forEach(g => {
-    const item = el('div', 'item');
-    const info = el('div', 'info');
-    info.appendChild(el('div', 'code', `${g.code} — ${t('{months} мес.', { months: g.months })}`));
-    info.appendChild(el('div', 'st', t('от {buyer} ({date})', { buyer: g.buyer, date: g.created_at })));
-    item.appendChild(info);
-    const revoke = el('button', 'secondary', t('🚫 Отозвать'));
-    revoke.onclick = () => adminAction('/api/admin/gift/revoke', { id: g.id },
-      t('Отозвать код {code}?', { code: g.code }));
-    item.appendChild(revoke);
-    card.appendChild(item);
+  buyers.forEach(b => {
+    const notUsed = b.not_used || [];
+    const used = b.used || [];
+    const box = el('details', 'gift-buyer');
+    const summary = el('summary', null,
+      t('{buyer} — 🆕 {n} / ✅ {m}', { buyer: b.buyer, n: notUsed.length, m: used.length }));
+    box.appendChild(summary);
+
+    if (notUsed.length) {
+      box.appendChild(el('div', 'hint', t('🆕 Не использованы')));
+      notUsed.forEach(g => {
+        const item = el('div', 'item');
+        const info = el('div', 'info');
+        info.appendChild(el('div', 'code', `${g.code} — ${t('{months} мес.', { months: g.months })}`));
+        info.appendChild(el('div', 'st', t('заявка от {date}', { date: g.created_at })));
+        item.appendChild(info);
+        const revoke = el('button', 'secondary', t('🚫 Отозвать'));
+        revoke.onclick = () => adminAction('/api/admin/gift/revoke', { id: g.id },
+          t('Отозвать код {code}?', { code: g.code }));
+        item.appendChild(revoke);
+        box.appendChild(item);
+      });
+    }
+
+    if (used.length) {
+      box.appendChild(el('div', 'hint', t('✅ Использованы')));
+      used.forEach(g => {
+        const item = el('div', 'item');
+        const info = el('div', 'info');
+        info.appendChild(el('div', 'code', `${g.code} — ${t('{months} мес.', { months: g.months })}`));
+        info.appendChild(el('div', 'st', t('активирован: {user} ({date})', { user: g.redeemer || '—', date: g.created_at })));
+        item.appendChild(info);
+        box.appendChild(item);
+      });
+    }
+
+    card.appendChild(box);
   });
   return card;
 }

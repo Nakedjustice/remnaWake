@@ -168,8 +168,10 @@ silently ignored for everyone else):
 | `/stats`                     | 📊 Statistics: panel users (total / active / expiring in 7 days / expired / linked to Telegram), payments confirmed in the last 30 days with revenue, pending requests, gift codes by status, pending invites |
 
 The `/admin` menu also has a **📊 Статистика** button (same report as `/stats`),
-a **🎁 Подарочные коды** section listing all issued (not yet activated)
-gift codes, each with a one-tap revoke button, and a **🛡 Сквад по умолчанию**
+a **🎁 Подарочные коды** section that drills down by buyer — pick a buyer, then
+the **🆕 Not used** (issued) or **✅ Used** (redeemed) bucket, then the
+individual codes; not-used codes keep a one-tap revoke button — and a
+**🛡 Сквад по умолчанию**
 picker that selects the panel internal squad new users (created via `/gift` and
 `/invite`) are added to. When no squad is selected, the squad named
 `Default-Squad` (seeded by a stock Remnawave install) is used; if neither can

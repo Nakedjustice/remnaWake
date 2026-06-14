@@ -638,50 +638,249 @@ func (s *Service) handleGiftCodeResend(ctx context.Context, cb *tg.CallbackQuery
 	return true
 }
 
-// sendAdminGiftList shows issued (unredeemed) gift codes with revoke buttons.
+// sendAdminGiftList opens the admin gift browser with the list of buyers that
+// have active (issued or redeemed) gift codes. The admin drills into a buyer to
+// see the Not used / Used buckets and the individual codes.
 func (s *Service) sendAdminGiftList(ctx context.Context, chatID int64) {
-	codes, err := s.store.ListGiftCodesByStatus(ctx, "issued")
+	buyers, err := s.store.ListGiftBuyers(ctx)
 	if err != nil {
-		s.logger.Error("admin: list gift codes failed", "err", err.Error())
+		s.logger.Error("admin: list gift buyers failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения подарочных кодов."))
 		return
 	}
-	rows := make([][]tg.InlineKeyboardButton, 0, len(codes)+1)
-	for _, c := range codes {
+	if len(buyers) == 0 {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Активных подарочных кодов нет."))
+		return
+	}
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, adminGiftBuyersText(), adminGiftBuyersKeyboard(buyers))
+}
+
+func adminGiftBuyersText() string {
+	return i18n.T("🎁 Подарочные коды\n\nВыберите покупателя:")
+}
+
+func adminGiftBuyerName(b store.GiftBuyer) string {
+	if b.BuyerUsername != "" {
+		return b.BuyerUsername
+	}
+	return fmt.Sprintf("%d", b.BuyerTelegramID)
+}
+
+func adminGiftBuyersKeyboard(buyers []store.GiftBuyer) *tg.InlineKeyboardMarkup {
+	rows := make([][]tg.InlineKeyboardButton, 0, len(buyers)+1)
+	for _, b := range buyers {
 		rows = append(rows, []tg.InlineKeyboardButton{{
-			Text:         fmt.Sprintf(i18n.T("🚫 %s — %d мес. (от %s)"), c.Code, c.Months, c.BuyerUsername),
-			CallbackData: fmt.Sprintf("adm:grev:%d", c.ID),
+			Text:         fmt.Sprintf(i18n.T("%s — 🆕 %d / ✅ %d"), adminGiftBuyerName(b), b.NotUsed, b.Used),
+			CallbackData: fmt.Sprintf("adm:gbuyer:%d", b.BuyerTelegramID),
 		}})
 	}
 	rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}})
-	text := i18n.T("Активные подарочные коды (нажмите, чтобы отозвать):")
-	if len(codes) == 0 {
-		text = i18n.T("Активных подарочных кодов нет.")
-	}
-	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+	return &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
 
-// handleAdminGiftRevoke revokes an issued gift code from the admin list.
-func (s *Service) handleAdminGiftRevoke(ctx context.Context, chatID int64, data string) {
-	giftID, err := strconv.ParseInt(strings.TrimPrefix(data, "adm:grev:"), 10, 64)
+// handleAdminGiftBuyers re-renders the buyer picker in place (the "back to
+// buyers" target from a bucket view).
+func (s *Service) handleAdminGiftBuyers(ctx context.Context, cb *tg.CallbackQuery) bool {
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	if cb.Message == nil {
+		return true
+	}
+	chatID := cb.Message.Chat.ID
+	buyers, err := s.store.ListGiftBuyers(ctx)
 	if err != nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось распознать код."))
+		s.logger.Error("admin: list gift buyers failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения подарочных кодов."))
+		return true
+	}
+	if len(buyers) == 0 {
+		_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID,
+			i18n.T("Активных подарочных кодов нет."),
+			&tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{
+				{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}}}})
+		return true
+	}
+	_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID, adminGiftBuyersText(), adminGiftBuyersKeyboard(buyers))
+	return true
+}
+
+// handleAdminGiftBuyer shows one buyer's Not used / Used buckets, editing the
+// picker message in place ("adm:gbuyer:<buyerTGID>").
+func (s *Service) handleAdminGiftBuyer(ctx context.Context, cb *tg.CallbackQuery) bool {
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	if cb.Message == nil {
+		return true
+	}
+	buyerID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "adm:gbuyer:"), 10, 64)
+	if err != nil {
+		return true
+	}
+	chatID := cb.Message.Chat.ID
+	buyers, err := s.store.ListGiftBuyers(ctx)
+	if err != nil {
+		s.logger.Error("admin: list gift buyers failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения подарочных кодов."))
+		return true
+	}
+	var buyer *store.GiftBuyer
+	for i := range buyers {
+		if buyers[i].BuyerTelegramID == buyerID {
+			buyer = &buyers[i]
+		}
+	}
+	if buyer == nil {
+		// The buyer no longer has active gifts: fall back to the picker.
+		return s.handleAdminGiftBuyers(ctx, cb)
+	}
+
+	var rows [][]tg.InlineKeyboardButton
+	if buyer.NotUsed > 0 {
+		rows = append(rows, []tg.InlineKeyboardButton{{
+			Text:         fmt.Sprintf(i18n.T("🆕 Не использованы (%d)"), buyer.NotUsed),
+			CallbackData: fmt.Sprintf("adm:glist:%d:issued:0", buyerID),
+		}})
+	}
+	if buyer.Used > 0 {
+		rows = append(rows, []tg.InlineKeyboardButton{{
+			Text:         fmt.Sprintf(i18n.T("✅ Использованы (%d)"), buyer.Used),
+			CallbackData: fmt.Sprintf("adm:glist:%d:redeemed:0", buyerID),
+		}})
+	}
+	rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("← К покупателям"), CallbackData: "adm:gbuyers"}})
+	_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID,
+		fmt.Sprintf(i18n.T("🎁 Подарки «%s»\n\nВыберите категорию:"), adminGiftBuyerName(*buyer)),
+		&tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+	return true
+}
+
+func adminGiftStatusLabel(status string) string {
+	switch status {
+	case "issued":
+		return i18n.T("🆕 Не использованы")
+	case "redeemed":
+		return i18n.T("✅ Использованы")
+	}
+	return ""
+}
+
+// handleAdminGiftList renders one page of a buyer's gifts in the requested
+// bucket ("adm:glist:<buyerTGID>:<status>:<page>"), editing the message in
+// place. Not-used (issued) codes expose a revoke button.
+func (s *Service) handleAdminGiftList(ctx context.Context, cb *tg.CallbackQuery) bool {
+	if cb.Message == nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка."))
+		return true
+	}
+	parts := strings.Split(strings.TrimPrefix(cb.Data, "adm:glist:"), ":")
+	if len(parts) != 3 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать запрос."))
+		return true
+	}
+	buyerID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать запрос."))
+		return true
+	}
+	status := parts[1]
+	page, _ := strconv.Atoi(parts[2])
+	if adminGiftStatusLabel(status) == "" || page < 0 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать запрос."))
+		return true
+	}
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	s.editAdminGiftList(ctx, cb.Message.Chat.ID, cb.Message.MessageID, buyerID, status, page)
+	return true
+}
+
+// editAdminGiftList edits the given message to show one page of a buyer's gifts
+// in the requested bucket. Shared by the list handler and revoke handler.
+func (s *Service) editAdminGiftList(ctx context.Context, chatID int64, messageID int64, buyerID int64, status string, page int) {
+	label := adminGiftStatusLabel(status)
+	if label == "" || page < 0 {
 		return
 	}
+	backRow := []tg.InlineKeyboardButton{{Text: i18n.T("← Назад"), CallbackData: fmt.Sprintf("adm:gbuyer:%d", buyerID)}}
+
+	counts, err := s.store.CountGiftCodesByBuyer(ctx, buyerID)
+	if err != nil {
+		s.logger.Error("admin: count gifts by buyer failed", "err", err.Error())
+		return
+	}
+	total := counts[status]
+	pages := (total + myGiftsPageSize - 1) / myGiftsPageSize
+	// The list may have changed since the buttons were drawn: fall back to the
+	// first page rather than showing an empty one.
+	if page >= pages {
+		page = 0
+	}
+	if total == 0 {
+		_ = s.bot.EditMessageText(ctx, chatID, messageID,
+			fmt.Sprintf(i18n.T("🎁 %s: подарков нет."), label),
+			&tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{backRow}})
+		return
+	}
+
+	gifts, err := s.store.ListGiftCodesByBuyerStatus(ctx, buyerID, status, myGiftsPageSize, page*myGiftsPageSize)
+	if err != nil {
+		s.logger.Error("admin: list gifts by buyer failed", "err", err.Error())
+		return
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf(i18n.T("🎁 %s — стр. %d/%d:\n"), label, page+1, pages))
+	var rows [][]tg.InlineKeyboardButton
+	for _, g := range gifts {
+		b.WriteString(fmt.Sprintf(i18n.T("\n%s — %d мес. (заявка от %s)\n%s\n"),
+			g.Code, g.Months, g.CreatedAt.Format("02.01.2006"), giftStatusLabel(&g)))
+		if g.Status == "issued" {
+			rows = append(rows, []tg.InlineKeyboardButton{{
+				Text:         fmt.Sprintf(i18n.T("🚫 Отозвать %s"), g.Code),
+				CallbackData: fmt.Sprintf("adm:grev:%d", g.ID),
+			}})
+		}
+	}
+	if pages > 1 {
+		nav := []tg.InlineKeyboardButton{}
+		if page > 0 {
+			nav = append(nav, tg.InlineKeyboardButton{Text: "◀️", CallbackData: fmt.Sprintf("adm:glist:%d:%s:%d", buyerID, status, page-1)})
+		}
+		nav = append(nav, tg.InlineKeyboardButton{Text: fmt.Sprintf(i18n.T("стр. %d/%d"), page+1, pages), CallbackData: "adm:gnoop"})
+		if page < pages-1 {
+			nav = append(nav, tg.InlineKeyboardButton{Text: "▶️", CallbackData: fmt.Sprintf("adm:glist:%d:%s:%d", buyerID, status, page+1)})
+		}
+		rows = append(rows, nav)
+	}
+	rows = append(rows, backRow)
+
+	_ = s.bot.EditMessageText(ctx, chatID, messageID,
+		strings.TrimRight(b.String(), "\n"), &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+// handleAdminGiftRevoke revokes an issued gift code from the admin list, then
+// re-renders the buyer's Not used bucket in place.
+func (s *Service) handleAdminGiftRevoke(ctx context.Context, cb *tg.CallbackQuery) bool {
+	giftID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "adm:grev:"), 10, 64)
+	if err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать код."))
+		return true
+	}
+	g, _ := s.store.GetGiftCode(ctx, giftID)
 	ok, err := s.store.RevokeGiftCode(ctx, giftID, s.now())
 	if err != nil {
 		s.logger.Error("admin: revoke gift code failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка отзыва кода."))
-		return
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка отзыва кода."))
+		return true
 	}
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Код уже использован или отозван."))
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Код уже использован или отозван."))
 	} else {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Код отозван."))
-		if g, gerr := s.store.GetGiftCode(ctx, giftID); gerr == nil && g != nil && g.BuyerTelegramID != 0 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Код отозван."))
+		if g != nil && g.BuyerTelegramID != 0 {
 			_ = s.bot.SendPlain(ctx, g.BuyerTelegramID,
 				fmt.Sprintf(i18n.T("🚫 Ваш подарочный код %s отозван администратором."), g.Code))
 		}
 	}
-	s.sendAdminGiftList(ctx, chatID)
+	if g != nil && cb.Message != nil {
+		s.editAdminGiftList(ctx, cb.Message.Chat.ID, cb.Message.MessageID, g.BuyerTelegramID, "issued", 0)
+	}
+	return true
 }
