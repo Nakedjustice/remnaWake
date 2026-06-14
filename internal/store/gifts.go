@@ -22,6 +22,15 @@ type GiftCode struct {
 	ResolvedAt         *time.Time
 }
 
+// GiftBuyer summarizes one buyer's active (issued/redeemed) gift counts for
+// the admin gift browser.
+type GiftBuyer struct {
+	BuyerTelegramID int64
+	BuyerUsername   string
+	NotUsed         int // issued
+	Used            int // redeemed
+}
+
 func (s *Store) CreateGiftCode(ctx context.Context, g GiftCode) (int64, error) {
 	now := formatTime(time.Now())
 	res, err := s.db.ExecContext(ctx, `
@@ -182,6 +191,39 @@ func (s *Store) CountGiftCodesByBuyer(ctx context.Context, buyerTGID int64) (map
 			return nil, err
 		}
 		out[status] = n
+	}
+	return out, rows.Err()
+}
+
+// ListGiftBuyers returns each buyer that has at least one issued or redeemed
+// gift, with per-bucket counts (NotUsed = issued, Used = redeemed). Buyers are
+// ordered by their most recent gift first. The buyer_username reflects the
+// latest gift row for that buyer.
+func (s *Store) ListGiftBuyers(ctx context.Context) ([]GiftBuyer, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT buyer_telegram_id,
+			(SELECT buyer_username FROM gift_codes g2
+			 WHERE g2.buyer_telegram_id = g.buyer_telegram_id
+			 ORDER BY g2.id DESC LIMIT 1) AS buyer_username,
+			SUM(CASE WHEN status = 'issued' THEN 1 ELSE 0 END)   AS not_used,
+			SUM(CASE WHEN status = 'redeemed' THEN 1 ELSE 0 END) AS used
+		FROM gift_codes g
+		WHERE status IN ('issued', 'redeemed')
+		GROUP BY buyer_telegram_id
+		ORDER BY MAX(id) DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []GiftBuyer
+	for rows.Next() {
+		var b GiftBuyer
+		if err := rows.Scan(&b.BuyerTelegramID, &b.BuyerUsername, &b.NotUsed, &b.Used); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
 	}
 	return out, rows.Err()
 }

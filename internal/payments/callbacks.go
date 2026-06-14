@@ -404,8 +404,16 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.startAddTariffFlow(ctx, chatID)
 	case cb.Data == "adm:gifts":
 		s.sendAdminGiftList(ctx, chatID)
+	case cb.Data == "adm:gbuyers":
+		s.handleAdminGiftBuyers(ctx, cb)
+	case strings.HasPrefix(cb.Data, "adm:gbuyer:"):
+		s.handleAdminGiftBuyer(ctx, cb)
+	case strings.HasPrefix(cb.Data, "adm:glist:"):
+		s.handleAdminGiftList(ctx, cb)
+	case cb.Data == "adm:gnoop":
+		// no-op: pagination label button
 	case strings.HasPrefix(cb.Data, "adm:grev:"):
-		s.handleAdminGiftRevoke(ctx, chatID, cb.Data)
+		s.handleAdminGiftRevoke(ctx, cb)
 	case cb.Data == "adm:squad":
 		s.sendAdminSquadList(ctx, chatID)
 	case strings.HasPrefix(cb.Data, "adm:sq:"):

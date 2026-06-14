@@ -461,14 +461,37 @@ func TestAdminGiftListAndRevoke(t *testing.T) {
 	giftID := gifts[0].ID
 	svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("gc_ok:%d", giftID)))
 
+	// Level 1: buyer picker lists the buyer with a drill-down button.
 	bot.sent = nil
 	if !svc.HandleCallback(ctx, cbq(1000, "adm:gifts")) {
 		t.Fatal("adm:gifts should be handled")
 	}
-	list := bot.sent[len(bot.sent)-1]
-	if list.Keyboard == nil ||
-		list.Keyboard.InlineKeyboard[0][0].CallbackData != fmt.Sprintf("adm:grev:%d", giftID) {
-		t.Fatalf("expected revoke button: %+v", list)
+	picker := keyboardData(bot.sent[len(bot.sent)-1].Keyboard)
+	if !picker["adm:gbuyer:555"] {
+		t.Fatalf("expected buyer drill-down button: %+v", picker)
+	}
+
+	// Level 2: only the Not used bucket exists for this buyer.
+	bot.edits = nil
+	if !svc.HandleCallback(ctx, cbq(1000, "adm:gbuyer:555")) {
+		t.Fatal("adm:gbuyer should be handled")
+	}
+	buckets := keyboardData(bot.edits[len(bot.edits)-1].Keyboard)
+	if !buckets["adm:glist:555:issued:0"] {
+		t.Fatalf("expected Not used bucket: %+v", buckets)
+	}
+	if buckets["adm:glist:555:redeemed:0"] {
+		t.Fatalf("Used bucket must be hidden when empty: %+v", buckets)
+	}
+
+	// Level 3: leaf list exposes the revoke button.
+	bot.edits = nil
+	if !svc.HandleCallback(ctx, cbq(1000, "adm:glist:555:issued:0")) {
+		t.Fatal("adm:glist should be handled")
+	}
+	leaf := keyboardData(bot.edits[len(bot.edits)-1].Keyboard)
+	if !leaf[fmt.Sprintf("adm:grev:%d", giftID)] {
+		t.Fatalf("expected revoke button: %+v", leaf)
 	}
 
 	if !svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("adm:grev:%d", giftID))) {
@@ -477,5 +500,41 @@ func TestAdminGiftListAndRevoke(t *testing.T) {
 	g, _ := st.GetGiftCode(ctx, giftID)
 	if g.Status != "revoked" {
 		t.Fatalf("status = %s, want revoked", g.Status)
+	}
+}
+
+func TestAdminGiftUsedBucket(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	seedBuyer(svc, 555)
+	id := buyGift(t, svc, st, 1)
+	svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("gc_ok:%d", id)))
+	g, _ := st.GetGiftCode(ctx, id)
+	if ok, err := st.RedeemGiftCode(ctx, g.Code, 888, "carol", time.Now()); err != nil || !ok {
+		t.Fatalf("redeem: %v %v", ok, err)
+	}
+
+	// Buckets: Used present, Not used hidden.
+	bot.edits = nil
+	svc.HandleCallback(ctx, cbq(1000, "adm:gbuyer:555"))
+	buckets := keyboardData(bot.edits[len(bot.edits)-1].Keyboard)
+	if !buckets["adm:glist:555:redeemed:0"] {
+		t.Fatalf("expected Used bucket: %+v", buckets)
+	}
+	if buckets["adm:glist:555:issued:0"] {
+		t.Fatalf("Not used bucket must be hidden when empty: %+v", buckets)
+	}
+
+	// Used leaf names the redeemer and offers no revoke button.
+	bot.edits = nil
+	svc.HandleCallback(ctx, cbq(1000, "adm:glist:555:redeemed:0"))
+	leaf := bot.edits[len(bot.edits)-1]
+	if !strings.Contains(leaf.Text, "carol") {
+		t.Fatalf("used leaf should name the redeemer: %q", leaf.Text)
+	}
+	for k := range keyboardData(leaf.Keyboard) {
+		if strings.HasPrefix(k, "adm:grev:") {
+			t.Fatalf("used codes must not be revocable: %q", k)
+		}
 	}
 }
