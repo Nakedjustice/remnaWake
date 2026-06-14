@@ -230,6 +230,46 @@ func TestListGiftCodesByBuyer(t *testing.T) {
 	}
 }
 
+func TestListGiftBuyers(t *testing.T) {
+	st := newGiftStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Buyer 111 (alice): one issued + one redeemed.
+	a1, _ := st.CreateGiftCode(ctx, GiftCode{Code: "A1", BuyerTelegramID: 111, BuyerUsername: "alice", Months: 1})
+	a2, _ := st.CreateGiftCode(ctx, GiftCode{Code: "A2", BuyerTelegramID: 111, BuyerUsername: "alice", Months: 2})
+	_, _ = st.IssueGiftCode(ctx, a1, now)
+	_, _ = st.IssueGiftCode(ctx, a2, now)
+	_, _ = st.RedeemGiftCode(ctx, "A2", 999, "carol", now)
+
+	// Buyer 222 (bob): one issued only.
+	b1, _ := st.CreateGiftCode(ctx, GiftCode{Code: "B1", BuyerTelegramID: 222, BuyerUsername: "bob", Months: 1})
+	_, _ = st.IssueGiftCode(ctx, b1, now)
+
+	// Buyer 333 (dan): only pending and revoked — must not appear.
+	_, _ = st.CreateGiftCode(ctx, GiftCode{Code: "D1", BuyerTelegramID: 333, BuyerUsername: "dan", Months: 1})
+	d2, _ := st.CreateGiftCode(ctx, GiftCode{Code: "D2", BuyerTelegramID: 333, BuyerUsername: "dan", Months: 1})
+	_, _ = st.IssueGiftCode(ctx, d2, now)
+	_, _ = st.RevokeGiftCode(ctx, d2, now)
+
+	buyers, err := st.ListGiftBuyers(ctx)
+	if err != nil {
+		t.Fatalf("list buyers: %v", err)
+	}
+	if len(buyers) != 2 {
+		t.Fatalf("expected 2 buyers, got %d: %+v", len(buyers), buyers)
+	}
+	// Newest activity first: bob's last gift (b1) has a higher id than alice's, so bob leads.
+	if buyers[0].BuyerTelegramID != 222 || buyers[0].BuyerUsername != "bob" ||
+		buyers[0].NotUsed != 1 || buyers[0].Used != 0 {
+		t.Fatalf("buyer[0] mismatch: %+v", buyers[0])
+	}
+	if buyers[1].BuyerTelegramID != 111 || buyers[1].BuyerUsername != "alice" ||
+		buyers[1].NotUsed != 1 || buyers[1].Used != 1 {
+		t.Fatalf("buyer[1] mismatch: %+v", buyers[1])
+	}
+}
+
 func TestGiftCodesByBuyerStatusPagingAndCounts(t *testing.T) {
 	st := newGiftStore(t)
 	ctx := context.Background()

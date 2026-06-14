@@ -108,8 +108,11 @@ func TestAdminPanelData(t *testing.T) {
 	if panel.Requisites != "card 1234" {
 		t.Fatalf("requisites: %q", panel.Requisites)
 	}
-	if len(panel.Gifts) != 1 || panel.Gifts[0].ID != giftID || panel.Gifts[0].Code != "GIFT1" || panel.Gifts[0].Buyer != "alice" {
-		t.Fatalf("gifts: %+v", panel.Gifts)
+	if len(panel.GiftBuyers) != 1 || panel.GiftBuyers[0].Buyer != "alice" ||
+		panel.GiftBuyers[0].BuyerTelegramID != userTG || len(panel.GiftBuyers[0].Used) != 0 ||
+		len(panel.GiftBuyers[0].NotUsed) != 1 || panel.GiftBuyers[0].NotUsed[0].ID != giftID ||
+		panel.GiftBuyers[0].NotUsed[0].Code != "GIFT1" {
+		t.Fatalf("gift buyers: %+v", panel.GiftBuyers)
 	}
 	if len(panel.Requests) != 1 || panel.Requests[0].ID != reqID || panel.Requests[0].Username != "alice" ||
 		panel.Requests[0].Months != 3 || panel.Requests[0].ExpireAt != "01.07.2026" {
