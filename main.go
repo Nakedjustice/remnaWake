@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/autoupdate"
 	"github.com/Nakedjustice/remnaWake/internal/config"
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/notify"
@@ -95,6 +96,20 @@ func main() {
 			}
 		}
 		go pollTelegramCallbacks(rootCtx, bot, pay, logger)
+
+		if cfg.AutoUpdate.Enabled {
+			if cfg.AutoUpdate.WatchtowerConfigured() {
+				wt := autoupdate.NewWatchtower(cfg.AutoUpdate.WatchtowerURL, cfg.AutoUpdate.WatchtowerToken)
+				pay.SetUpdateTrigger(wt.Trigger)
+			}
+			checker := autoupdate.NewChecker(
+				autoupdate.NewDigestFetcher(), db, pay,
+				cfg.AutoUpdate.Image, cfg.AutoUpdate.CheckInterval, logger)
+			logger.Info("autoupdate enabled", "image", cfg.AutoUpdate.Image,
+				"interval", cfg.AutoUpdate.CheckInterval.String(),
+				"watchtower", cfg.AutoUpdate.WatchtowerConfigured())
+			go checker.Run(rootCtx)
+		}
 	}
 
 	if cfg.WebApp.Enabled() {

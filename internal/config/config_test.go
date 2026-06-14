@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadRequiresRemnawaveAPIToken(t *testing.T) {
@@ -264,6 +265,92 @@ func TestLoadPlategaRejectsBadMethod(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "PLATEGA_METHOD") {
 		t.Fatalf("error = %q, want mention of PLATEGA_METHOD", err.Error())
+	}
+}
+
+func TestLoadAutoUpdateDisabledByDefault(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AutoUpdate.Enabled {
+		t.Fatal("AutoUpdate should be disabled by default")
+	}
+	// Defaults are still populated so they're ready when enabled.
+	if cfg.AutoUpdate.Image != "ghcr.io/nakedjustice/remnawave:main" {
+		t.Fatalf("Image = %q, want ghcr.io/nakedjustice/remnawave:main", cfg.AutoUpdate.Image)
+	}
+	if cfg.AutoUpdate.CheckInterval != 6*time.Hour {
+		t.Fatalf("CheckInterval = %v, want 6h", cfg.AutoUpdate.CheckInterval)
+	}
+	if cfg.AutoUpdate.WatchtowerConfigured() {
+		t.Fatal("Watchtower should be unconfigured without WATCHTOWER_URL")
+	}
+}
+
+func TestLoadAutoUpdateEnabled(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("AUTOUPDATE_ENABLED", "true")
+	t.Setenv("AUTOUPDATE_CHECK_INTERVAL", "30m")
+	t.Setenv("WATCHTOWER_URL", "http://watchtower:8080/")
+	t.Setenv("WATCHTOWER_TOKEN", " secret ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.AutoUpdate.Enabled {
+		t.Fatal("AutoUpdate should be enabled")
+	}
+	if cfg.AutoUpdate.CheckInterval != 30*time.Minute {
+		t.Fatalf("CheckInterval = %v, want 30m", cfg.AutoUpdate.CheckInterval)
+	}
+	if cfg.AutoUpdate.WatchtowerURL != "http://watchtower:8080" {
+		t.Fatalf("WatchtowerURL = %q, want trimmed without trailing slash", cfg.AutoUpdate.WatchtowerURL)
+	}
+	if cfg.AutoUpdate.WatchtowerToken != "secret" {
+		t.Fatalf("WatchtowerToken = %q, want trimmed", cfg.AutoUpdate.WatchtowerToken)
+	}
+	if !cfg.AutoUpdate.WatchtowerConfigured() {
+		t.Fatal("Watchtower should be configured")
+	}
+}
+
+func TestLoadAutoUpdateRejectsBadInterval(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("AUTOUPDATE_ENABLED", "true")
+	t.Setenv("AUTOUPDATE_CHECK_INTERVAL", "nope")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load should fail with invalid AUTOUPDATE_CHECK_INTERVAL")
+	}
+	if !strings.Contains(err.Error(), "AUTOUPDATE_CHECK_INTERVAL") {
+		t.Fatalf("error = %q, want mention of AUTOUPDATE_CHECK_INTERVAL", err.Error())
+	}
+}
+
+func TestLoadAutoUpdateRejectsEmptyImage(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("AUTOUPDATE_ENABLED", "true")
+	t.Setenv("AUTOUPDATE_IMAGE", "   ")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load should fail with empty AUTOUPDATE_IMAGE when enabled")
+	}
+	if !strings.Contains(err.Error(), "AUTOUPDATE_IMAGE") {
+		t.Fatalf("error = %q, want mention of AUTOUPDATE_IMAGE", err.Error())
 	}
 }
 

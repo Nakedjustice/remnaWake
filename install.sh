@@ -381,6 +381,11 @@ CURRENCY="₽"
 BOT_LANG="ru"
 WINBACK_ENABLED="true"
 WINBACK_DAYS="1,3"
+AUTOUPDATE_ENABLED="false"
+AUTOUPDATE_IMAGE="ghcr.io/nakedjustice/remnawave:main"
+AUTOUPDATE_CHECK_INTERVAL="6h"
+WATCHTOWER_URL=""
+WATCHTOWER_TOKEN=""
 
 printf '\n' >&2
 if ask_yes_no "Configure advanced options (parse mode, log level, timeout, dry-run, currency, language, win-back)?" "n"; then
@@ -394,6 +399,22 @@ if ask_yes_no "Configure advanced options (parse mode, log level, timeout, dry-r
   ask BOT_LANG            "Bot language (ru / en)"                         "ru"    v_lang
   ask WINBACK_ENABLED     "Send win-back messages to expired users (true/false)" "true" v_bool
   ask WINBACK_DAYS        "Days after expiry to send win-back (comma-separated, e.g. 1,3)" "1,3" v_days_list
+fi
+
+printf '\n' >&2
+if ask_yes_no "Enable auto-update notifications (DM admins when a new bot version is released)?" "n"; then
+  AUTOUPDATE_ENABLED="true"
+  ask AUTOUPDATE_CHECK_INTERVAL "Check for updates every (Go duration, e.g. 6h)" "6h" v_duration
+  if ask_yes_no "Enable one-tap install via a Watchtower sidecar?" "n"; then
+    WATCHTOWER_URL="http://watchtower:8080"
+    if command -v openssl >/dev/null 2>&1; then
+      WATCHTOWER_TOKEN="$(openssl rand -hex 24)"
+    else
+      WATCHTOWER_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    fi
+    info "One-tap install enabled. Before starting, uncomment the 'watchtower' service"
+    info "and the 'autoupdate' network in docker-compose.yml (see the comments there)."
+  fi
 fi
 
 # --- Write .env atomically with strict permissions --------------------------
@@ -440,6 +461,15 @@ PLATEGA_SECRET=$PLATEGA_SECRET
 PLATEGA_METHOD=$PLATEGA_METHOD
 PLATEGA_CURRENCY=$PLATEGA_CURRENCY
 PLATEGA_RETURN_URL=$PLATEGA_RETURN_URL
+
+# Auto-update: notify admins when a new image is published. One-tap install
+# requires the watchtower sidecar (see docker-compose.yml); leave WATCHTOWER_URL
+# empty for notify-only (the button then shows manual upgrade instructions).
+AUTOUPDATE_ENABLED=$AUTOUPDATE_ENABLED
+AUTOUPDATE_IMAGE=$AUTOUPDATE_IMAGE
+AUTOUPDATE_CHECK_INTERVAL=$AUTOUPDATE_CHECK_INTERVAL
+WATCHTOWER_URL=$WATCHTOWER_URL
+WATCHTOWER_TOKEN=$WATCHTOWER_TOKEN
 EOF
 
 mv "$tmp_env" "$ENV_FILE"

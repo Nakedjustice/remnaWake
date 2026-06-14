@@ -21,6 +21,7 @@ type Config struct {
 	WebApp     WebAppConfig
 	Winback    WinbackConfig
 	Platega    PlategaConfig
+	AutoUpdate AutoUpdateConfig
 	Lang       i18n.Lang
 	LogLevel   slog.Level
 	DryRun     bool
@@ -86,6 +87,23 @@ func (p PlategaConfig) Enabled() bool {
 	return p.MerchantID != "" && p.Secret != ""
 }
 
+// AutoUpdateConfig configures the optional update checker: the bot polls the
+// configured image's registry manifest digest and DMs admins when it changes.
+// When a Watchtower sidecar is wired in (WatchtowerURL set), the admin can apply
+// the update with one tap; otherwise the notification carries manual instructions.
+type AutoUpdateConfig struct {
+	Enabled         bool
+	Image           string        // image ref watched for new digests (ghcr.io/<repo>:<tag>)
+	CheckInterval   time.Duration // how often to poll the registry
+	WatchtowerURL   string        // base URL of the Watchtower HTTP API; empty = notify-only
+	WatchtowerToken string        // bearer token for the Watchtower HTTP API
+}
+
+// WatchtowerConfigured reports whether one-tap install is available.
+func (a AutoUpdateConfig) WatchtowerConfigured() bool {
+	return a.WatchtowerURL != ""
+}
+
 // MethodCode maps the configured Method to a Platega payment-method code.
 func (p PlategaConfig) MethodCode() (int, error) {
 	switch strings.ToLower(strings.TrimSpace(p.Method)) {
@@ -143,6 +161,12 @@ func Load() (*Config, error) {
 			Currency:   getenv("PLATEGA_CURRENCY", "RUB"),
 			ReturnURL:  strings.TrimRight(strings.TrimSpace(getenv("PLATEGA_RETURN_URL", "https://t.me")), "/"),
 		},
+		AutoUpdate: AutoUpdateConfig{
+			Enabled:         getenvBool("AUTOUPDATE_ENABLED", false),
+			Image:           strings.TrimSpace(getenv("AUTOUPDATE_IMAGE", "ghcr.io/nakedjustice/remnawave:main")),
+			WatchtowerURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("WATCHTOWER_URL")), "/"),
+			WatchtowerToken: strings.TrimSpace(os.Getenv("WATCHTOWER_TOKEN")),
+		},
 		Lang:       lang,
 		LogLevel:   parseLogLevel(getenv("LOG_LEVEL", "info")),
 		DryRun:     getenvBool("DRY_RUN", false),
@@ -157,6 +181,13 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid HTTP_TIMEOUT: %w", err)
 	}
 	cfg.HTTP.Timeout = d
+
+	interval := getenv("AUTOUPDATE_CHECK_INTERVAL", "6h")
+	iv, err := time.ParseDuration(interval)
+	if err != nil {
+		return nil, fmt.Errorf("invalid AUTOUPDATE_CHECK_INTERVAL: %w", err)
+	}
+	cfg.AutoUpdate.CheckInterval = iv
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -195,6 +226,14 @@ func (c *Config) validate() error {
 	if c.Platega.Enabled() {
 		if _, err := c.Platega.MethodCode(); err != nil {
 			return err
+		}
+	}
+	if c.AutoUpdate.Enabled {
+		if c.AutoUpdate.CheckInterval <= 0 {
+			return fmt.Errorf("AUTOUPDATE_CHECK_INTERVAL must be positive: %v", c.AutoUpdate.CheckInterval)
+		}
+		if c.AutoUpdate.Image == "" {
+			return errors.New("AUTOUPDATE_IMAGE is required when AUTOUPDATE_ENABLED is true")
 		}
 	}
 	return nil

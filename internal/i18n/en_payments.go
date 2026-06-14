@@ -9,6 +9,14 @@ func init() {
 // enPayments translates the payments-package texts (user flows, admin flows,
 // gift/invite/register conversations, /stats). Merged into en at init.
 var enPayments = map[string]string{
+	// Auto-update
+	"🆕 Доступно обновление бота.\n\nТекущая версия: %s\nНовая версия: %s": "🆕 A bot update is available.\n\nCurrent version: %s\nNew version: %s",
+	"🔄 Установить сейчас": "🔄 Install now",
+	"Позже":               "Later",
+	"Автоустановка не настроена. Обновите вручную:\ndocker compose pull && docker compose up -d": "Auto-install is not configured. Update manually:\ndocker compose pull && docker compose up -d",
+	"Обновление запущено, бот скоро перезапустится.": "Update started, the bot will restart shortly.",
+	"Не удалось запустить обновление.":               "Failed to start the update.",
+
 	// Platega payment gateway
 	"Не удалось переключить провайдера. Platega не настроен (нет ключей мерчанта)?":                  "Could not switch the provider. Is Platega configured (merchant keys present)?",
 	"💳 Провайдер оплаты: Platega. Продления оплачиваются онлайн (СБП/карта), подтверждение автоматическое.": "💳 Payment provider: Platega. Renewals are paid online (SBP/card) and confirmed automatically.",

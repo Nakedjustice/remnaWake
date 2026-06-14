@@ -14,6 +14,10 @@ services:
       DB_PATH: /data/bot.db
     volumes:
       - botdata:/data
+    # Scope label so a scoped Watchtower (see below) updates only this container.
+    # Harmless when auto-update is off.
+    labels:
+      com.centurylinklabs.watchtower.scope: "remnawake"
     # Telegram Mini App: set WEBAPP_URL in .env and expose the embedded web
     # server (default :8080) to your HTTPS reverse proxy.
     #
@@ -33,6 +37,38 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    # One-tap auto-update: to let the bot's "Install now" button apply updates,
+    # uncomment the watchtower service below, put the bot and watchtower on a
+    # shared network, and set in .env:
+    #   AUTOUPDATE_ENABLED=true
+    #   WATCHTOWER_URL=http://watchtower:8080
+    #   WATCHTOWER_TOKEN=<the same token as below>
+    # networks:
+    #   - autoupdate
+
+  # Watchtower in HTTP-API trigger-only mode: it does NOT poll on a schedule;
+  # it only pulls the new image and recreates remnaWake-bot when the bot calls
+  # its /v1/update endpoint (after an admin taps "Install now"). Watchtower —
+  # not the bot — holds the docker socket, so the bot stays unprivileged.
+  # watchtower:
+  #   image: containrrr/watchtower
+  #   container_name: remnaWake-watchtower
+  #   restart: unless-stopped
+  #   environment:
+  #     WATCHTOWER_HTTP_API_UPDATE: "true"
+  #     WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_TOKEN}"
+  #     # Only touch this project's container, not every container on the host:
+  #     WATCHTOWER_SCOPE: "remnawake"
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   networks:
+  #     - autoupdate
+
+# Uncomment alongside the watchtower service above to let the bot reach it by
+# name on an isolated internal network.
+# networks:
+#   autoupdate:
+#     driver: bridge
 
 # Uncomment to attach the bot to remnawave's existing network (used by the
 # containerised-Caddy setup above so Caddy can reach `remnaWake-bot:8080`).

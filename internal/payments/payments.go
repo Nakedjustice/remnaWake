@@ -222,6 +222,11 @@ type Service struct {
 	// every time while no squad is explicitly selected. Protected by mu;
 	// cleared when an admin selects a squad.
 	resolvedSquadUUID string
+
+	// updateTrigger applies an available bot update when an admin taps "Install
+	// now" (typically a Watchtower HTTP-API call). nil = no one-tap install;
+	// the button then shows manual instructions. Wired once at startup.
+	updateTrigger func(context.Context) error
 }
 
 // requisitesKey is the settings-table key under which payment requisites text

@@ -182,6 +182,25 @@ App admin panel.
 Tariffs and payment state are stored in SQLite (`DB_PATH`, default `/data/bot.db`,
 kept in the `botdata` Docker volume), so they survive restarts.
 
+### Auto-update (optional)
+
+With `AUTOUPDATE_ENABLED=true` the bot periodically checks the container registry
+for a newer `AUTOUPDATE_IMAGE` (the deployed image's manifest digest) and DMs every
+admin when one is published, with **🔄 Установить сейчас** and **Позже** buttons.
+The check interval is `AUTOUPDATE_CHECK_INTERVAL` (default `6h`).
+
+Because the bot runs as a distroless, unprivileged container, it cannot update
+itself directly. **One-tap install** is delegated to a [Watchtower](https://containrrr.dev/watchtower/)
+sidecar running in HTTP-API trigger-only mode (it does not poll; it only acts when
+called). To enable it: uncomment the `watchtower` service and the `autoupdate`
+network in [`docker-compose.yml`](docker-compose.yml), then set in `.env`:
+`AUTOUPDATE_ENABLED=true`, `WATCHTOWER_URL=http://watchtower:8080`, and a shared
+`WATCHTOWER_TOKEN`. The bot then calls Watchtower's `/v1/update` endpoint on
+**Install now**, which pulls the new image and recreates the bot container; only
+Watchtower holds the Docker socket. With `WATCHTOWER_URL` left empty the feature is
+notify-only and the button shows the manual `docker compose pull && docker compose up -d`
+command. `install.sh` can wire all of this up interactively.
+
 ### Menu buttons
 
 When a user sends `/menu` (or `/help`), the bot replies with five inline buttons:

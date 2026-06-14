@@ -79,6 +79,10 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleGiftUse(ctx, cb)
 	case cb.Data == "gc_redeem_cancel":
 		return s.handleGiftRedeemCancel(ctx, cb)
+	case cb.Data == "upd:install":
+		return s.handleUpdateInstall(ctx, cb)
+	case cb.Data == "upd:dismiss":
+		return s.handleUpdateDismiss(ctx, cb)
 	case strings.HasPrefix(cb.Data, "adm:"):
 		return s.handleAdminMenu(ctx, cb)
 	default:
