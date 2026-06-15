@@ -105,24 +105,35 @@ Enabled only when `TELEGRAM_ADMIN_ID` is set:
 Prices are **informational** — the bot does not process money. The user pays you
 externally and you confirm manually.
 
-### Payment providers: P2P or Platega
+### Payment providers: P2P, Platega or Telegram Stars
 
 The flow above is the **P2P** provider (default): you confirm payments manually.
-Optionally you can enable the **Platega** gateway (SBP / cards) for *automatic*
-online payments. Set `PLATEGA_MERCHANT_ID` and `PLATEGA_SECRET` (see
-`.env.example`), then switch the active provider at runtime — **💳 Провайдер
-оплаты** in the `/admin` menu or the toggle in the Mini App admin panel. Only one
-provider is active at a time; with no Platega credentials the behaviour is
+You can also enable the **Platega** gateway (SBP / cards) and/or **Telegram
+Stars** (the native in-app XTR currency) for *automatic* online payments.
+Enable any combination at runtime — **💳 Способы оплаты** (*Payment methods*) in
+the `/admin` menu or the picker in the Mini App admin panel. **Several providers
+can be enabled at once**; when more than one is enabled the user chooses the
+method when paying. With no automatic provider configured the behaviour is
 exactly the P2P flow above.
 
-When Platega is active, picking a tariff opens a Platega transaction and the user
-gets an **«Оплатить»** link plus a **«🔄 Проверить оплату»** (*Check payment*)
-button. Confirmation is automatic: Platega calls back `POST /platega/callback`
-(served on the same HTTP server as the Mini App — set this URL as the
-notification URL in the Platega dashboard), the bot re-verifies the transaction
-status via Platega's API, and extends the subscription. The **«🔄 Проверить
-оплату»** button is a manual fallback if the webhook is delayed. Confirmation is
-idempotent — duplicate webhooks or button taps never extend twice.
+When **Platega** is chosen, picking a tariff opens a Platega transaction and the
+user gets an **«Оплатить»** link plus a **«🔄 Проверить оплату»** (*Check
+payment*) button. Confirmation is automatic: Platega calls back `POST
+/platega/callback` (served on the same HTTP server as the Mini App — set this URL
+as the notification URL in the Platega dashboard), the bot re-verifies the
+transaction status via Platega's API, and extends the subscription. The
+**«🔄 Проверить оплату»** button is a manual fallback if the webhook is delayed.
+
+When **Telegram Stars** is chosen, the bot sends a native Telegram invoice
+(currency `XTR`) right in the chat (the Mini App opens an in-app invoice). No
+extra credentials and no webhook are needed — it uses the bot's own token and
+confirmation arrives over `getUpdates` (`pre_checkout_query` →
+`successful_payment`). Enable it with `TELEGRAM_STARS_ENABLED=true` and set
+`TELEGRAM_STARS_RATE` (price units per Star; the Stars charged for a tariff is
+`ceil(price / rate)`). See `.env.example`.
+
+All confirmations are idempotent — duplicate webhooks, button taps or payment
+events never extend a subscription twice.
 
 **Payment receipt (optional).** The admin can require proof of payment: toggle
 **«📸 Чек об оплате»** in the `/admin` menu or the switch in the Mini App admin
@@ -364,6 +375,8 @@ through linking an account step by step (no link = no notifications), plus a
 | `PLATEGA_METHOD`       | no       | `sbp`            | Platega payment method: `sbp` or `card`                      |
 | `PLATEGA_CURRENCY`     | no       | `RUB`            | ISO currency code sent to the Platega API                    |
 | `PLATEGA_RETURN_URL`   | no       | `https://t.me`   | Where Platega returns the user after payment                 |
+| `TELEGRAM_STARS_ENABLED` | no     | `false`          | Enable native Telegram Stars (XTR) payments (uses the bot token; no webhook) |
+| `TELEGRAM_STARS_RATE`  | no¹      | —                | Price units per Star; Stars charged = `ceil(price / rate)`. ¹Required when `TELEGRAM_STARS_ENABLED=true` |
 
 ## Telegram Mini App
 

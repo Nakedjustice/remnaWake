@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,9 @@ type BotSender interface {
 	AnswerCallbackQuery(ctx context.Context, id, text string) error
 	EditMessageReplyMarkup(ctx context.Context, chatID, messageID int64, kb *tg.InlineKeyboardMarkup) error
 	EditMessageText(ctx context.Context, chatID, messageID int64, text string, kb *tg.InlineKeyboardMarkup) error
+	SendInvoice(ctx context.Context, chatID int64, title, description, payload string, prices []tg.LabeledPrice) (int64, error)
+	CreateInvoiceLink(ctx context.Context, title, description, payload string, prices []tg.LabeledPrice) (string, error)
+	AnswerPreCheckoutQuery(ctx context.Context, queryID string, ok bool, errorMessage string) error
 }
 
 // Extender is the subset of *remnawave.Client that payments needs.
@@ -70,11 +74,17 @@ type PlategaGateway interface {
 }
 
 // Payment providers. "p2p" is the manual admin-confirmed flow (default);
-// "platega" is the automatic Platega gateway.
+// "platega" is the automatic Platega gateway; "telegram_stars" is Telegram's
+// native in-app Stars (XTR) currency. Several providers may be enabled at once;
+// when more than one is enabled the user picks at pay time.
 const (
-	ProviderP2P     = "p2p"
-	ProviderPlatega = "platega"
+	ProviderP2P           = "p2p"
+	ProviderPlatega       = "platega"
+	ProviderTelegramStars = "telegram_stars"
 )
+
+// allProviders is the canonical iteration/display order of payment providers.
+var allProviders = []string{ProviderP2P, ProviderPlatega, ProviderTelegramStars}
 
 // Subscriber is the minimal user view the gift flow needs, kept payments-local
 // so this package stays decoupled from the remnawave package.
@@ -206,9 +216,10 @@ type Service struct {
 	// attach a payment screenshot before the request reaches the admins.
 	requireScreenshot bool // protected by mu
 
-	// paymentProvider mirrors the persisted active-provider setting ("p2p" or
-	// "platega"). Switching to "platega" is only honored when platega != nil.
-	paymentProvider string // protected by mu
+	// enabledProvidersSet mirrors the persisted set of enabled payment
+	// providers. A provider only takes effect when it is also configured
+	// (see providerAvailable); an empty effective set falls back to p2p.
+	enabledProvidersSet map[string]bool // protected by mu
 
 	// platega and its parameters are wired once at startup via SetPlatega when
 	// Platega credentials are configured; nil = Platega unavailable.
@@ -216,6 +227,12 @@ type Service struct {
 	plategaMethod    int            // protected by mu
 	plategaCurrency  string         // protected by mu
 	plategaReturnURL string         // protected by mu
+
+	// starsEnabled / starsRate are wired once at startup via SetTelegramStars
+	// when Telegram Stars is configured. starsRate is how many price units equal
+	// one Star; starsEnabled false = Stars unavailable.
+	starsEnabled bool // protected by mu
+	starsRate    int  // protected by mu
 
 	// resolvedSquadUUID caches a successful by-name fallback lookup of the
 	// default squad, so user creation doesn't hit the panel's squad listing
@@ -237,9 +254,14 @@ const requisitesKey = "payment_requisites"
 // required" toggle ("1" = on, anything else / absent = off).
 const requireScreenshotKey = "require_payment_screenshot"
 
-// paymentProviderKey is the settings-table key for the active payment provider
-// ("platega"; anything else / absent = "p2p").
+// paymentProviderKey is the legacy settings-table key for the single active
+// payment provider ("platega"; anything else / absent = "p2p"). Read once at
+// startup to migrate to enabledProvidersKey; no longer written.
 const paymentProviderKey = "payment_provider"
+
+// enabledProvidersKey is the settings-table key holding the comma-separated set
+// of enabled payment providers (e.g. "p2p,telegram_stars").
+const enabledProvidersKey = "enabled_payment_providers"
 
 // defaultSquadUUIDKey / defaultSquadNameKey are the settings-table keys for
 // the admin-selected internal squad assigned to newly created users. The name
@@ -285,12 +307,42 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 	} else if found {
 		s.requireScreenshot = value == "1"
 	}
-	if value, found, err := st.GetSetting(context.Background(), paymentProviderKey); err != nil {
-		logger.Error("load payment provider setting failed", "err", err.Error())
-	} else if found && value == ProviderPlatega {
-		s.paymentProvider = ProviderPlatega
-	}
+	s.enabledProvidersSet = s.loadEnabledProviders(context.Background())
 	return s
+}
+
+// loadEnabledProviders reads the persisted enabled-providers set, migrating from
+// the legacy single-provider key when the new key is absent. Defaults to p2p.
+func (s *Service) loadEnabledProviders(ctx context.Context) map[string]bool {
+	if value, found, err := s.store.GetSetting(ctx, enabledProvidersKey); err != nil {
+		s.logger.Error("load enabled providers setting failed", "err", err.Error())
+	} else if found {
+		return parseProviderSet(value)
+	}
+	// Migrate from the legacy single-provider setting.
+	if value, found, err := s.store.GetSetting(ctx, paymentProviderKey); err != nil {
+		s.logger.Error("load payment provider setting failed", "err", err.Error())
+	} else if found && value == ProviderPlatega {
+		return map[string]bool{ProviderPlatega: true}
+	}
+	return map[string]bool{ProviderP2P: true}
+}
+
+// parseProviderSet parses a comma-separated provider list into a set, keeping
+// only recognised provider names.
+func parseProviderSet(value string) map[string]bool {
+	set := make(map[string]bool)
+	for _, name := range strings.Split(value, ",") {
+		name = strings.TrimSpace(name)
+		switch name {
+		case ProviderP2P, ProviderPlatega, ProviderTelegramStars:
+			set[name] = true
+		}
+	}
+	if len(set) == 0 {
+		set[ProviderP2P] = true
+	}
+	return set
 }
 
 // SetPlatega wires the Platega gateway and its parameters. Called once at
@@ -305,6 +357,16 @@ func (s *Service) SetPlatega(gw PlategaGateway, method int, currency, returnURL 
 	s.plategaReturnURL = returnURL
 }
 
+// SetTelegramStars enables the native Telegram Stars provider with the given
+// price-to-Stars conversion rate. Called once at startup when Stars is
+// configured; until then Stars is unavailable regardless of the enabled set.
+func (s *Service) SetTelegramStars(rate int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.starsEnabled = true
+	s.starsRate = rate
+}
+
 // plategaConfigured reports whether a Platega gateway is wired in.
 func (s *Service) plategaConfigured() bool {
 	s.mu.Lock()
@@ -312,45 +374,121 @@ func (s *Service) plategaConfigured() bool {
 	return s.platega != nil
 }
 
-// activeProvider returns the effective payment provider: "platega" only when it
-// is both selected and configured, otherwise "p2p". This guarantees behaviour
-// is identical to the legacy flow whenever Platega is not wired in.
-func (s *Service) activeProvider() string {
+// starsConfigured reports whether the Telegram Stars provider is wired in.
+func (s *Service) starsConfigured() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.paymentProvider == ProviderPlatega && s.platega != nil {
-		return ProviderPlatega
-	}
-	return ProviderP2P
+	return s.starsEnabled
 }
 
-// getPaymentProvider returns the raw selected provider setting (independent of
-// whether Platega is configured), used to render the admin toggle state.
-func (s *Service) getPaymentProvider() string {
+// providerAvailable reports whether a provider is configured and may be offered.
+// p2p is always available; platega and telegram_stars require wiring at startup.
+func (s *Service) providerAvailable(name string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.paymentProvider == ProviderPlatega {
-		return ProviderPlatega
+	switch name {
+	case ProviderP2P:
+		return true
+	case ProviderPlatega:
+		return s.platega != nil
+	case ProviderTelegramStars:
+		return s.starsEnabled
+	default:
+		return false
 	}
-	return ProviderP2P
 }
 
-// setPaymentProvider persists the active-provider toggle and refreshes the
-// in-memory cache. Selecting "platega" is rejected when it is not configured.
-func (s *Service) setPaymentProvider(ctx context.Context, name string) error {
-	if name != ProviderP2P && name != ProviderPlatega {
+// enabledProviders returns the effective list of enabled providers (those that
+// are both selected and configured), in canonical order. Falls back to ["p2p"]
+// when nothing is effectively enabled.
+func (s *Service) enabledProviders() []string {
+	s.mu.Lock()
+	set := s.enabledProvidersSet
+	plategaOK := s.platega != nil
+	starsOK := s.starsEnabled
+	s.mu.Unlock()
+
+	available := func(name string) bool {
+		switch name {
+		case ProviderP2P:
+			return true
+		case ProviderPlatega:
+			return plategaOK
+		case ProviderTelegramStars:
+			return starsOK
+		default:
+			return false
+		}
+	}
+
+	out := make([]string, 0, len(allProviders))
+	for _, name := range allProviders {
+		if set[name] && available(name) {
+			out = append(out, name)
+		}
+	}
+	if len(out) == 0 {
+		return []string{ProviderP2P}
+	}
+	return out
+}
+
+// isProviderEnabled reports whether a provider is in the persisted enabled set
+// (independent of configuration), used to render the admin picker state.
+func (s *Service) isProviderEnabled(name string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.enabledProvidersSet[name]
+}
+
+// setProviderEnabled adds or removes a provider from the enabled set and
+// persists it. Enabling an unconfigured provider, or disabling the last
+// effectively-enabled one, is rejected with ErrBadInput.
+func (s *Service) setProviderEnabled(ctx context.Context, name string, on bool) error {
+	switch name {
+	case ProviderP2P, ProviderPlatega, ProviderTelegramStars:
+	default:
 		return ErrBadInput
 	}
-	if name == ProviderPlatega && !s.plategaConfigured() {
+	if on && !s.providerAvailable(name) {
 		return ErrBadInput
 	}
-	if err := s.store.UpsertSetting(ctx, paymentProviderKey, name); err != nil {
+	if !on {
+		// Refuse to disable the last effectively-enabled provider.
+		remaining := s.enabledProviders()
+		if len(remaining) == 1 && remaining[0] == name {
+			return ErrBadInput
+		}
+	}
+
+	s.mu.Lock()
+	if s.enabledProvidersSet == nil {
+		s.enabledProvidersSet = make(map[string]bool)
+	}
+	if on {
+		s.enabledProvidersSet[name] = true
+	} else {
+		delete(s.enabledProvidersSet, name)
+	}
+	serialized := serializeProviderSet(s.enabledProvidersSet)
+	s.mu.Unlock()
+
+	if err := s.store.UpsertSetting(ctx, enabledProvidersKey, serialized); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	s.paymentProvider = name
-	s.mu.Unlock()
 	return nil
+}
+
+// serializeProviderSet renders the enabled-providers set as a comma-separated
+// list in canonical order.
+func serializeProviderSet(set map[string]bool) string {
+	ordered := make([]string, 0, len(set))
+	for _, name := range allProviders {
+		if set[name] {
+			ordered = append(ordered, name)
+		}
+	}
+	return strings.Join(ordered, ",")
 }
 
 // SetBotUsername stores the bot's own username (from getMe) used to build

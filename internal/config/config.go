@@ -21,6 +21,7 @@ type Config struct {
 	WebApp     WebAppConfig
 	Winback    WinbackConfig
 	Platega    PlategaConfig
+	Stars      StarsConfig
 	AutoUpdate AutoUpdateConfig
 	Lang       i18n.Lang
 	LogLevel   slog.Level
@@ -85,6 +86,22 @@ type PlategaConfig struct {
 // Enabled reports whether Platega credentials are configured.
 func (p PlategaConfig) Enabled() bool {
 	return p.MerchantID != "" && p.Secret != ""
+}
+
+// StarsConfig configures the optional Telegram Stars (XTR) payment provider.
+// Stars uses the bot's own token, so the only configuration is the on/off flag
+// and the conversion rate from the tariff price (in the CURRENCY unit) to Stars.
+// Whether Stars is an *enabled* provider is an admin runtime toggle, not config.
+type StarsConfig struct {
+	Enabled bool
+	// Rate is how many price units (e.g. RUB) equal one Star. The Stars amount
+	// for a tariff is ceil(price / Rate).
+	Rate int
+}
+
+// Available reports whether the Telegram Stars provider may be offered.
+func (s StarsConfig) Available() bool {
+	return s.Enabled && s.Rate > 0
 }
 
 // AutoUpdateConfig configures the optional update checker: the bot polls the
@@ -161,6 +178,9 @@ func Load() (*Config, error) {
 			Currency:   getenv("PLATEGA_CURRENCY", "RUB"),
 			ReturnURL:  strings.TrimRight(strings.TrimSpace(getenv("PLATEGA_RETURN_URL", "https://t.me")), "/"),
 		},
+		Stars: StarsConfig{
+			Enabled: getenvBool("TELEGRAM_STARS_ENABLED", false),
+		},
 		AutoUpdate: AutoUpdateConfig{
 			Enabled:         getenvBool("AUTOUPDATE_ENABLED", false),
 			Image:           strings.TrimSpace(getenv("AUTOUPDATE_IMAGE", "ghcr.io/nakedjustice/remnawave:main")),
@@ -188,6 +208,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid AUTOUPDATE_CHECK_INTERVAL: %w", err)
 	}
 	cfg.AutoUpdate.CheckInterval = iv
+
+	if rate := strings.TrimSpace(os.Getenv("TELEGRAM_STARS_RATE")); rate != "" {
+		r, err := strconv.Atoi(rate)
+		if err != nil {
+			return nil, fmt.Errorf("invalid TELEGRAM_STARS_RATE: %q (expected a positive integer)", rate)
+		}
+		cfg.Stars.Rate = r
+	}
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -227,6 +255,9 @@ func (c *Config) validate() error {
 		if _, err := c.Platega.MethodCode(); err != nil {
 			return err
 		}
+	}
+	if c.Stars.Enabled && c.Stars.Rate <= 0 {
+		return errors.New("TELEGRAM_STARS_RATE must be a positive integer when TELEGRAM_STARS_ENABLED is true")
 	}
 	if c.AutoUpdate.Enabled {
 		if c.AutoUpdate.CheckInterval <= 0 {

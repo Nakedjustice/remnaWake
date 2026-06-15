@@ -61,43 +61,53 @@ func (f *fakePlatega) GetTransaction(_ context.Context, id string) (string, erro
 	return f.statuses[id], nil
 }
 
-func TestActiveProviderDefaultsToP2P(t *testing.T) {
+func TestEnabledProvidersDefaultsToP2P(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
-	if got := svc.activeProvider(); got != ProviderP2P {
-		t.Fatalf("activeProvider = %q, want p2p", got)
+	got := svc.enabledProviders()
+	if len(got) != 1 || got[0] != ProviderP2P {
+		t.Fatalf("enabledProviders = %v, want [p2p]", got)
 	}
 }
 
-func TestActiveProviderRequiresConfiguredGateway(t *testing.T) {
+func TestEnableProviderRequiresConfiguredGateway(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	// Selecting platega without a configured gateway is rejected.
-	if err := svc.setPaymentProvider(ctx, ProviderPlatega); !errors.Is(err, ErrBadInput) {
-		t.Fatalf("setPaymentProvider(platega) unconfigured = %v, want ErrBadInput", err)
+	// Enabling platega without a configured gateway is rejected.
+	if err := svc.setProviderEnabled(ctx, ProviderPlatega, true); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("setProviderEnabled(platega) unconfigured = %v, want ErrBadInput", err)
 	}
-	if got := svc.activeProvider(); got != ProviderP2P {
-		t.Fatalf("activeProvider = %q, want p2p", got)
+	if got := svc.enabledProviders(); len(got) != 1 || got[0] != ProviderP2P {
+		t.Fatalf("enabledProviders = %v, want [p2p]", got)
 	}
 
-	// Once configured, the toggle takes effect.
+	// Once configured, the toggle takes effect and platega becomes available.
 	svc.SetPlatega(&fakePlatega{}, 2, "RUB", "https://t.me")
-	if err := svc.setPaymentProvider(ctx, ProviderPlatega); err != nil {
-		t.Fatalf("setPaymentProvider(platega): %v", err)
+	if err := svc.setProviderEnabled(ctx, ProviderPlatega, true); err != nil {
+		t.Fatalf("setProviderEnabled(platega): %v", err)
 	}
-	if got := svc.activeProvider(); got != ProviderPlatega {
-		t.Fatalf("activeProvider = %q, want platega", got)
+	if !contains(svc.enabledProviders(), ProviderPlatega) {
+		t.Fatalf("enabledProviders = %v, want to include platega", svc.enabledProviders())
 	}
 
 	// The setting persists across restarts (a fresh Service over the same store).
 	svc2 := newServiceOverStore(t, svc.store)
-	if got := svc2.getPaymentProvider(); got != ProviderPlatega {
-		t.Fatalf("reloaded getPaymentProvider = %q, want platega", got)
+	if !svc2.isProviderEnabled(ProviderPlatega) {
+		t.Fatalf("reloaded isProviderEnabled(platega) = false, want true")
 	}
-	// But without a gateway wired in, the effective provider falls back to p2p.
-	if got := svc2.activeProvider(); got != ProviderP2P {
-		t.Fatalf("reloaded activeProvider (no gateway) = %q, want p2p", got)
+	// But without a gateway wired in, platega is filtered out of the effective set.
+	if contains(svc2.enabledProviders(), ProviderPlatega) {
+		t.Fatalf("reloaded enabledProviders = %v, want platega filtered out", svc2.enabledProviders())
 	}
+}
+
+func contains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 func TestStartPlategaPaymentCreatesRequestAndReturnsURL(t *testing.T) {

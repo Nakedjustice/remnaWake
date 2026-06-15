@@ -71,6 +71,10 @@ func main() {
 		pay.SetPlatega(plategaGateway{plClient}, method, cfg.Platega.Currency, cfg.Platega.ReturnURL)
 		logger.Info("platega gateway configured", "method", cfg.Platega.Method, "currency", cfg.Platega.Currency)
 	}
+	if cfg.Stars.Available() {
+		pay.SetTelegramStars(cfg.Stars.Rate)
+		logger.Info("telegram stars provider configured", "rate", cfg.Stars.Rate)
+	}
 	var winbackDays []int
 	if cfg.Winback.Enabled {
 		winbackDays = cfg.Winback.Days
@@ -209,12 +213,24 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 			if u.UpdateID >= offset {
 				offset = u.UpdateID + 1
 			}
+			if u.PreCheckoutQuery != nil {
+				if pay.HandlePreCheckout(ctx, u.PreCheckoutQuery) {
+					continue
+				}
+				logger.Debug("ignored pre-checkout query", "payload", u.PreCheckoutQuery.InvoicePayload)
+				continue
+			}
 			if u.CallbackQuery != nil {
 				if pay.HandleCallback(ctx, u.CallbackQuery) {
 					continue
 				}
 				logger.Debug("ignored telegram callback", "data", u.CallbackQuery.Data)
 				continue
+			}
+			if u.Message != nil && u.Message.SuccessfulPayment != nil {
+				if pay.HandleSuccessfulPayment(ctx, u.Message) {
+					continue
+				}
 			}
 			if u.Message != nil && len(u.Message.Photo) > 0 {
 				if pay.HandlePhoto(ctx, u.Message) {

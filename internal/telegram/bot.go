@@ -69,6 +69,39 @@ type getUpdatesRequest struct {
 	AllowedUpdates []string `json:"allowed_updates,omitempty"`
 }
 
+// LabeledPrice is one line item of an invoice. For Telegram Stars (currency
+// "XTR") Amount is the whole number of Stars, not a fractional minor unit.
+type LabeledPrice struct {
+	Label  string `json:"label"`
+	Amount int    `json:"amount"`
+}
+
+type sendInvoiceRequest struct {
+	ChatID      int64          `json:"chat_id"`
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	Payload     string         `json:"payload"`
+	Currency    string         `json:"currency"`
+	Prices      []LabeledPrice `json:"prices"`
+	// ProviderToken is intentionally omitted for Stars (XTR); it is required and
+	// non-empty only for fiat payment providers.
+	ReplyMarkup any `json:"reply_markup,omitempty"`
+}
+
+type createInvoiceLinkRequest struct {
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	Payload     string         `json:"payload"`
+	Currency    string         `json:"currency"`
+	Prices      []LabeledPrice `json:"prices"`
+}
+
+type answerPreCheckoutQueryRequest struct {
+	PreCheckoutQueryID string `json:"pre_checkout_query_id"`
+	OK                 bool   `json:"ok"`
+	ErrorMessage       string `json:"error_message,omitempty"`
+}
+
 type InlineKeyboardMarkup struct {
 	InlineKeyboard [][]InlineKeyboardButton `json:"inline_keyboard"`
 }
@@ -121,9 +154,32 @@ func MainReplyKeyboard() *ReplyKeyboardMarkup {
 }
 
 type Update struct {
-	UpdateID      int64          `json:"update_id"`
-	CallbackQuery *CallbackQuery `json:"callback_query,omitempty"`
-	Message       *Message       `json:"message,omitempty"`
+	UpdateID         int64             `json:"update_id"`
+	CallbackQuery    *CallbackQuery    `json:"callback_query,omitempty"`
+	Message          *Message          `json:"message,omitempty"`
+	PreCheckoutQuery *PreCheckoutQuery `json:"pre_checkout_query,omitempty"`
+}
+
+// PreCheckoutQuery arrives just before a Telegram payment is finalized; the bot
+// must answer it with AnswerPreCheckoutQuery within 10 seconds or the payment
+// is cancelled.
+type PreCheckoutQuery struct {
+	ID             string `json:"id"`
+	From           User   `json:"from"`
+	Currency       string `json:"currency"`
+	TotalAmount    int    `json:"total_amount"`
+	InvoicePayload string `json:"invoice_payload"`
+}
+
+// SuccessfulPayment is attached to a Message after the user completes payment
+// of an invoice. InvoicePayload echoes the payload sent with the invoice and is
+// the correlation key; TelegramPaymentChargeID is kept for audit/refunds.
+type SuccessfulPayment struct {
+	Currency                string `json:"currency"`
+	TotalAmount             int    `json:"total_amount"`
+	InvoicePayload          string `json:"invoice_payload"`
+	TelegramPaymentChargeID string `json:"telegram_payment_charge_id"`
+	ProviderPaymentChargeID string `json:"provider_payment_charge_id,omitempty"`
 }
 
 type CallbackQuery struct {
@@ -152,6 +208,9 @@ type Message struct {
 	Caption string      `json:"caption,omitempty"`
 	// Document is a generic file attachment (banks often send receipts as PDF).
 	Document *Document `json:"document,omitempty"`
+	// SuccessfulPayment is set on the service message Telegram sends after a
+	// successful invoice payment (e.g. Telegram Stars).
+	SuccessfulPayment *SuccessfulPayment `json:"successful_payment,omitempty"`
 }
 
 // Document is a generic file attached to a message.
@@ -320,6 +379,96 @@ func (b *Bot) SendDocument(ctx context.Context, chatID int64, fileID, caption st
 	return b.sendWithRetry(ctx, "sendDocument", payload)
 }
 
+// SendInvoice sends a Telegram Stars invoice (currency "XTR") into a chat and
+// returns the new message ID. No provider_token is sent — this is Stars-only.
+func (b *Bot) SendInvoice(ctx context.Context, chatID int64, title, description, payload string, prices []LabeledPrice) (int64, error) {
+	return b.sendWithRetry(ctx, "sendInvoice", sendInvoiceRequest{
+		ChatID:      chatID,
+		Title:       title,
+		Description: description,
+		Payload:     payload,
+		Currency:    "XTR",
+		Prices:      prices,
+	})
+}
+
+// CreateInvoiceLink creates a Telegram Stars invoice link (currency "XTR") that
+// a Mini App can open with Telegram.WebApp.openInvoice. Returns the link URL.
+func (b *Bot) CreateInvoiceLink(ctx context.Context, title, description, payload string, prices []LabeledPrice) (string, error) {
+	body, err := json.Marshal(createInvoiceLinkRequest{
+		Title:       title,
+		Description: description,
+		Payload:     payload,
+		Currency:    "XTR",
+		Prices:      prices,
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/createInvoiceLink", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("telegram create invoice link: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("telegram create invoice link failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+	var ar struct {
+		apiResponse
+		Result string `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &ar); err != nil {
+		return "", fmt.Errorf("telegram create invoice link decode: %w", err)
+	}
+	if !ar.OK {
+		return "", fmt.Errorf("telegram create invoice link not ok: %s", ar.Description)
+	}
+	return ar.Result, nil
+}
+
+// AnswerPreCheckoutQuery confirms (ok=true) or rejects a pending pre-checkout
+// query. Telegram requires an answer within 10 seconds of the query.
+func (b *Bot) AnswerPreCheckoutQuery(ctx context.Context, preCheckoutQueryID string, ok bool, errorMessage string) error {
+	payload := answerPreCheckoutQueryRequest{
+		PreCheckoutQueryID: preCheckoutQueryID,
+		OK:                 ok,
+		ErrorMessage:       errorMessage,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/answerPreCheckoutQuery", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram answer pre-checkout query: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("telegram answer pre-checkout query failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+	var ar apiResponse
+	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
+		return fmt.Errorf("telegram answer pre-checkout query not ok: %s", ar.Description)
+	}
+	return nil
+}
+
 // sendWithRetry posts payload to the given API method, waiting out 429s like
 // sendMessage always has.
 func (b *Bot) sendWithRetry(ctx context.Context, method string, payload any) (int64, error) {
@@ -388,7 +537,7 @@ func (b *Bot) GetUpdates(ctx context.Context, offset int64, timeout int) ([]Upda
 	payload := getUpdatesRequest{
 		Offset:         offset,
 		Timeout:        timeout,
-		AllowedUpdates: []string{"callback_query", "message"},
+		AllowedUpdates: []string{"callback_query", "message", "pre_checkout_query"},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
