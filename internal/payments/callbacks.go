@@ -518,6 +518,32 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.sendAdminSquadList(ctx, chatID)
 	case strings.HasPrefix(cb.Data, "adm:sq:"):
 		s.handleAdminSquadPick(ctx, chatID, cb.Data)
+	case cb.Data == "adm:user":
+		s.startUserLookup(ctx, chatID)
+	case cb.Data == "adm:treset":
+		s.sendDefaultTrafficResetPicker(ctx, chatID)
+	case strings.HasPrefix(cb.Data, "adm:treset:"):
+		s.handleDefaultTrafficResetPick(ctx, chatID, cb.Data)
+	case cb.Data == "adm:u:card":
+		s.reloadUserCard(ctx, chatID)
+	case cb.Data == "adm:u:extset":
+		s.startUserInput(ctx, chatID, adminInputUserExpiry, i18n.T("Введите количество дней (можно со знаком «−» для уменьшения):"))
+	case strings.HasPrefix(cb.Data, "adm:u:ext:"):
+		s.handleUserExpiryDelta(ctx, chatID, cb.Data)
+	case cb.Data == "adm:u:hwid":
+		s.startUserInput(ctx, chatID, adminInputUserHwid, i18n.T("Введите лимит устройств (целое ≥ 0, 0 — без ограничения):"))
+	case cb.Data == "adm:u:traffic":
+		s.startUserInput(ctx, chatID, adminInputUserTraffic, i18n.T("Введите лимит трафика в GB (целое ≥ 0, 0 — без ограничения):"))
+	case cb.Data == "adm:u:status":
+		s.handleUserStatusToggle(ctx, chatID)
+	case cb.Data == "adm:u:reset":
+		s.sendUserResetStrategies(ctx, chatID)
+	case strings.HasPrefix(cb.Data, "adm:u:reset:"):
+		s.handleUserResetPick(ctx, chatID, cb.Data)
+	case cb.Data == "adm:u:squads":
+		s.sendUserSquads(ctx, chatID)
+	case strings.HasPrefix(cb.Data, "adm:u:sq:"):
+		s.handleUserSquadToggle(ctx, chatID, cb.Data)
 	case cb.Data == "adm:bcast":
 		s.startBroadcastFlow(ctx, chatID)
 	case cb.Data == "adm:bc_send":

@@ -86,12 +86,11 @@ func (c *Client) fetchUsersPage(ctx context.Context, start, size int) ([]User, i
 	return payload.Response.Users, int64(payload.Response.Total), nil
 }
 
-func (c *Client) ExtendSubscriptionByUUID(ctx context.Context, uuid string, newExpireAt time.Time) error {
+// patchUser sends a PATCH /api/users request with the given JSON payload.
+// The payload must include the target user's "uuid". op names the operation
+// for error messages.
+func (c *Client) patchUser(ctx context.Context, payload map[string]interface{}, op string) error {
 	endpoint := fmt.Sprintf("%s/api/users", c.baseURL)
-	payload := map[string]interface{}{
-		"uuid":     uuid,
-		"expireAt": newExpireAt.Format(time.RFC3339),
-	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -106,54 +105,58 @@ func (c *Client) ExtendSubscriptionByUUID(ctx context.Context, uuid string, newE
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("extend subscription: %w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("extend subscription: unauthorized (status=%d)", resp.StatusCode)
+		return fmt.Errorf("%s: unauthorized (status=%d)", op, resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("extend subscription: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
+		return fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
 	}
 
 	return nil
 }
 
+func (c *Client) ExtendSubscriptionByUUID(ctx context.Context, uuid string, newExpireAt time.Time) error {
+	return c.patchUser(ctx, map[string]interface{}{
+		"uuid":     uuid,
+		"expireAt": newExpireAt.Format(time.RFC3339),
+	}, "extend subscription")
+}
+
 func (c *Client) SetTelegramID(ctx context.Context, uuid string, telegramID int64) error {
-	endpoint := fmt.Sprintf("%s/api/users", c.baseURL)
-	payload := map[string]interface{}{
+	return c.patchUser(ctx, map[string]interface{}{
 		"uuid":       uuid,
 		"telegramId": telegramID,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
+	}, "set telegram id")
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
+// UpdateUser patches the manageable fields of an existing user. Only the fields
+// set in patch are sent; nil pointers are omitted entirely.
+func (c *Client) UpdateUser(ctx context.Context, uuid string, patch UserPatch) error {
+	payload := map[string]interface{}{"uuid": uuid}
+	if patch.ExpireAt != nil {
+		payload["expireAt"] = patch.ExpireAt.UTC().Format(time.RFC3339)
 	}
-	c.setRequestHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("set telegram id: %w", err)
+	if patch.HwidDeviceLimit != nil {
+		payload["hwidDeviceLimit"] = *patch.HwidDeviceLimit
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("set telegram id: unauthorized (status=%d)", resp.StatusCode)
+	if patch.TrafficLimitBytes != nil {
+		payload["trafficLimitBytes"] = *patch.TrafficLimitBytes
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("set telegram id: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
+	if patch.TrafficLimitStrategy != nil {
+		payload["trafficLimitStrategy"] = *patch.TrafficLimitStrategy
 	}
-
-	return nil
+	if patch.Status != nil {
+		payload["status"] = *patch.Status
+	}
+	if patch.ActiveInternalSquads != nil {
+		payload["activeInternalSquads"] = *patch.ActiveInternalSquads
+	}
+	return c.patchUser(ctx, payload, "update user")
 }
 
 func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User, error) {
@@ -203,14 +206,17 @@ func (c *Client) getUser(ctx context.Context, endpoint, op string) (*User, error
 	return &payload.Response, nil
 }
 
-func (c *Client) CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string) (*User, error) {
+func (c *Client) CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string, trafficLimitStrategy string) (*User, error) {
+	if trafficLimitStrategy == "" {
+		trafficLimitStrategy = "NO_RESET"
+	}
 	endpoint := fmt.Sprintf("%s/api/users", c.baseURL)
 	reqBody := map[string]interface{}{
 		"username":             username,
 		"expireAt":             expireAt.UTC().Format(time.RFC3339),
 		"status":               "ACTIVE",
 		"trafficLimitBytes":    0,
-		"trafficLimitStrategy": "NO_RESET",
+		"trafficLimitStrategy": trafficLimitStrategy,
 	}
 	if len(squadUUIDs) > 0 {
 		reqBody["activeInternalSquads"] = squadUUIDs

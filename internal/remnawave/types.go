@@ -12,19 +12,35 @@ const (
 )
 
 type User struct {
-	UUID            string    `json:"uuid"`
-	ID              int64     `json:"id"`
-	ShortUUID       string    `json:"shortUuid"`
-	Username        string    `json:"username"`
-	Status          Status    `json:"status"`
-	ExpireAt        time.Time `json:"expireAt"`
-	TelegramID      *int64    `json:"telegramId"`
-	Email           *string   `json:"email"`
-	Description     *string   `json:"description"`
-	Tag             *string   `json:"tag"`
-	SubscriptionURL string    `json:"subscriptionUrl"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	UUID                 string          `json:"uuid"`
+	ID                   int64           `json:"id"`
+	ShortUUID            string          `json:"shortUuid"`
+	Username             string          `json:"username"`
+	Status               Status          `json:"status"`
+	ExpireAt             time.Time       `json:"expireAt"`
+	TelegramID           *int64          `json:"telegramId"`
+	Email                *string         `json:"email"`
+	Description          *string         `json:"description"`
+	Tag                  *string         `json:"tag"`
+	SubscriptionURL      string          `json:"subscriptionUrl"`
+	HwidDeviceLimit      *int            `json:"hwidDeviceLimit"`
+	TrafficLimitBytes    int64           `json:"trafficLimitBytes"`
+	TrafficLimitStrategy string          `json:"trafficLimitStrategy"`
+	ActiveInternalSquads []InternalSquad `json:"activeInternalSquads"`
+	CreatedAt            time.Time       `json:"createdAt"`
+	UpdatedAt            time.Time       `json:"updatedAt"`
+}
+
+// UserPatch carries the manageable fields for PATCH /api/users. Every field is
+// optional: a nil pointer means "leave unchanged", while a set pointer is sent
+// even when it is the zero value (0 = unlimited for HWID/traffic limits).
+type UserPatch struct {
+	ExpireAt             *time.Time
+	HwidDeviceLimit      *int
+	TrafficLimitBytes    *int64
+	TrafficLimitStrategy *string
+	Status               *string // ACTIVE | DISABLED
+	ActiveInternalSquads *[]string
 }
 
 // InternalSquad is one internal squad as returned by GET /api/internal-squads.

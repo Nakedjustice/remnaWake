@@ -77,7 +77,7 @@ func TestNewLoadsRequisitesFromStore(t *testing.T) {
 	}
 
 	// A fresh service over the same store should pick up the persisted value.
-	svc2 := New(st, svc.bot, svc.extender, svc.creator, svc.finder, svc.registrar, svc.squads, []int64{1000}, "₽", false, svc.logger)
+	svc2 := New(st, svc.bot, svc.extender, svc.creator, svc.userUpdater, svc.finder, svc.registrar, svc.squads, []int64{1000}, "₽", false, svc.logger)
 	if svc2.requisites != "preset card" {
 		t.Fatalf("requisites not loaded at New: %q", svc2.requisites)
 	}

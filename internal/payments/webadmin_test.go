@@ -33,10 +33,110 @@ func TestWebAdminRejectsNonAdmin(t *testing.T) {
 	calls["AdminRejectGiftRequest"] = svc.AdminRejectGiftRequest(ctx, userTG, 1)
 	calls["AdminApproveInviteRequest"] = svc.AdminApproveInviteRequest(ctx, userTG, 1)
 	calls["AdminRejectInviteRequest"] = svc.AdminRejectInviteRequest(ctx, userTG, 1)
+	calls["AdminSetDefaultTrafficReset"] = svc.AdminSetDefaultTrafficReset(ctx, userTG, "WEEK")
+	_, err = svc.AdminFindUser(ctx, userTG, "alice")
+	calls["AdminFindUser"] = err
+	calls["AdminUpdateUser"] = svc.AdminUpdateUser(ctx, userTG, WebUserUpdate{UUID: "u-1"})
 	for name, err := range calls {
 		if !errors.Is(err, ErrNotAdmin) {
 			t.Errorf("%s: err = %v, want ErrNotAdmin", name, err)
 		}
+	}
+}
+
+func TestAdminSetDefaultTrafficReset(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	ctx := context.Background()
+
+	if err := svc.AdminSetDefaultTrafficReset(ctx, adminTG, "MONTH"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got := svc.getDefaultTrafficReset(); got != "MONTH" {
+		t.Fatalf("strategy = %q, want MONTH", got)
+	}
+	// It surfaces in the panel payload.
+	panel, err := svc.AdminPanelData(ctx, adminTG)
+	if err != nil {
+		t.Fatalf("panel: %v", err)
+	}
+	if panel.DefaultTrafficResetStrategy != "MONTH" {
+		t.Fatalf("panel strategy = %q", panel.DefaultTrafficResetStrategy)
+	}
+	// Bad enum.
+	if err := svc.AdminSetDefaultTrafficReset(ctx, adminTG, "NOPE"); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("bad enum: err = %v, want ErrBadInput", err)
+	}
+}
+
+func TestAdminFindAndUpdateUser(t *testing.T) {
+	finder := &fakeFinder{byName: map[string]*Subscriber{
+		"alice": {
+			UUID:                 "u-alice",
+			Username:             "alice",
+			Status:               "ACTIVE",
+			ExpireAt:             time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+			TrafficLimitBytes:    2 * bytesPerGB,
+			TrafficLimitStrategy: "NO_RESET",
+			SquadUUIDs:           []string{"default-squad-uuid"},
+			SquadNames:           []string{"Default-Squad"},
+		},
+	}}
+	updater := &fakeUpdater{}
+	svc, _ := newUserCtlService(t, finder, updater)
+	ctx := context.Background()
+
+	// Find returns the card with squads marked.
+	card, err := svc.AdminFindUser(ctx, adminTG, "alice")
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if card.UUID != "u-alice" || card.TrafficLimitGB != 2 || card.ResetStrategy != "NO_RESET" {
+		t.Fatalf("card: %+v", card)
+	}
+	var selected bool
+	for _, sq := range card.Squads {
+		if sq.UUID == "default-squad-uuid" && sq.Selected {
+			selected = true
+		}
+	}
+	if !selected {
+		t.Fatalf("squad not marked selected: %+v", card.Squads)
+	}
+
+	// Update several fields at once.
+	hwid := 4
+	var gb int64 = 10
+	status := "DISABLED"
+	if err := svc.AdminUpdateUser(ctx, adminTG, WebUserUpdate{
+		UUID: "u-alice", HwidLimit: &hwid, TrafficGB: &gb, Status: &status,
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(updater.calls) != 1 {
+		t.Fatalf("update calls = %d, want 1", len(updater.calls))
+	}
+	p := updater.calls[0]
+	if p.HwidDeviceLimit == nil || *p.HwidDeviceLimit != 4 ||
+		p.TrafficLimitBytes == nil || *p.TrafficLimitBytes != 10*bytesPerGB ||
+		p.Status == nil || *p.Status != "DISABLED" {
+		t.Fatalf("patch: %+v", p)
+	}
+
+	// Bad enum strategy → ErrBadInput, no panel call.
+	bad := "NOPE"
+	if err := svc.AdminUpdateUser(ctx, adminTG, WebUserUpdate{UUID: "u-alice", ResetStrategy: &bad}); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("bad strategy: err = %v, want ErrBadInput", err)
+	}
+
+	// Expiry delta re-reads the user and floors at now.
+	svc.now = func() time.Time { return time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC) }
+	days := 5
+	if err := svc.AdminUpdateUser(ctx, adminTG, WebUserUpdate{UUID: "u-alice", Username: "alice", ExpireDays: &days}); err != nil {
+		t.Fatalf("expiry: %v", err)
+	}
+	last := updater.calls[len(updater.calls)-1]
+	if last.ExpireAt == nil || !last.ExpireAt.Equal(time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expiry patch = %v", last.ExpireAt)
 	}
 }
 

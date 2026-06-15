@@ -283,6 +283,30 @@ const EN = {
   'Ошибка загрузки сквадов': 'Failed to load squads',
   '⚙️ Админ-панель': '⚙️ Admin panel',
   '← Назад в кабинет': '← Back to account',
+  '🔄 Сброс трафика (новые)': '🔄 Traffic reset (new users)',
+  'Стратегия сброса трафика, применяемая к вновь создаваемым пользователям.': 'Traffic-reset strategy applied to newly created users.',
+  '💾 Сохранить': '💾 Save',
+  '👤 Управление пользователем': '👤 Manage user',
+  'Найдите пользователя по имени профиля или ссылке на подписку.': 'Find a user by profile name or subscription link.',
+  'Имя профиля или ссылка': 'Profile name or link',
+  '🔍 Найти': '🔍 Find',
+  'Введите имя профиля или ссылку.': 'Enter a profile name or link.',
+  'Имя: ': 'Name: ',
+  'Статус: ': 'Status: ',
+  'Подписка до: ': 'Subscription until: ',
+  '+30д': '+30d',
+  '+90д': '+90d',
+  '−30д': '−30d',
+  '± дней': '± days',
+  'Применить дни': 'Apply days',
+  'Введите число дней.': 'Enter a number of days.',
+  '📱 Лимит устройств (0 — без ограничения)': '📱 Device limit (0 = unlimited)',
+  '📊 Лимит трафика, GB (0 — без ограничения)': '📊 Traffic limit, GB (0 = unlimited)',
+  '🔄 Стратегия сброса': '🔄 Reset strategy',
+  '⛔ Отключить подписку': '⛔ Disable subscription',
+  '✅ Включить подписку': '✅ Enable subscription',
+  '🛡 Сквады': '🛡 Squads',
+  'Введите целое число ≥ 0.': 'Enter an integer ≥ 0.',
 };
 
 function resolveLang(serverLang) {
@@ -1025,6 +1049,141 @@ function renderAdminSquad(data) {
   return card;
 }
 
+function renderAdminTrafficReset(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('🔄 Сброс трафика (новые)')));
+  card.appendChild(el('div', 'hint', t('Стратегия сброса трафика, применяемая к вновь создаваемым пользователям.')));
+  const strategies = ['NO_RESET', 'DAY', 'WEEK', 'MONTH'];
+  const select = el('select');
+  strategies.forEach(s => {
+    const opt = Object.assign(el('option', null, s), { value: s });
+    if (s === data.default_traffic_reset_strategy) opt.selected = true;
+    select.appendChild(opt);
+  });
+  card.appendChild(select);
+  const save = el('button', null, t('💾 Сохранить'));
+  save.onclick = () => adminAction('/api/admin/traffic-reset', { strategy: select.value });
+  card.appendChild(save);
+  return card;
+}
+
+function renderAdminUserControl() {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('👤 Управление пользователем')));
+  card.appendChild(el('div', 'hint', t('Найдите пользователя по имени профиля или ссылке на подписку.')));
+  const search = Object.assign(el('input'), { placeholder: t('Имя профиля или ссылка') });
+  card.appendChild(search);
+  const find = el('button', null, t('🔍 Найти'));
+  const cardBody = el('div');
+  find.onclick = async () => {
+    if (!search.value.trim()) { tg.showAlert(t('Введите имя профиля или ссылку.')); return; }
+    try {
+      const res = await api('/api/admin/user/find', { method: 'POST', body: JSON.stringify({ query: search.value }) });
+      renderUserCard(cardBody, res.user);
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  card.appendChild(find);
+  card.appendChild(cardBody);
+  return card;
+}
+
+// renderUserCard fills container with the editable card for one user. update()
+// posts a single-field patch then re-fetches the card so it always reflects
+// the panel.
+function renderUserCard(container, user) {
+  container.textContent = '';
+  const update = async (payload) => {
+    try {
+      await api('/api/admin/user/update', { method: 'POST', body: JSON.stringify({ uuid: user.uuid, username: user.username, ...payload }) });
+      const res = await api('/api/admin/user/find', { method: 'POST', body: JSON.stringify({ query: user.username }) });
+      renderUserCard(container, res.user);
+    } catch (e) { tg.showAlert(e.message); }
+  };
+
+  const info = el('div', 'item');
+  info.appendChild(el('div', 'info', t('Имя: ') + user.username));
+  info.appendChild(el('div', 'info', t('Статус: ') + user.status));
+  info.appendChild(el('div', 'info', t('Подписка до: ') + user.expire_at));
+  container.appendChild(info);
+
+  // Expiry +/- days.
+  const exp = el('div', 'item');
+  [['+30д', 30], ['+90д', 90], ['−30д', -30]].forEach(([label, days]) => {
+    const b = el('button', 'secondary', t(label));
+    b.onclick = () => update({ expire_days: days });
+    exp.appendChild(b);
+  });
+  const expInput = Object.assign(el('input'), { type: 'number', placeholder: t('± дней') });
+  exp.appendChild(expInput);
+  const expSet = el('button', null, t('Применить дни'));
+  expSet.onclick = () => {
+    const n = parseInt(expInput.value, 10);
+    if (isNaN(n)) { tg.showAlert(t('Введите число дней.')); return; }
+    update({ expire_days: n });
+  };
+  exp.appendChild(expSet);
+  container.appendChild(exp);
+
+  // HWID limit.
+  container.appendChild(numberField(t('📱 Лимит устройств (0 — без ограничения)'), user.hwid_limit, v => update({ hwid_limit: v })));
+  // Traffic limit GB.
+  container.appendChild(numberField(t('📊 Лимит трафика, GB (0 — без ограничения)'), user.traffic_limit_gb, v => update({ traffic_gb: v })));
+
+  // Reset strategy.
+  const rs = el('div', 'item');
+  rs.appendChild(el('div', 'info', t('🔄 Стратегия сброса')));
+  const rsSel = el('select');
+  ['NO_RESET', 'DAY', 'WEEK', 'MONTH'].forEach(s => {
+    const opt = Object.assign(el('option', null, s), { value: s });
+    if (s === user.reset_strategy) opt.selected = true;
+    rsSel.appendChild(opt);
+  });
+  rs.appendChild(rsSel);
+  const rsSave = el('button', null, t('💾 Сохранить'));
+  rsSave.onclick = () => update({ reset_strategy: rsSel.value });
+  rs.appendChild(rsSave);
+  container.appendChild(rs);
+
+  // Status toggle.
+  const st = el('div', 'item');
+  const active = user.status === 'ACTIVE';
+  const stBtn = el('button', active ? 'secondary' : null, active ? t('⛔ Отключить подписку') : t('✅ Включить подписку'));
+  stBtn.onclick = () => update({ status: active ? 'DISABLED' : 'ACTIVE' });
+  st.appendChild(stBtn);
+  container.appendChild(st);
+
+  // Squad checkboxes.
+  const sq = el('div', 'item');
+  sq.appendChild(el('div', 'info', t('🛡 Сквады')));
+  (user.squads || []).forEach(s => {
+    const btn = el('button', s.selected ? null : 'secondary', (s.selected ? '✅ ' : '⬜ ') + s.name);
+    btn.onclick = () => {
+      const next = (user.squads || []).filter(x => x.selected).map(x => x.uuid);
+      const i = next.indexOf(s.uuid);
+      if (i >= 0) next.splice(i, 1); else next.push(s.uuid);
+      update({ squad_uuids: next });
+    };
+    sq.appendChild(btn);
+  });
+  container.appendChild(sq);
+}
+
+// numberField builds a labelled numeric input with a save button.
+function numberField(label, value, onSave) {
+  const item = el('div', 'item');
+  item.appendChild(el('div', 'info', label));
+  const input = Object.assign(el('input'), { type: 'number', value: value });
+  item.appendChild(input);
+  const save = el('button', null, t('💾 Сохранить'));
+  save.onclick = () => {
+    const n = parseInt(input.value, 10);
+    if (isNaN(n) || n < 0) { tg.showAlert(t('Введите целое число ≥ 0.')); return; }
+    onSave(n);
+  };
+  item.appendChild(save);
+  return item;
+}
+
 function renderAdmin(data) {
   appEl.textContent = '';
 
@@ -1044,6 +1203,8 @@ function renderAdmin(data) {
   const provider = renderAdminPaymentProvider(data);
   if (provider) appEl.appendChild(provider);
   appEl.appendChild(renderAdminSquad(data));
+  appEl.appendChild(renderAdminTrafficReset(data));
+  appEl.appendChild(renderAdminUserControl());
   appEl.appendChild(renderAdminGifts(data));
   appEl.appendChild(renderAdminBroadcast());
 

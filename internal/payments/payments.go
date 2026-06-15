@@ -40,9 +40,42 @@ type CreatedUser struct {
 }
 
 // Creator creates a new user in the remote panel, assigned to the given
-// internal squads (empty = no squads).
+// internal squads (empty = no squads) and the given traffic-reset strategy
+// (empty = NO_RESET).
 type Creator interface {
-	CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string) (*CreatedUser, error)
+	CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string, trafficLimitStrategy string) (*CreatedUser, error)
+}
+
+// UserPatch carries the manageable fields of an existing user. It mirrors
+// remnawave.UserPatch but is kept payments-local so this package stays
+// decoupled from the remnawave package; main.go adapts between the two. A nil
+// pointer means "leave unchanged"; a set pointer is applied even when zero
+// (0 = unlimited for HWID/traffic).
+type UserPatch struct {
+	ExpireAt             *time.Time
+	HwidDeviceLimit      *int
+	TrafficLimitBytes    *int64
+	TrafficLimitStrategy *string
+	Status               *string // ACTIVE | DISABLED
+	ActiveInternalSquads *[]string
+}
+
+// UserUpdater patches the manageable fields of an existing panel user.
+type UserUpdater interface {
+	UpdateUser(ctx context.Context, uuid string, patch UserPatch) error
+}
+
+// TrafficResetStrategies is the canonical set of valid traffic-reset strategies.
+var TrafficResetStrategies = []string{"NO_RESET", "DAY", "WEEK", "MONTH"}
+
+// validTrafficResetStrategy reports whether s is a recognised reset strategy.
+func validTrafficResetStrategy(s string) bool {
+	for _, v := range TrafficResetStrategies {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // InternalSquad is the minimal squad view the admin pickers need, kept
@@ -96,6 +129,14 @@ type Subscriber struct {
 	ExpireAt        time.Time
 	Status          string // panel status: ACTIVE / EXPIRED / DISABLED / LIMITED
 	SubscriptionURL string
+
+	// Manageable detail, populated by the single-user finders (FindByUsername /
+	// FindByShortUUID) for the admin "Manage user" flow.
+	HwidDeviceLimit      *int
+	TrafficLimitBytes    int64
+	TrafficLimitStrategy string
+	SquadUUIDs           []string
+	SquadNames           []string
 }
 
 // Finder resolves a target subscriber by Telegram ID (may match several), by
@@ -116,6 +157,10 @@ const (
 	adminInputTariffMonths
 	adminInputTariffPrice
 	adminInputBroadcast
+	adminInputUserLookup
+	adminInputUserHwid
+	adminInputUserTraffic
+	adminInputUserExpiry
 )
 
 type adminInputState struct {
@@ -166,6 +211,17 @@ type redeemState struct {
 
 const giftCodeTTL = 10 * time.Minute
 
+// userCtlState remembers which panel user an admin is editing across the inline
+// "Manage user" buttons, since UUIDs don't fit cleanly in repeated callback
+// data. Evicted after userCtlTTL.
+type userCtlState struct {
+	uuid      string
+	username  string
+	createdAt time.Time
+}
+
+const userCtlTTL = 10 * time.Minute
+
 // payPhotoState tracks a renewal conversation that is waiting for the user to
 // attach a payment screenshot (the screenshot requirement is on): the tariff
 // is already picked, the request is created only once the photo arrives.
@@ -179,16 +235,17 @@ type payPhotoState struct {
 const payPhotoTTL = 10 * time.Minute
 
 type Service struct {
-	store     *store.Store
-	bot       BotSender
-	extender  Extender
-	creator   Creator
-	registrar Registrar
-	adminIDs  []int64
-	currency  string
-	dryRun    bool
-	logger    *slog.Logger
-	now       func() time.Time
+	store       *store.Store
+	bot         BotSender
+	extender    Extender
+	creator     Creator
+	registrar   Registrar
+	userUpdater UserUpdater
+	adminIDs    []int64
+	currency    string
+	dryRun      bool
+	logger      *slog.Logger
+	now         func() time.Time
 
 	finder    Finder
 	squads    SquadLister
@@ -198,6 +255,7 @@ type Service struct {
 	giftCodes map[int64]*giftCodeState
 	redeems   map[int64]*redeemState
 	payPhotos map[int64]*payPhotoState
+	userCtl   map[int64]*userCtlState // protected by mu; admin "Manage user" target
 
 	botUsername string // protected by mu; empty = unknown, fall back to raw code
 	webAppURL   string // protected by mu; empty = mini app disabled
@@ -240,6 +298,10 @@ type Service struct {
 	// cleared when an admin selects a squad.
 	resolvedSquadUUID string
 
+	// defaultTrafficReset mirrors the persisted traffic-reset strategy applied to
+	// newly created users (absent = NO_RESET). Protected by mu.
+	defaultTrafficReset string
+
 	// updateTrigger applies an available bot update when an admin taps "Install
 	// now" (typically a Watchtower HTTP-API call). nil = no one-tap install;
 	// the button then shows manual instructions. Wired once at startup.
@@ -271,29 +333,35 @@ const (
 	defaultSquadNameKey = "default_squad_name"
 )
 
-func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder Finder, registrar Registrar, squads SquadLister, adminIDs []int64, currency string, dryRun bool, logger *slog.Logger) *Service {
+// defaultTrafficResetKey is the settings-table key for the traffic-reset
+// strategy applied to newly created users (absent = NO_RESET).
+const defaultTrafficResetKey = "default_traffic_reset_strategy"
+
+func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater UserUpdater, finder Finder, registrar Registrar, squads SquadLister, adminIDs []int64, currency string, dryRun bool, logger *slog.Logger) *Service {
 	s := &Service{
-		store:      st,
-		bot:        bot,
-		extender:   ext,
-		creator:    creator,
-		registrar:  registrar,
-		finder:     finder,
-		squads:     squads,
-		adminIDs:   adminIDs,
-		currency:   currency,
-		dryRun:     dryRun,
-		logger:     logger,
-		now:        time.Now,
-		invites:    make(map[int64]*inviteState),
-		registers:  make(map[int64]*registerState),
-		giftCodes:  make(map[int64]*giftCodeState),
-		redeems:    make(map[int64]*redeemState),
-		payPhotos:  make(map[int64]*payPhotoState),
-		adminInput: make(map[int64]adminInputState),
-		payMsgs:    make(map[int64]adminMsgEntry),
-		inviteMsgs: make(map[int64]adminMsgEntry),
-		giftMsgs:   make(map[int64]adminMsgEntry),
+		store:       st,
+		bot:         bot,
+		extender:    ext,
+		creator:     creator,
+		userUpdater: updater,
+		registrar:   registrar,
+		finder:      finder,
+		squads:      squads,
+		adminIDs:    adminIDs,
+		currency:    currency,
+		dryRun:      dryRun,
+		logger:      logger,
+		now:         time.Now,
+		invites:     make(map[int64]*inviteState),
+		registers:   make(map[int64]*registerState),
+		giftCodes:   make(map[int64]*giftCodeState),
+		redeems:     make(map[int64]*redeemState),
+		payPhotos:   make(map[int64]*payPhotoState),
+		userCtl:     make(map[int64]*userCtlState),
+		adminInput:  make(map[int64]adminInputState),
+		payMsgs:     make(map[int64]adminMsgEntry),
+		inviteMsgs:  make(map[int64]adminMsgEntry),
+		giftMsgs:    make(map[int64]adminMsgEntry),
 	}
 	// Load persisted payment requisites into the in-memory cache so the user
 	// flow never needs a DB read on each button tap.
@@ -308,7 +376,38 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, finder F
 		s.requireScreenshot = value == "1"
 	}
 	s.enabledProvidersSet = s.loadEnabledProviders(context.Background())
+	if value, found, err := st.GetSetting(context.Background(), defaultTrafficResetKey); err != nil {
+		logger.Error("load default traffic reset setting failed", "err", err.Error())
+	} else if found && validTrafficResetStrategy(value) {
+		s.defaultTrafficReset = value
+	}
 	return s
+}
+
+// getDefaultTrafficReset returns the configured traffic-reset strategy for new
+// users, defaulting to NO_RESET when none is set.
+func (s *Service) getDefaultTrafficReset() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.defaultTrafficReset == "" {
+		return "NO_RESET"
+	}
+	return s.defaultTrafficReset
+}
+
+// setDefaultTrafficReset validates and persists the traffic-reset strategy for
+// newly created users, refreshing the in-memory cache.
+func (s *Service) setDefaultTrafficReset(ctx context.Context, strategy string) error {
+	if !validTrafficResetStrategy(strategy) {
+		return ErrBadInput
+	}
+	if err := s.store.UpsertSetting(ctx, defaultTrafficResetKey, strategy); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.defaultTrafficReset = strategy
+	s.mu.Unlock()
+	return nil
 }
 
 // loadEnabledProviders reads the persisted enabled-providers set, migrating from

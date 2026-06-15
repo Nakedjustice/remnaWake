@@ -41,6 +41,9 @@ type Admin interface {
 	AdminSetProviderEnabled(ctx context.Context, telegramID int64, provider string, on bool) error
 	AdminListSquads(ctx context.Context, telegramID int64) ([]payments.WebSquad, error)
 	AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error
+	AdminSetDefaultTrafficReset(ctx context.Context, telegramID int64, strategy string) error
+	AdminFindUser(ctx context.Context, telegramID int64, query string) (*payments.WebManagedUser, error)
+	AdminUpdateUser(ctx context.Context, telegramID int64, req payments.WebUserUpdate) error
 	AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error
 	AdminConfirmRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminRejectRequest(ctx context.Context, telegramID, reqID int64) error
@@ -92,6 +95,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/payment-provider", s.handleAdminSetPaymentProvider)
 	mux.HandleFunc("GET /api/admin/squads", s.handleAdminListSquads)
 	mux.HandleFunc("POST /api/admin/squad", s.handleAdminSetDefaultSquad)
+	mux.HandleFunc("POST /api/admin/traffic-reset", s.handleAdminSetDefaultTrafficReset)
+	mux.HandleFunc("POST /api/admin/user/find", s.handleAdminFindUser)
+	mux.HandleFunc("POST /api/admin/user/update", s.handleAdminUpdateUser)
 	mux.HandleFunc("POST /api/admin/broadcast", s.handleAdminBroadcast)
 	mux.HandleFunc("POST /api/admin/gift/revoke", s.adminIDAction("revoke gift", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminRevokeGiftCode(ctx, tgID, id)
@@ -451,6 +457,62 @@ func (s *Server) handleAdminSetDefaultSquad(w http.ResponseWriter, r *http.Reque
 	}
 	if err := s.admin.AdminSetDefaultSquad(r.Context(), userID, req.UUID); err != nil {
 		s.writeAdminError(w, "set default squad", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminSetDefaultTrafficReset(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Strategy string `json:"strategy"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetDefaultTrafficReset(r.Context(), userID, req.Strategy); err != nil {
+		s.writeAdminError(w, "set default traffic reset", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminFindUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Query string `json:"query"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	user, err := s.admin.AdminFindUser(r.Context(), userID, req.Query)
+	if err != nil {
+		s.writeAdminError(w, "find user", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": user})
+}
+
+func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req payments.WebUserUpdate
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminUpdateUser(r.Context(), userID, req); err != nil {
+		s.writeAdminError(w, "update user", userID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

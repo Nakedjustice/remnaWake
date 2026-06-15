@@ -102,7 +102,7 @@ func (f *fakeBot) EditMessageText(_ context.Context, chatID, messageID int64, te
 	f.edits = append(f.edits, editCall{ChatID: chatID, MessageID: messageID, Text: text, Keyboard: kb})
 	return nil
 }
-func (f *fakeBot) SendInvoice(_ context.Context, chatID int64, title, _ , payload string, prices []tg.LabeledPrice) (int64, error) {
+func (f *fakeBot) SendInvoice(_ context.Context, chatID int64, title, _, payload string, prices []tg.LabeledPrice) (int64, error) {
 	if f.invoiceErr != nil {
 		return 0, f.invoiceErr
 	}
@@ -161,14 +161,32 @@ func (f *fakeFinder) ListAll(_ context.Context) ([]Subscriber, error) {
 }
 
 type fakeCreator struct {
-	created []string
-	squads  [][]string // squad UUIDs passed with each CreateUser call
+	created    []string
+	squads     [][]string // squad UUIDs passed with each CreateUser call
+	strategies []string   // traffic-reset strategy passed with each call
 }
 
-func (f *fakeCreator) CreateUser(_ context.Context, username string, _ time.Time, squadUUIDs []string) (*CreatedUser, error) {
+func (f *fakeCreator) CreateUser(_ context.Context, username string, _ time.Time, squadUUIDs []string, trafficLimitStrategy string) (*CreatedUser, error) {
 	f.created = append(f.created, username)
 	f.squads = append(f.squads, squadUUIDs)
+	f.strategies = append(f.strategies, trafficLimitStrategy)
 	return &CreatedUser{UUID: "fake-uuid", Username: username}, nil
+}
+
+// fakeUpdater records UpdateUser calls for the "Manage user" flow tests.
+type fakeUpdater struct {
+	calls []UserPatch
+	uuids []string
+	err   error
+}
+
+func (f *fakeUpdater) UpdateUser(_ context.Context, uuid string, patch UserPatch) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.uuids = append(f.uuids, uuid)
+	f.calls = append(f.calls, patch)
+	return nil
 }
 
 // fakeSquadLister returns a Default-Squad by default so creation flows that
@@ -215,14 +233,14 @@ func newTestService(t *testing.T) (*Service, *fakeBot, *fakeExtender, *store.Sto
 	bot := &fakeBot{}
 	ext := &fakeExtender{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false /*dryRun*/, logger)
+	svc := New(st, bot, ext, &fakeCreator{}, &fakeUpdater{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false /*dryRun*/, logger)
 	return svc, bot, ext, st
 }
 
 func TestPaymentButtonNilWithoutAdmin(t *testing.T) {
 	st, _ := store.New(filepath.Join(t.TempDir(), "x.db"))
 	defer st.Close()
-	svc := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeUpdater{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if svc.PaymentButton(42) != nil {
 		t.Fatal("expected nil button when no admins")
 	}
@@ -621,7 +639,7 @@ func newTestServiceTwoAdmins(t *testing.T) (*Service, *fakeBot, *fakeExtender, *
 	bot := &fakeBot{}
 	ext := &fakeExtender{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, ext, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000, 2000}, "₽", false, logger)
+	svc := New(st, bot, ext, &fakeCreator{}, &fakeUpdater{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000, 2000}, "₽", false, logger)
 	return svc, bot, ext, st
 }
 
@@ -692,7 +710,7 @@ func TestMenuFlowsInertWhenDisabled(t *testing.T) {
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
 		555: {{RemnawaveID: 1, UUID: "u-1", Username: "sub", TelegramID: 555}},
 	}}
-	svc := New(st, bot, &fakeExtender{}, &fakeCreator{}, finder, &fakeRegistrar{}, newFakeSquadLister(), []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := New(st, bot, &fakeExtender{}, &fakeCreator{}, &fakeUpdater{}, finder, &fakeRegistrar{}, newFakeSquadLister(), []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx := context.Background()
 
 	// Menu-button entry points must be inert when no admins are configured.

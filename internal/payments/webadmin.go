@@ -90,6 +90,9 @@ type WebAdminPanel struct {
 	// EnabledProviders lists the currently enabled providers (subset of
 	// AvailableProviders). More than one means the user picks at pay time.
 	EnabledProviders []string `json:"enabled_providers"`
+	// DefaultTrafficResetStrategy is the traffic-reset strategy applied to newly
+	// created users (NO_RESET | DAY | WEEK | MONTH).
+	DefaultTrafficResetStrategy string `json:"default_traffic_reset_strategy"`
 }
 
 // WebSquad is one panel internal squad offered in the mini app default-squad
@@ -141,6 +144,7 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	}
 
 	_, out.DefaultSquadName = s.defaultSquadSelection(ctx)
+	out.DefaultTrafficResetStrategy = s.getDefaultTrafficReset()
 
 	buyers, err := s.store.ListGiftBuyers(ctx)
 	if err != nil {
@@ -347,6 +351,146 @@ func (s *Service) AdminSetDefaultSquad(ctx context.Context, telegramID int64, uu
 	}
 	_, err := s.setDefaultSquad(ctx, uuid)
 	return err
+}
+
+// AdminSetDefaultTrafficReset persists the traffic-reset strategy applied to
+// newly created users, selected from the mini app admin panel.
+func (s *Service) AdminSetDefaultTrafficReset(ctx context.Context, telegramID int64, strategy string) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	return s.setDefaultTrafficReset(ctx, strategy)
+}
+
+// WebManagedUser is the editable user card shown in the mini app "Manage user"
+// flow.
+type WebManagedUser struct {
+	UUID           string     `json:"uuid"`
+	Username       string     `json:"username"`
+	Status         string     `json:"status"`
+	ExpireAt       string     `json:"expire_at"` // DD.MM.YYYY
+	HwidLimit      int        `json:"hwid_limit"`
+	TrafficLimitGB int64      `json:"traffic_limit_gb"`
+	ResetStrategy  string     `json:"reset_strategy"`
+	Squads         []WebSquad `json:"squads"` // panel squads, Selected = user is in it
+}
+
+// toWebManagedUser builds the card payload, marking the squads the user belongs
+// to among all panel squads.
+func (s *Service) toWebManagedUser(ctx context.Context, sub *Subscriber) (*WebManagedUser, error) {
+	out := &WebManagedUser{
+		UUID:           sub.UUID,
+		Username:       sub.Username,
+		Status:         sub.Status,
+		ExpireAt:       sub.ExpireAt.Format("02.01.2006"),
+		TrafficLimitGB: sub.TrafficLimitBytes / bytesPerGB,
+		ResetStrategy:  sub.TrafficLimitStrategy,
+	}
+	if sub.HwidDeviceLimit != nil {
+		out.HwidLimit = *sub.HwidDeviceLimit
+	}
+	inUser := make(map[string]bool, len(sub.SquadUUIDs))
+	for _, u := range sub.SquadUUIDs {
+		inUser[u] = true
+	}
+	if s.squads != nil {
+		squads, err := s.squads.GetInternalSquads(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrPanelUnavailable, err)
+		}
+		for _, sq := range squads {
+			out.Squads = append(out.Squads, WebSquad{UUID: sq.UUID, Name: sq.Name, Selected: inUser[sq.UUID]})
+		}
+	}
+	return out, nil
+}
+
+// AdminFindUser resolves a username/link query to an editable user card.
+func (s *Service) AdminFindUser(ctx context.Context, telegramID int64, query string) (*WebManagedUser, error) {
+	if err := s.adminGuard(telegramID); err != nil {
+		return nil, err
+	}
+	sub, err := s.findManagedUser(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return s.toWebManagedUser(ctx, sub)
+}
+
+// WebUserUpdate carries optional field edits from the mini app "Manage user"
+// card. A nil pointer leaves the field unchanged. Username is echoed back from
+// the find call so an expiry delta can be applied relative to the user's
+// current expiry.
+type WebUserUpdate struct {
+	UUID          string    `json:"uuid"`
+	Username      string    `json:"username"`
+	ExpireDays    *int      `json:"expire_days"`    // +/- days relative to current expiry
+	HwidLimit     *int      `json:"hwid_limit"`     // 0 = unlimited
+	TrafficGB     *int64    `json:"traffic_gb"`     // 0 = unlimited
+	ResetStrategy *string   `json:"reset_strategy"` // NO_RESET | DAY | WEEK | MONTH
+	Status        *string   `json:"status"`         // ACTIVE | DISABLED
+	SquadUUIDs    *[]string `json:"squad_uuids"`    // replaces the user's squad set
+}
+
+// AdminUpdateUser applies the editable fields of an existing user from the mini
+// app "Manage user" card. Exactly the fields set in req are changed.
+func (s *Service) AdminUpdateUser(ctx context.Context, telegramID int64, req WebUserUpdate) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	if req.UUID == "" {
+		return ErrBadInput
+	}
+	patch := UserPatch{}
+	if req.HwidLimit != nil {
+		if *req.HwidLimit < 0 {
+			return ErrBadInput
+		}
+		patch.HwidDeviceLimit = req.HwidLimit
+	}
+	if req.TrafficGB != nil {
+		if *req.TrafficGB < 0 {
+			return ErrBadInput
+		}
+		bytesLimit := *req.TrafficGB * bytesPerGB
+		patch.TrafficLimitBytes = &bytesLimit
+	}
+	if req.ResetStrategy != nil {
+		if !validTrafficResetStrategy(*req.ResetStrategy) {
+			return ErrBadInput
+		}
+		patch.TrafficLimitStrategy = req.ResetStrategy
+	}
+	if req.Status != nil {
+		if *req.Status != "ACTIVE" && *req.Status != "DISABLED" {
+			return ErrBadInput
+		}
+		patch.Status = req.Status
+	}
+	if req.SquadUUIDs != nil {
+		patch.ActiveInternalSquads = req.SquadUUIDs
+	}
+
+	// Expiry is a delta against the user's current expiry, so re-read the user.
+	if req.ExpireDays != nil {
+		if req.Username == "" {
+			return ErrBadInput
+		}
+		sub, err := s.findManagedUser(ctx, req.Username)
+		if err != nil {
+			return err
+		}
+		if _, err := s.applyUserExpiryDelta(ctx, req.UUID, sub.ExpireAt, *req.ExpireDays); err != nil {
+			return err
+		}
+	}
+
+	// Apply the remaining single-shot fields only when at least one is set.
+	if patch.HwidDeviceLimit == nil && patch.TrafficLimitBytes == nil &&
+		patch.TrafficLimitStrategy == nil && patch.Status == nil && patch.ActiveInternalSquads == nil {
+		return nil
+	}
+	return s.updateUser(ctx, req.UUID, patch, "webadmin")
 }
 
 // WebBroadcastResult reports broadcast delivery counts to the mini app.

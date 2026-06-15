@@ -13,14 +13,14 @@ import (
 )
 
 type fakeCabinet struct {
-	data         *payments.WebCabinet
-	renewErr     error
-	renewResult  *payments.RenewResult
-	renewed      []int64
-	giftErr   error
-	gifted    []int
-	inviteErr error
-	invited   []string
+	data        *payments.WebCabinet
+	renewErr    error
+	renewResult *payments.RenewResult
+	renewed     []int64
+	giftErr     error
+	gifted      []int
+	inviteErr   error
+	invited     []string
 }
 
 func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabinet, error) {
@@ -95,6 +95,21 @@ func (f *fakeAdmin) AdminListSquads(_ context.Context, tgID int64) ([]payments.W
 }
 func (f *fakeAdmin) AdminSetDefaultSquad(_ context.Context, tgID int64, uuid string) error {
 	f.calls = append(f.calls, adminCall{Name: "setsquad", A: tgID, Text: uuid})
+	return f.err
+}
+func (f *fakeAdmin) AdminSetDefaultTrafficReset(_ context.Context, tgID int64, strategy string) error {
+	f.calls = append(f.calls, adminCall{Name: "settreset", A: tgID, Text: strategy})
+	return f.err
+}
+func (f *fakeAdmin) AdminFindUser(_ context.Context, tgID int64, query string) (*payments.WebManagedUser, error) {
+	f.calls = append(f.calls, adminCall{Name: "finduser", A: tgID, Text: query})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &payments.WebManagedUser{UUID: "u-1", Username: query, Status: "ACTIVE"}, nil
+}
+func (f *fakeAdmin) AdminUpdateUser(_ context.Context, tgID int64, req payments.WebUserUpdate) error {
+	f.calls = append(f.calls, adminCall{Name: "updateuser", A: tgID, Text: req.UUID})
 	return f.err
 }
 func (f *fakeAdmin) AdminRevokeGiftCode(_ context.Context, tgID, giftID int64) error {
@@ -387,6 +402,49 @@ func TestHandleAdminOK(t *testing.T) {
 	}
 }
 
+func TestHandleAdminUserRoutesAuth(t *testing.T) {
+	adm := &fakeAdmin{err: payments.ErrNotAdmin}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	for _, path := range []string{"/api/admin/user/find", "/api/admin/user/update", "/api/admin/traffic-reset"} {
+		// No initData → 401.
+		req := httptest.NewRequest("POST", path, strings.NewReader(`{}`))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != 401 {
+			t.Fatalf("%s unauthenticated: status = %d, want 401", path, w.Code)
+		}
+		// Valid initData, non-admin → 403.
+		req = httptest.NewRequest("POST", path, strings.NewReader(`{}`))
+		req.Header.Set("Authorization", validAuth(t))
+		w = httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != 403 {
+			t.Fatalf("%s non-admin: status = %d, want 403", path, w.Code)
+		}
+	}
+}
+
+func TestHandleAdminFindUserPayload(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req := httptest.NewRequest("POST", "/api/admin/user/find", strings.NewReader(`{"query":"alice"}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var got struct {
+		User payments.WebManagedUser `json:"user"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.User.UUID != "u-1" || got.User.Username != "alice" {
+		t.Fatalf("unexpected user: %+v", got.User)
+	}
+}
+
 func TestHandleAdminMutations(t *testing.T) {
 	adm := &fakeAdmin{}
 	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
@@ -416,6 +474,9 @@ func TestHandleAdminMutations(t *testing.T) {
 		{"/api/admin/invite-request/reject", `{"id":12}`, "invitereject", 12, 0, ""},
 		{"/api/admin/broadcast", `{"message":"hello"}`, "broadcast", 42, 0, "hello"},
 		{"/api/admin/squad", `{"uuid":"sq-2"}`, "setsquad", 42, 0, "sq-2"},
+		{"/api/admin/traffic-reset", `{"strategy":"WEEK"}`, "settreset", 42, 0, "WEEK"},
+		{"/api/admin/user/find", `{"query":"alice"}`, "finduser", 42, 0, "alice"},
+		{"/api/admin/user/update", `{"uuid":"u-1"}`, "updateuser", 42, 0, "u-1"},
 	}
 	for i, tc := range cases {
 		if code := post(tc.path, tc.body); code != 200 {
