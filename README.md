@@ -139,6 +139,18 @@ buyer → used/not-used → individual codes, with one-tap revoke), and a
 (falls back to the stock `Default-Squad`; user creation fails visibly if no
 squad can be resolved). The same controls live in the Mini App admin panel.
 
+- 👤 **Manage user** — look a panel user up by **profile name** or
+  **subscription link**, then edit them directly: extend or shorten the expiry
+  (±30/±90 days or an exact number), set the device (HWID) limit, set the
+  traffic limit in GB (0 = unlimited), choose the traffic-reset strategy,
+  add/remove internal squads, and **disable or enable** the subscription —
+  without opening the Remnawave panel.
+- 🔄 **Traffic reset (new users)** — choose the traffic-reset strategy
+  (`NO_RESET` / `DAY` / `WEEK` / `MONTH`) applied to **newly created** users
+  (`/gift`, `/invite`); it does not rewrite existing users.
+
+Both live in `/admin` and in the Mini App admin panel.
+
 Tariffs and payment state are stored in SQLite (`DB_PATH`, default
 `/data/bot.db`, in the `botdata` Docker volume), so they survive restarts.
 

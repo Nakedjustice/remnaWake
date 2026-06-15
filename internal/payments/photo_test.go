@@ -585,7 +585,7 @@ func TestAdminScreenshotTogglePersists(t *testing.T) {
 
 	// A fresh service over the same store loads the persisted value.
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc2 := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false, logger)
+	svc2 := New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeUpdater{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false, logger)
 	if !svc2.getRequireScreenshot() {
 		t.Fatal("setting should persist across restarts")
 	}
@@ -624,7 +624,7 @@ func TestWebRenewWithScreenshotRequired(t *testing.T) {
 			ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, &fakeExtender{}, &fakeCreator{}, finder, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false, logger)
+	svc := New(st, bot, &fakeExtender{}, &fakeCreator{}, &fakeUpdater{}, finder, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false, logger)
 	ctx := context.Background()
 	enableScreenshot(t, svc)
 

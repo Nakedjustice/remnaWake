@@ -64,7 +64,7 @@ func main() {
 	}
 	defer db.Close()
 
-	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, rwCreator{rwClient}, cfg.Telegram.AdminIDs, cfg.Currency, cfg.DryRun, logger)
+	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwUpdater{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, rwCreator{rwClient}, cfg.Telegram.AdminIDs, cfg.Currency, cfg.DryRun, logger)
 	if cfg.Platega.Enabled() {
 		method, _ := cfg.Platega.MethodCode() // already validated in config.Load
 		plClient := platega.New(cfg.Platega.MerchantID, cfg.Platega.Secret, cfg.HTTP.Timeout)
@@ -380,8 +380,8 @@ func (f rwFinder) ListAll(ctx context.Context) ([]payments.Subscriber, error) {
 // payments.SquadLister.
 type rwCreator struct{ c *remnawave.Client }
 
-func (f rwCreator) CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string) (*payments.CreatedUser, error) {
-	u, err := f.c.CreateUser(ctx, username, expireAt, squadUUIDs)
+func (f rwCreator) CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string, trafficLimitStrategy string) (*payments.CreatedUser, error) {
+	u, err := f.c.CreateUser(ctx, username, expireAt, squadUUIDs, trafficLimitStrategy)
 	if err != nil {
 		return nil, err
 	}
@@ -405,6 +405,21 @@ type rwRegistrar struct{ c *remnawave.Client }
 
 func (r rwRegistrar) SetTelegramID(ctx context.Context, uuid string, telegramID int64) error {
 	return r.c.SetTelegramID(ctx, uuid, telegramID)
+}
+
+// rwUpdater adapts *remnawave.Client to payments.UserUpdater, converting the
+// payments-local UserPatch to remnawave.UserPatch.
+type rwUpdater struct{ c *remnawave.Client }
+
+func (u rwUpdater) UpdateUser(ctx context.Context, uuid string, patch payments.UserPatch) error {
+	return u.c.UpdateUser(ctx, uuid, remnawave.UserPatch{
+		ExpireAt:             patch.ExpireAt,
+		HwidDeviceLimit:      patch.HwidDeviceLimit,
+		TrafficLimitBytes:    patch.TrafficLimitBytes,
+		TrafficLimitStrategy: patch.TrafficLimitStrategy,
+		Status:               patch.Status,
+		ActiveInternalSquads: patch.ActiveInternalSquads,
+	})
 }
 
 // plategaGateway adapts *platega.Client to payments.PlategaGateway, flattening
@@ -432,13 +447,24 @@ func toSubscriber(u remnawave.User) payments.Subscriber {
 	if u.TelegramID != nil {
 		tgID = *u.TelegramID
 	}
+	squadUUIDs := make([]string, 0, len(u.ActiveInternalSquads))
+	squadNames := make([]string, 0, len(u.ActiveInternalSquads))
+	for _, sq := range u.ActiveInternalSquads {
+		squadUUIDs = append(squadUUIDs, sq.UUID)
+		squadNames = append(squadNames, sq.Name)
+	}
 	return payments.Subscriber{
-		RemnawaveID:     u.ID,
-		UUID:            u.UUID,
-		Username:        u.Username,
-		TelegramID:      tgID,
-		ExpireAt:        u.ExpireAt,
-		Status:          string(u.Status),
-		SubscriptionURL: u.SubscriptionURL,
+		RemnawaveID:          u.ID,
+		UUID:                 u.UUID,
+		Username:             u.Username,
+		TelegramID:           tgID,
+		ExpireAt:             u.ExpireAt,
+		Status:               string(u.Status),
+		SubscriptionURL:      u.SubscriptionURL,
+		HwidDeviceLimit:      u.HwidDeviceLimit,
+		TrafficLimitBytes:    u.TrafficLimitBytes,
+		TrafficLimitStrategy: u.TrafficLimitStrategy,
+		SquadUUIDs:           squadUUIDs,
+		SquadNames:           squadNames,
 	}
 }

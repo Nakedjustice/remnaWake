@@ -90,6 +90,14 @@ func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 		return s.consumeTariffPrice(ctx, chatID, text)
 	case adminInputBroadcast:
 		return s.consumeBroadcastText(ctx, chatID, text)
+	case adminInputUserLookup:
+		return s.consumeUserLookup(ctx, chatID, text)
+	case adminInputUserHwid:
+		return s.consumeUserHwid(ctx, chatID, text)
+	case adminInputUserTraffic:
+		return s.consumeUserTraffic(ctx, chatID, text)
+	case adminInputUserExpiry:
+		return s.consumeUserExpiry(ctx, chatID, text)
 	}
 	return false
 }
@@ -220,6 +228,8 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 		{{Text: i18n.T("✏️ Изменить реквизиты"), CallbackData: "adm:setreq"}},
 		{{Text: shotLabel, CallbackData: "adm:shot_toggle"}},
 		{{Text: i18n.T("🛡 Сквад по умолчанию"), CallbackData: "adm:squad"}},
+		{{Text: i18n.T("👤 Управление пользователем"), CallbackData: "adm:user"}},
+		{{Text: i18n.T("🔄 Сброс трафика (новые)"), CallbackData: "adm:treset"}},
 		{{Text: i18n.T("📢 Рассылка всем"), CallbackData: "adm:bcast"}},
 	}
 	// The payment-provider picker is only meaningful when at least one automatic

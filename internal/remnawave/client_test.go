@@ -150,7 +150,7 @@ func TestGetUserByUsername(t *testing.T) {
 			t.Fatalf("auth = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"uuid":"u-1","id":7,"username":"alice b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":555}}`))
+		_, _ = w.Write([]byte(`{"response":{"uuid":"u-1","id":7,"username":"alice b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":555,"hwidDeviceLimit":4,"trafficLimitBytes":1073741824,"trafficLimitStrategy":"WEEK","activeInternalSquads":[{"uuid":"sq-1","name":"Default-Squad"}]}}`))
 	}))
 	defer server.Close()
 
@@ -161,6 +161,15 @@ func TestGetUserByUsername(t *testing.T) {
 	}
 	if u == nil || u.UUID != "u-1" || u.ID != 7 || u.TelegramID == nil || *u.TelegramID != 555 {
 		t.Fatalf("user wrong: %+v", u)
+	}
+	if u.HwidDeviceLimit == nil || *u.HwidDeviceLimit != 4 {
+		t.Fatalf("hwidDeviceLimit = %v, want 4", u.HwidDeviceLimit)
+	}
+	if u.TrafficLimitBytes != 1073741824 || u.TrafficLimitStrategy != "WEEK" {
+		t.Fatalf("traffic limit = %d / %q", u.TrafficLimitBytes, u.TrafficLimitStrategy)
+	}
+	if len(u.ActiveInternalSquads) != 1 || u.ActiveInternalSquads[0].UUID != "sq-1" {
+		t.Fatalf("activeInternalSquads = %+v", u.ActiveInternalSquads)
 	}
 }
 
@@ -290,21 +299,104 @@ func TestCreateUserSendsActiveInternalSquads(t *testing.T) {
 	defer server.Close()
 
 	c, _ := NewClient(server.URL, "tok", time.Second)
-	if _, err := c.CreateUser(context.Background(), "alice", expireAt, []string{"sq-1"}); err != nil {
+	if _, err := c.CreateUser(context.Background(), "alice", expireAt, []string{"sq-1"}, "WEEK"); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	squads, ok := gotBody["activeInternalSquads"].([]interface{})
 	if !ok || len(squads) != 1 || squads[0] != "sq-1" {
 		t.Fatalf("body activeInternalSquads = %v, want [sq-1]", gotBody["activeInternalSquads"])
 	}
+	if got := gotBody["trafficLimitStrategy"]; got != "WEEK" {
+		t.Fatalf("body trafficLimitStrategy = %v, want WEEK", got)
+	}
 
 	// Without squads the field must be absent entirely, not an empty array.
+	// An empty strategy falls back to NO_RESET.
 	gotBody = nil
-	if _, err := c.CreateUser(context.Background(), "alice", expireAt, nil); err != nil {
+	if _, err := c.CreateUser(context.Background(), "alice", expireAt, nil, ""); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if _, present := gotBody["activeInternalSquads"]; present {
 		t.Fatalf("activeInternalSquads should be omitted when empty, body=%v", gotBody)
+	}
+	if got := gotBody["trafficLimitStrategy"]; got != "NO_RESET" {
+		t.Fatalf("body trafficLimitStrategy = %v, want NO_RESET", got)
+	}
+}
+
+func TestUpdateUserSendsOnlySetFields(t *testing.T) {
+	const uuid = "u-42"
+	var gotBody map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/api/users" {
+			t.Fatalf("got %s %s, want PATCH /api/users", r.Method, r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(body, &gotBody); err != nil {
+			t.Fatalf("decode body: %v (body=%s)", err, body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"uuid":"u-42"}}`))
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+
+	// Set traffic (zero = unlimited, must still be sent), strategy and status.
+	var bytesLimit int64 = 0
+	status := "DISABLED"
+	strategy := "MONTH"
+	if err := c.UpdateUser(context.Background(), uuid, UserPatch{
+		TrafficLimitBytes:    &bytesLimit,
+		TrafficLimitStrategy: &strategy,
+		Status:               &status,
+	}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if gotBody["uuid"] != uuid {
+		t.Fatalf("uuid = %v, want %v", gotBody["uuid"], uuid)
+	}
+	if v, ok := gotBody["trafficLimitBytes"]; !ok || v.(float64) != 0 {
+		t.Fatalf("trafficLimitBytes = %v (present=%v), want 0", v, ok)
+	}
+	if gotBody["trafficLimitStrategy"] != "MONTH" {
+		t.Fatalf("trafficLimitStrategy = %v, want MONTH", gotBody["trafficLimitStrategy"])
+	}
+	if gotBody["status"] != "DISABLED" {
+		t.Fatalf("status = %v, want DISABLED", gotBody["status"])
+	}
+	// Omitted fields must be absent from the body.
+	for _, k := range []string{"expireAt", "hwidDeviceLimit", "activeInternalSquads"} {
+		if _, present := gotBody[k]; present {
+			t.Fatalf("field %q should be omitted, body=%v", k, gotBody)
+		}
+	}
+
+	// Squads + HWID + expiry path.
+	gotBody = nil
+	hwid := 3
+	expire := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	squads := []string{"sq-1", "sq-2"}
+	if err := c.UpdateUser(context.Background(), uuid, UserPatch{
+		ExpireAt:             &expire,
+		HwidDeviceLimit:      &hwid,
+		ActiveInternalSquads: &squads,
+	}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if gotBody["expireAt"] != expire.UTC().Format(time.RFC3339) {
+		t.Fatalf("expireAt = %v", gotBody["expireAt"])
+	}
+	if v := gotBody["hwidDeviceLimit"]; v == nil || v.(float64) != 3 {
+		t.Fatalf("hwidDeviceLimit = %v, want 3", v)
+	}
+	sq, ok := gotBody["activeInternalSquads"].([]interface{})
+	if !ok || len(sq) != 2 || sq[0] != "sq-1" {
+		t.Fatalf("activeInternalSquads = %v", gotBody["activeInternalSquads"])
 	}
 }
 

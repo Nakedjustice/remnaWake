@@ -298,7 +298,7 @@ func (s *Service) redeemCreate(ctx context.Context, chatID int64, st *redeemStat
 		return
 	}
 
-	created, err := s.creator.CreateUser(ctx, username, expireAt, []string{squadUUID})
+	created, err := s.creator.CreateUser(ctx, username, expireAt, []string{squadUUID}, s.getDefaultTrafficReset())
 	if err != nil {
 		s.logger.Error("redeem: create user failed", "username", username, "err", err.Error())
 		if _, rerr := s.store.ReissueGiftCode(ctx, st.giftID); rerr != nil {

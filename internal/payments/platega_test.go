@@ -18,7 +18,7 @@ import (
 // to verify that persisted settings survive a "restart".
 func newServiceOverStore(t *testing.T, st *store.Store) *Service {
 	t.Helper()
-	return New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeFinder{}, &fakeRegistrar{},
+	return New(st, &fakeBot{}, &fakeExtender{}, &fakeCreator{}, &fakeUpdater{}, &fakeFinder{}, &fakeRegistrar{},
 		newFakeSquadLister(), []int64{1000}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
