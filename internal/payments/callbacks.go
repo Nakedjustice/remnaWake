@@ -36,6 +36,8 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleCabinetPay(ctx, cb)
 	case strings.HasPrefix(cb.Data, "plcheck:"):
 		return s.handlePlategaCheck(ctx, cb)
+	case strings.HasPrefix(cb.Data, "payvia:"):
+		return s.handlePayVia(ctx, cb)
 	case cb.Data == "cab:cancel":
 		return s.handleCabinetCancel(ctx, cb)
 	case cb.Data == "menu:invite":
@@ -181,13 +183,33 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 		return
 	}
 
-	// When Platega is the active provider, payment is automatic: open a Platega
-	// transaction and hand the user a pay link instead of the admin-confirm flow.
-	if s.activeProvider() == ProviderPlatega {
-		s.startPlategaAndPrompt(ctx, cb, u, months, price)
+	// When more than one provider is enabled, let the user choose; otherwise
+	// route straight to the only enabled provider.
+	providers := s.enabledProviders()
+	if len(providers) > 1 {
+		s.promptProviderChoice(ctx, cb, userID, months, providers)
 		return
 	}
+	s.routeProvider(ctx, cb, u, userID, months, price, providers[0])
+}
 
+// routeProvider dispatches a renewal to the given payment provider. Platega and
+// Telegram Stars are automatic; p2p falls back to the manual admin flow.
+func (s *Service) routeProvider(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, userID int64, months, price int, provider string) {
+	switch provider {
+	case ProviderPlatega:
+		s.startPlategaAndPrompt(ctx, cb, u, months, price)
+	case ProviderTelegramStars:
+		s.startStarsAndPrompt(ctx, cb, u, months, price)
+	default:
+		s.startP2PRequest(ctx, cb, u, userID, months, price)
+	}
+}
+
+// startP2PRequest runs the manual admin-confirmed flow: with the screenshot
+// requirement on it defers the request until the user attaches a payment photo,
+// otherwise it creates a pending request and DMs the admins a confirm button.
+func (s *Service) startP2PRequest(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, userID int64, months, price int) {
 	// With the screenshot requirement on, the request is deferred until the
 	// user sends a payment photo; nothing reaches the admins yet. A callback
 	// can arrive without its message (inaccessible/too old) — the tariff
@@ -213,6 +235,78 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка отправлена администратору."))
+}
+
+// promptProviderChoice shows the user a keyboard with one button per enabled
+// provider; the choice arrives as a payvia:<userID>:<months>:<provider> callback.
+func (s *Service) promptProviderChoice(ctx context.Context, cb *tg.CallbackQuery, userID int64, months int, providers []string) {
+	rows := make([][]tg.InlineKeyboardButton, 0, len(providers))
+	for _, p := range providers {
+		rows = append(rows, []tg.InlineKeyboardButton{{
+			Text:         providerButtonLabel(p),
+			CallbackData: fmt.Sprintf("payvia:%d:%d:%s", userID, months, p),
+		}})
+	}
+	kb := &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
+	if cb.Message != nil {
+		_ = s.bot.EditMessageText(ctx, cb.Message.Chat.ID, cb.Message.MessageID,
+			i18n.T("Выберите способ оплаты:"), kb)
+	} else {
+		_, _ = s.bot.SendPlainWithKeyboard(ctx, cb.From.ID, i18n.T("Выберите способ оплаты:"), kb)
+	}
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+}
+
+// providerButtonLabel returns the user-facing label for a payment-method button.
+func providerButtonLabel(provider string) string {
+	switch provider {
+	case ProviderPlatega:
+		return i18n.T("💳 Картой / СБП")
+	case ProviderTelegramStars:
+		return i18n.T("⭐ Telegram Stars")
+	default:
+		return i18n.T("💳 Перевод (P2P)")
+	}
+}
+
+// handlePayVia handles the user's payment-method choice from the provider picker
+// and routes the renewal to the chosen provider.
+func (s *Service) handlePayVia(ctx context.Context, cb *tg.CallbackQuery) bool {
+	parts := strings.Split(strings.TrimPrefix(cb.Data, "payvia:"), ":")
+	if len(parts) != 3 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+	userID, err1 := strconv.ParseInt(parts[0], 10, 64)
+	months, err2 := strconv.Atoi(parts[1])
+	provider := parts[2]
+	if err1 != nil || err2 != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+	// Reject a provider that is no longer enabled (stale keyboard).
+	if !s.providerAvailable(provider) || !s.isProviderEnabled(provider) {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот способ оплаты больше недоступен."))
+		return true
+	}
+
+	tariff, err := s.store.GetTariff(ctx, months)
+	if err != nil {
+		s.logger.Error("get tariff failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+		return true
+	}
+	if tariff == nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
+		return true
+	}
+	u, err := s.store.GetNotifiedUser(ctx, userID)
+	if err != nil || u == nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось найти данные. Дождитесь следующего уведомления."))
+		return true
+	}
+	s.routeProvider(ctx, cb, u, userID, months, tariff.Price, provider)
+	return true
 }
 
 // createPaymentRequest writes a pending payment request and DMs all admins a
@@ -402,8 +496,10 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.startSetRequisitesFlow(ctx, chatID)
 	case cb.Data == "adm:shot_toggle":
 		s.handleAdminScreenshotToggle(ctx, chatID)
-	case cb.Data == "adm:provider_toggle":
-		s.handleAdminProviderToggle(ctx, chatID)
+	case cb.Data == "adm:providers":
+		s.sendAdminProviderList(ctx, chatID)
+	case strings.HasPrefix(cb.Data, "adm:provtog:"):
+		s.handleAdminProviderToggle(ctx, chatID, cb.Data)
 	case cb.Data == "adm:addtariff":
 		s.startAddTariffFlow(ctx, chatID)
 	case cb.Data == "adm:gifts":
@@ -589,24 +685,62 @@ func (s *Service) handleAdminScreenshotToggle(ctx context.Context, chatID int64)
 	s.SendAdminMenu(ctx, chatID)
 }
 
-// handleAdminProviderToggle switches the active payment provider between P2P and
-// Platega from the adm:provider_toggle button and re-renders the menu.
-func (s *Service) handleAdminProviderToggle(ctx context.Context, chatID int64) {
-	next := ProviderPlatega
-	if s.getPaymentProvider() == ProviderPlatega {
-		next = ProviderP2P
+// sendAdminProviderList shows every configured payment provider as a toggle so
+// the admin can enable any combination; enabled providers are marked with a
+// check. When more than one is enabled the user picks at pay time.
+func (s *Service) sendAdminProviderList(ctx context.Context, chatID int64) {
+	rows := make([][]tg.InlineKeyboardButton, 0, len(allProviders)+1)
+	for _, name := range allProviders {
+		if !s.providerAvailable(name) {
+			continue
+		}
+		mark := "⬜ "
+		if s.isProviderEnabled(name) {
+			mark = "✅ "
+		}
+		rows = append(rows, []tg.InlineKeyboardButton{{
+			Text:         mark + providerAdminLabel(name),
+			CallbackData: "adm:provtog:" + name,
+		}})
 	}
-	if err := s.setPaymentProvider(ctx, next); err != nil {
-		s.logger.Error("admin: save payment provider failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось переключить провайдера. Platega не настроен (нет ключей мерчанта)?"))
+	rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}})
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID,
+		i18n.T("Способы оплаты (можно включить несколько). Если включено больше одного — пользователь выбирает при оплате."),
+		&tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+// providerAdminLabel returns the admin-facing name of a payment provider.
+func providerAdminLabel(provider string) string {
+	switch provider {
+	case ProviderPlatega:
+		return i18n.T("Platega (СБП/карта)")
+	case ProviderTelegramStars:
+		return i18n.T("Telegram Stars")
+	default:
+		return i18n.T("P2P (вручную)")
+	}
+}
+
+// handleAdminProviderToggle flips one provider's enabled state from an
+// adm:provtog:<name> button and re-renders the picker.
+func (s *Service) handleAdminProviderToggle(ctx context.Context, chatID int64, data string) {
+	name := strings.TrimPrefix(data, "adm:provtog:")
+	on := !s.isProviderEnabled(name)
+	if err := s.setProviderEnabled(ctx, name, on); err != nil {
+		if errors.Is(err, ErrBadInput) {
+			if on {
+				_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот способ оплаты не настроен."))
+			} else {
+				_ = s.bot.SendPlain(ctx, chatID, i18n.T("Нельзя отключить последний способ оплаты."))
+			}
+		} else {
+			s.logger.Error("admin: save payment providers failed", "err", err.Error())
+			_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
+		}
+		s.sendAdminProviderList(ctx, chatID)
 		return
 	}
-	if next == ProviderPlatega {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("💳 Провайдер оплаты: Platega. Продления оплачиваются онлайн (СБП/карта), подтверждение автоматическое."))
-	} else {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("💳 Провайдер оплаты: P2P. Продления подтверждаются администратором вручную."))
-	}
-	s.SendAdminMenu(ctx, chatID)
+	s.sendAdminProviderList(ctx, chatID)
 }
 
 func (s *Service) startSetRequisitesFlow(ctx context.Context, chatID int64) {

@@ -24,7 +24,7 @@ const initDataMaxAge = 24 * time.Hour
 // Cabinet is the subset of *payments.Service the mini app user API needs.
 type Cabinet interface {
 	CabinetData(ctx context.Context, telegramID int64) (*payments.WebCabinet, error)
-	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int) (string, error)
+	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider string) (*payments.RenewResult, error)
 	CreateGiftRequest(ctx context.Context, telegramID int64, months int) error
 	CreateInviteRequest(ctx context.Context, telegramID int64, username string) error
 }
@@ -38,7 +38,7 @@ type Admin interface {
 	AdminDeleteTariff(ctx context.Context, telegramID int64, months int) error
 	AdminSetRequisites(ctx context.Context, telegramID int64, text string) error
 	AdminSetRequireScreenshot(ctx context.Context, telegramID int64, on bool) error
-	AdminSetPaymentProvider(ctx context.Context, telegramID int64, provider string) error
+	AdminSetProviderEnabled(ctx context.Context, telegramID int64, provider string, on bool) error
 	AdminListSquads(ctx context.Context, telegramID int64) ([]payments.WebSquad, error)
 	AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error
 	AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error
@@ -199,15 +199,16 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		RemnawaveID int64 `json:"remnawave_id"`
-		Months      int   `json:"months"`
+		RemnawaveID int64  `json:"remnawave_id"`
+		Months      int    `json:"months"`
+		Provider    string `json:"provider"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "malformed request body")
 		return
 	}
 
-	payURL, err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months)
+	result, err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months, req.Provider)
 	if errors.Is(err, payments.ErrScreenshotRequired) {
 		// Not an error for the user: the bot chat is waiting for the screenshot.
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "awaiting_screenshot"})
@@ -217,12 +218,22 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		s.writeCabinetError(w, "renew", userID, err)
 		return
 	}
-	if payURL != "" {
-		// Platega: hand the mini app a URL to open for online payment.
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "platega", "payment_url": payURL})
-		return
+	resp := map[string]any{"ok": true}
+	if result != nil {
+		if result.Status != "" {
+			resp["status"] = result.Status
+		}
+		if result.PayURL != "" {
+			resp["payment_url"] = result.PayURL
+		}
+		if result.InvoiceURL != "" {
+			resp["invoice_url"] = result.InvoiceURL
+		}
+		if len(result.Providers) > 0 {
+			resp["providers"] = result.Providers
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // writeCabinetError maps user-facing cabinet service errors to HTTP statuses.
@@ -400,12 +411,13 @@ func (s *Server) handleAdminSetPaymentProvider(w http.ResponseWriter, r *http.Re
 	}
 	var req struct {
 		Provider string `json:"provider"`
+		Enabled  bool   `json:"enabled"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "malformed request body")
 		return
 	}
-	if err := s.admin.AdminSetPaymentProvider(r.Context(), userID, req.Provider); err != nil {
+	if err := s.admin.AdminSetProviderEnabled(r.Context(), userID, req.Provider, req.Enabled); err != nil {
 		s.writeAdminError(w, "set payment provider", userID, err)
 		return
 	}

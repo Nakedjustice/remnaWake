@@ -12,8 +12,8 @@ extends the subscription by the chosen number of months.
 - ⏰ **Expiry reminders** 7 / 3 / 1 days before expiry, plus **win-back**
   messages 1 and 3 days *after* expiry (`WINBACK_DAYS` / `WINBACK_ENABLED`).
 - 💳 **Payment confirmation** — user taps **«Я оплатил»**, admin confirms, the
-  bot extends the subscription via `PATCH /api/users`. Optional **Platega**
-  gateway for automatic online payments (SBP / cards).
+  bot extends the subscription via `PATCH /api/users`. Optional automatic
+  online payments via **Platega** (SBP / cards) and/or **Telegram Stars** (⭐).
 - 👤 **Personal cabinet** (`/me`) — linked profiles, status, expiry,
   subscription link, gifts/invites and quick actions.
 - 🔗 **Self-service linking** (`/register`) — paste a subscription link or
@@ -73,16 +73,29 @@ Enabled only when `TELEGRAM_ADMIN_ID` is set:
 Prices are **informational** — the bot does not process money in P2P mode; the
 user pays you externally and you confirm manually.
 
-### 🏦 Platega gateway (optional)
+### ⚡ Automatic providers: Platega & Telegram Stars (optional)
 
-Set `PLATEGA_MERCHANT_ID` + `PLATEGA_SECRET` (see `.env.example`) to enable
-automatic online payments, then switch the active provider at runtime via
-**💳 Провайдер оплаты** in `/admin` or the Mini App admin panel. Only one
-provider is active at a time. With Platega active, picking a tariff returns an
-**«Оплатить»** link and a **«🔄 Проверить оплату»** button; Platega calls back
-`POST /platega/callback` (same HTTP server as the Mini App — set it as the
-notification URL in the Platega dashboard) and the bot re-verifies and extends.
-Confirmation is **idempotent** — duplicate webhooks/taps never extend twice.
+Besides P2P you can enable the **Platega** gateway (SBP / cards) and/or
+**Telegram Stars** (the native in-app XTR currency) for *automatic* online
+payments. Enable any combination at runtime via **💳 Способы оплаты** in
+`/admin` or the Mini App admin panel — **several can be on at once**; when more
+than one is enabled the user picks the method at checkout.
+
+- 🏦 **Platega** — set `PLATEGA_MERCHANT_ID` + `PLATEGA_SECRET` (see
+  `.env.example`). Picking a tariff returns an **«Оплатить»** link and a
+  **«🔄 Проверить оплату»** button; Platega calls back `POST /platega/callback`
+  (same HTTP server as the Mini App — set it as the notification URL in the
+  Platega dashboard) and the bot re-verifies and extends.
+- ⭐ **Telegram Stars** — set `TELEGRAM_STARS_ENABLED=true` and a
+  `TELEGRAM_STARS_RATE` (price units per Star; the Stars charged for a tariff is
+  `ceil(price / rate)`), then turn it on in the admin **Способы оплаты** picker.
+  No extra credentials and **no webhook** — it uses the bot's own token and the
+  bot sends a native Telegram invoice (currency `XTR`) right in the chat (the
+  Mini App opens an in-app invoice). Confirmation arrives over `getUpdates`
+  (`pre_checkout_query` → `successful_payment`).
+
+All confirmations are **idempotent** — duplicate webhooks, button taps or
+payment events never extend a subscription twice.
 
 ### 📸 Payment receipt (optional)
 
@@ -338,6 +351,8 @@ docker compose restart caddy    # in your caddy directory
 | `PLATEGA_METHOD`       | no       | `sbp`            | Platega payment method: `sbp` or `card`                      |
 | `PLATEGA_CURRENCY`     | no       | `RUB`            | ISO currency code sent to the Platega API                    |
 | `PLATEGA_RETURN_URL`   | no       | `https://t.me`   | Where Platega returns the user after payment                 |
+| `TELEGRAM_STARS_ENABLED` | no     | `false`          | Enable native Telegram Stars (XTR) payments (uses the bot token; no webhook) |
+| `TELEGRAM_STARS_RATE`  | no¹      | —                | Price units per Star; Stars charged = `ceil(price / rate)`. ¹Required when `TELEGRAM_STARS_ENABLED=true` |
 
 ## 🚀 Running
 

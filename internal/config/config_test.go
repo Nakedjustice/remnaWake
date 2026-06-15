@@ -368,3 +368,31 @@ func TestLoadAdminIDInvalidToken(t *testing.T) {
 		t.Fatalf("error = %q, want mention of TELEGRAM_ADMIN_ID", err.Error())
 	}
 }
+
+func TestLoadStarsRequiresPositiveRate(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("TELEGRAM_STARS_ENABLED", "true")
+	// No TELEGRAM_STARS_RATE set -> rate 0 -> rejected.
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "TELEGRAM_STARS_RATE") {
+		t.Fatalf("error = %v, want mention of TELEGRAM_STARS_RATE", err)
+	}
+}
+
+func TestLoadStarsEnabledWithRate(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("TELEGRAM_STARS_ENABLED", "true")
+	t.Setenv("TELEGRAM_STARS_RATE", "2")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Stars.Available() || cfg.Stars.Rate != 2 {
+		t.Fatalf("stars config = %+v, want available with rate 2", cfg.Stars)
+	}
+}

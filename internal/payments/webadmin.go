@@ -84,11 +84,12 @@ type WebAdminPanel struct {
 	DefaultSquadName string `json:"default_squad_name"`
 	// RequireScreenshot mirrors the "payment screenshot required" toggle.
 	RequireScreenshot bool `json:"require_screenshot"`
-	// PaymentProvider is the selected active provider ("p2p" or "platega").
-	PaymentProvider string `json:"payment_provider"`
-	// PlategaConfigured reports whether Platega credentials are wired in; the UI
-	// hides/disables the provider switch when false.
-	PlategaConfigured bool `json:"platega_configured"`
+	// AvailableProviders lists the configured payment providers the admin can
+	// enable (always includes "p2p"; "platega"/"telegram_stars" when wired in).
+	AvailableProviders []string `json:"available_providers"`
+	// EnabledProviders lists the currently enabled providers (subset of
+	// AvailableProviders). More than one means the user picks at pay time.
+	EnabledProviders []string `json:"enabled_providers"`
 }
 
 // WebSquad is one panel internal squad offered in the mini app default-squad
@@ -128,12 +129,16 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	s.mu.Lock()
 	out.Requisites = s.requisites
 	out.RequireScreenshot = s.requireScreenshot
-	out.PlategaConfigured = s.platega != nil
-	out.PaymentProvider = ProviderP2P
-	if s.paymentProvider == ProviderPlatega {
-		out.PaymentProvider = ProviderPlatega
-	}
 	s.mu.Unlock()
+
+	for _, name := range allProviders {
+		if s.providerAvailable(name) {
+			out.AvailableProviders = append(out.AvailableProviders, name)
+			if s.isProviderEnabled(name) {
+				out.EnabledProviders = append(out.EnabledProviders, name)
+			}
+		}
+	}
 
 	_, out.DefaultSquadName = s.defaultSquadSelection(ctx)
 
@@ -303,17 +308,14 @@ func (s *Service) AdminSetRequireScreenshot(ctx context.Context, telegramID int6
 	return nil
 }
 
-// AdminSetPaymentProvider switches the active payment provider ("p2p" or
-// "platega") from the mini app admin panel (same setting as the
-// adm:provider_toggle button). Selecting "platega" requires it to be configured.
-func (s *Service) AdminSetPaymentProvider(ctx context.Context, telegramID int64, provider string) error {
+// AdminSetProviderEnabled enables or disables one payment provider from the mini
+// app admin panel (same setting as the adm:provtog:<name> button). Enabling an
+// unconfigured provider, or disabling the last enabled one, returns ErrBadInput.
+func (s *Service) AdminSetProviderEnabled(ctx context.Context, telegramID int64, provider string, on bool) error {
 	if err := s.adminGuard(telegramID); err != nil {
 		return err
 	}
-	if err := s.setPaymentProvider(ctx, provider); err != nil {
-		return err
-	}
-	return nil
+	return s.setProviderEnabled(ctx, provider, on)
 }
 
 // AdminListSquads returns the panel's internal squads for the mini app
