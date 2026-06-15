@@ -229,12 +229,18 @@ const EN = {
   'Выключено: заявки на оплату отправляются без чека.': 'Disabled: payment requests are sent without a receipt.',
   '🚫 Выключить требование чека': '🚫 Disable receipt requirement',
   '✅ Включить требование чека': '✅ Enable receipt requirement',
-  '💳 Провайдер оплаты': '💳 Payment provider',
-  'Активен Platega: продления оплачиваются онлайн (СБП/карта), подтверждение автоматическое.': 'Platega is active: renewals are paid online (SBP/card) and confirmed automatically.',
-  'Активен P2P: продления подтверждаются администратором вручную.': 'P2P is active: renewals are confirmed by an admin manually.',
-  'Переключить на P2P': 'Switch to P2P',
-  'Переключить на Platega': 'Switch to Platega',
+  '💳 Способы оплаты': '💳 Payment methods',
+  'Включите один или несколько способов. Если включено больше одного — пользователь выбирает при оплате.': 'Enable one or more methods. If more than one is enabled, the user chooses at checkout.',
+  'Platega (СБП/карта)': 'Platega (SBP/card)',
+  'Telegram Stars': 'Telegram Stars',
+  'P2P (вручную)': 'P2P (manual)',
+  '💳 Картой / СБП': '💳 Card / SBP',
+  '⭐ Telegram Stars': '⭐ Telegram Stars',
+  '💳 Перевод (P2P)': '💳 Transfer (P2P)',
   '💳 Открываем оплату…': '💳 Opening payment…',
+  '⭐ Открываем оплату…': '⭐ Opening payment…',
+  '✅ Оплачено': '✅ Paid',
+  'Оплата прошла! Подписка продлена.': 'Payment successful! Your subscription has been renewed.',
   'Откроется страница оплаты. После оплаты подписка продлится автоматически.': 'A payment page will open. Your subscription will be renewed automatically after payment.',
   '📢 Рассылка': '📢 Broadcast',
   'Сообщение получат все пользователи с привязанным Telegram.': 'The message will be delivered to all users with a linked Telegram.',
@@ -433,35 +439,67 @@ function renderRenew(p, data) {
   }
   const pay = el('button', null, t('💳 Оплатить / продлить'));
   pay.disabled = tariffs.length > 0;
-  pay.onclick = async () => {
+  // choiceBox holds the payment-method buttons when several providers are enabled.
+  const choiceBox = el('div', 'tariffs');
+  choiceBox.hidden = true;
+  const resetPay = () => { pay.disabled = false; pay.textContent = t('💳 Оплатить / продлить'); };
+  const doRenew = async (provider) => {
+    choiceBox.hidden = true;
+    choiceBox.innerHTML = '';
     pay.disabled = true;
     pay.textContent = t('Отправка…');
     try {
-      const res = await api('/api/renew', {
-        method: 'POST',
-        body: JSON.stringify({ remnawave_id: p.remnawave_id, months }),
-      });
-      if (res.status === 'awaiting_screenshot') {
+      const body = { remnawave_id: p.remnawave_id, months };
+      if (provider) body.provider = provider;
+      const res = await api('/api/renew', { method: 'POST', body: JSON.stringify(body) });
+      if (res.status === 'choose_provider') {
+        resetPay();
+        (res.providers || []).forEach(id => {
+          const b = el('button', 'secondary', providerLabel(id));
+          b.onclick = () => doRenew(id);
+          choiceBox.appendChild(b);
+        });
+        choiceBox.hidden = false;
+      } else if (res.status === 'awaiting_screenshot') {
         pay.textContent = t('📸 Ждём чек в чате с ботом');
         tg.showAlert(t('Осталось прикрепить чек: перейдите в чат с ботом и отправьте фото, скриншот или PDF-файл чека об оплате — после этого заявка уйдёт администратору.'));
       } else if (res.status === 'platega' && res.payment_url) {
         pay.textContent = t('💳 Открываем оплату…');
         tg.openLink(res.payment_url);
         tg.showAlert(t('Откроется страница оплаты. После оплаты подписка продлится автоматически.'));
-        pay.disabled = false;
-        pay.textContent = t('💳 Оплатить / продлить');
+        resetPay();
+      } else if (res.status === 'telegram_stars' && res.invoice_url) {
+        pay.textContent = t('⭐ Открываем оплату…');
+        tg.openInvoice(res.invoice_url, (st) => {
+          if (st === 'paid') {
+            pay.textContent = t('✅ Оплачено');
+            tg.showAlert(t('Оплата прошла! Подписка продлена.'));
+          } else {
+            resetPay();
+          }
+        });
       } else {
         pay.textContent = t('✅ Заявка отправлена');
         tg.showAlert(t('Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.'));
       }
     } catch (e) {
-      pay.disabled = false;
-      pay.textContent = t('💳 Оплатить / продлить');
+      resetPay();
       tg.showAlert(e.message);
     }
   };
+  pay.onclick = () => doRenew('');
   wrap.appendChild(pay);
+  wrap.appendChild(choiceBox);
   return wrap;
+}
+
+// providerLabel mirrors the bot's providerButtonLabel for the mini-app chooser.
+function providerLabel(id) {
+  switch (id) {
+    case 'platega': return t('💳 Картой / СБП');
+    case 'telegram_stars': return t('⭐ Telegram Stars');
+    default: return t('💳 Перевод (P2P)');
+  }
 }
 
 // renderGiftBuy mirrors the chat /gift flow: pick a period, the request goes
@@ -748,18 +786,30 @@ function renderAdminScreenshotToggle(data) {
 }
 
 function renderAdminPaymentProvider(data) {
-  if (!data.platega_configured) return null;
-  const onPlatega = data.payment_provider === 'platega';
+  const available = data.available_providers || [];
+  // Only meaningful when an automatic provider exists beyond the default P2P.
+  if (!available.some(p => p !== 'p2p')) return null;
+  const enabled = data.enabled_providers || [];
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, t('💳 Провайдер оплаты')));
-  card.appendChild(el('div', 'hint', onPlatega
-    ? t('Активен Platega: продления оплачиваются онлайн (СБП/карта), подтверждение автоматическое.')
-    : t('Активен P2P: продления подтверждаются администратором вручную.')));
-  const toggle = el('button', onPlatega ? 'secondary' : null,
-    onPlatega ? t('Переключить на P2P') : t('Переключить на Platega'));
-  toggle.onclick = () => adminAction('/api/admin/payment-provider', { provider: onPlatega ? 'p2p' : 'platega' });
-  card.appendChild(toggle);
+  card.appendChild(el('h2', null, t('💳 Способы оплаты')));
+  card.appendChild(el('div', 'hint',
+    t('Включите один или несколько способов. Если включено больше одного — пользователь выбирает при оплате.')));
+  available.forEach(id => {
+    const on = enabled.includes(id);
+    const btn = el('button', on ? null : 'secondary', (on ? '✅ ' : '⬜ ') + providerAdminLabel(id));
+    btn.onclick = () => adminAction('/api/admin/payment-provider', { provider: id, enabled: !on });
+    card.appendChild(btn);
+  });
   return card;
+}
+
+// providerAdminLabel mirrors the bot's providerAdminLabel.
+function providerAdminLabel(id) {
+  switch (id) {
+    case 'platega': return t('Platega (СБП/карта)');
+    case 'telegram_stars': return t('Telegram Stars');
+    default: return t('P2P (вручную)');
+  }
 }
 
 function renderAdminBroadcast() {

@@ -222,23 +222,15 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 		{{Text: i18n.T("🛡 Сквад по умолчанию"), CallbackData: "adm:squad"}},
 		{{Text: i18n.T("📢 Рассылка всем"), CallbackData: "adm:bcast"}},
 	}
-	// The payment-provider toggle is only meaningful when Platega is configured.
-	if s.plategaConfigured() {
+	// The payment-provider picker is only meaningful when at least one automatic
+	// provider (Platega or Telegram Stars) is configured beyond the default P2P.
+	if s.plategaConfigured() || s.starsConfigured() {
 		rows = append(rows, []tg.InlineKeyboardButton{
-			{Text: s.providerToggleLabel(), CallbackData: "adm:provider_toggle"},
+			{Text: i18n.T("💳 Способы оплаты"), CallbackData: "adm:providers"},
 		})
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, i18n.T("Меню администратора"),
 		&tg.InlineKeyboardMarkup{InlineKeyboard: rows})
-}
-
-// providerToggleLabel renders the admin-menu label for the active payment
-// provider toggle.
-func (s *Service) providerToggleLabel() string {
-	if s.getPaymentProvider() == ProviderPlatega {
-		return i18n.T("💳 Провайдер оплаты: Platega")
-	}
-	return i18n.T("💳 Провайдер оплаты: P2P")
 }
 
 func (s *Service) cmdDelTariff(ctx context.Context, chatID int64, fields []string) {

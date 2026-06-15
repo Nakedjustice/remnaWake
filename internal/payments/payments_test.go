@@ -36,15 +36,27 @@ type sentPhoto struct {
 	Keyboard *tg.InlineKeyboardMarkup
 	MsgID    int64
 }
+type sentInvoice struct {
+	ChatID  int64
+	Title   string
+	Payload string
+	Prices  []tg.LabeledPrice
+	MsgID   int64
+}
 type fakeBot struct {
-	sent     []sentMsg
-	photos   []sentPhoto
-	docs     []sentPhoto // same shape: chat, file_id, caption, keyboard
-	answers  []string
-	edits    []editCall
-	msgIDSeq int64
+	sent           []sentMsg
+	photos         []sentPhoto
+	docs           []sentPhoto // same shape: chat, file_id, caption, keyboard
+	answers        []string
+	edits          []editCall
+	invoices       []sentInvoice
+	invoiceLinks   []sentInvoice
+	precheckoutAck []bool
+	msgIDSeq       int64
 	// sendErrs makes every send method fail for specific chat IDs.
 	sendErrs map[int64]error
+	// invoiceErr makes SendInvoice / CreateInvoiceLink fail when set.
+	invoiceErr error
 }
 
 func (f *fakeBot) SendPlain(_ context.Context, chatID int64, text string) error {
@@ -88,6 +100,25 @@ func (f *fakeBot) EditMessageReplyMarkup(_ context.Context, chatID, messageID in
 }
 func (f *fakeBot) EditMessageText(_ context.Context, chatID, messageID int64, text string, kb *tg.InlineKeyboardMarkup) error {
 	f.edits = append(f.edits, editCall{ChatID: chatID, MessageID: messageID, Text: text, Keyboard: kb})
+	return nil
+}
+func (f *fakeBot) SendInvoice(_ context.Context, chatID int64, title, _ , payload string, prices []tg.LabeledPrice) (int64, error) {
+	if f.invoiceErr != nil {
+		return 0, f.invoiceErr
+	}
+	f.msgIDSeq++
+	f.invoices = append(f.invoices, sentInvoice{ChatID: chatID, Title: title, Payload: payload, Prices: prices, MsgID: f.msgIDSeq})
+	return f.msgIDSeq, nil
+}
+func (f *fakeBot) CreateInvoiceLink(_ context.Context, title, _, payload string, prices []tg.LabeledPrice) (string, error) {
+	if f.invoiceErr != nil {
+		return "", f.invoiceErr
+	}
+	f.invoiceLinks = append(f.invoiceLinks, sentInvoice{Title: title, Payload: payload, Prices: prices})
+	return "https://t.me/invoice/" + payload, nil
+}
+func (f *fakeBot) AnswerPreCheckoutQuery(_ context.Context, _ string, ok bool, _ string) error {
+	f.precheckoutAck = append(f.precheckoutAck, ok)
 	return nil
 }
 

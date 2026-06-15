@@ -13,10 +13,10 @@ import (
 )
 
 type fakeCabinet struct {
-	data       *payments.WebCabinet
-	renewErr   error
-	renewPayURL string
-	renewed    []int64
+	data         *payments.WebCabinet
+	renewErr     error
+	renewResult  *payments.RenewResult
+	renewed      []int64
 	giftErr   error
 	gifted    []int
 	inviteErr error
@@ -27,9 +27,9 @@ func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabi
 	return f.data, nil
 }
 
-func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int) (string, error) {
+func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int, _ string) (*payments.RenewResult, error) {
 	f.renewed = append(f.renewed, remnawaveID)
-	return f.renewPayURL, f.renewErr
+	return f.renewResult, f.renewErr
 }
 
 func (f *fakeCabinet) CreateGiftRequest(_ context.Context, _ int64, months int) error {
@@ -79,7 +79,7 @@ func (f *fakeAdmin) AdminSetRequireScreenshot(_ context.Context, tgID int64, on 
 	return f.err
 }
 
-func (f *fakeAdmin) AdminSetPaymentProvider(_ context.Context, tgID int64, _ string) error {
+func (f *fakeAdmin) AdminSetProviderEnabled(_ context.Context, tgID int64, _ string, _ bool) error {
 	f.calls = append(f.calls, adminCall{Name: "setprovider", A: tgID})
 	return f.err
 }

@@ -240,6 +240,14 @@ v_platega_method() {
   esac
 }
 
+v_posint() {
+  case "$1" in
+    ''|*[!0-9]*) err "  → Enter a positive whole number."; return 1 ;;
+    0) err "  → Enter a positive whole number."; return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 v_domain() {
   # A bare hostname (no scheme, no path), e.g. bot.example.com.
   if printf '%s' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$'; then
@@ -347,6 +355,18 @@ if ask_yes_no "Configure Platega online payments now?" "n"; then
   ask PLATEGA_CURRENCY    "Currency code sent to Platega (ISO, e.g. RUB)" "RUB" ""
   ask PLATEGA_RETURN_URL  "Return URL after payment (e.g. your bot link)" "https://t.me" v_url
   PLATEGA_RETURN_URL="${PLATEGA_RETURN_URL%/}"
+fi
+
+# --- Telegram Stars (optional) ----------------------------------------------
+printf '\n' >&2
+info "── Telegram Stars (optional) ───────────────────────────────"
+TELEGRAM_STARS_ENABLED="false"
+TELEGRAM_STARS_RATE=""
+warn "Native in-app Telegram Stars (XTR) payments. Uses the bot token — no extra"
+warn "keys and no webhook. You can enable it alongside P2P/Platega from the admin menu."
+if ask_yes_no "Enable Telegram Stars payments now?" "n"; then
+  TELEGRAM_STARS_ENABLED="true"
+  ask TELEGRAM_STARS_RATE "Price units per 1 Star (Stars charged = ceil(price / rate))" "1" v_posint
 fi
 
 # --- Reverse proxy (only when the web server is actually used) ---------------
@@ -462,6 +482,12 @@ PLATEGA_METHOD=$PLATEGA_METHOD
 PLATEGA_CURRENCY=$PLATEGA_CURRENCY
 PLATEGA_RETURN_URL=$PLATEGA_RETURN_URL
 
+# Telegram Stars (optional): native in-app XTR payments using the bot token.
+# No webhook needed. TELEGRAM_STARS_RATE is price units per Star (required when
+# enabled). Enable the provider at runtime from the /admin menu or Mini App.
+TELEGRAM_STARS_ENABLED=$TELEGRAM_STARS_ENABLED
+TELEGRAM_STARS_RATE=$TELEGRAM_STARS_RATE
+
 # Auto-update: notify admins when a new image is published. One-tap install
 # requires the watchtower sidecar (see docker-compose.yml); leave WATCHTOWER_URL
 # empty for notify-only (the button then shows manual upgrade instructions).
@@ -548,6 +574,8 @@ fi
 mask() { local s="$1"; [ "${#s}" -le 8 ] && { printf '****'; return; }; printf '%s…%s' "${s:0:4}" "${s: -4}"; }
 platega_summary="disabled (P2P only)"
 [ -n "$PLATEGA_MERCHANT_ID" ] && platega_summary="enabled ($PLATEGA_METHOD, $PLATEGA_CURRENCY)"
+stars_summary="disabled"
+[ "$TELEGRAM_STARS_ENABLED" = "true" ] && stars_summary="enabled (rate $TELEGRAM_STARS_RATE)"
 cat >&2 <<EOF
 
 ${BOLD}Summary${RESET}
@@ -561,6 +589,7 @@ ${BOLD}Summary${RESET}
   Currency           : $CURRENCY
   Mini App           : ${WEBAPP_URL:-disabled}
   Platega            : $platega_summary
+  Telegram Stars     : $stars_summary
 
 EOF
 
