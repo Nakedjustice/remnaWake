@@ -34,6 +34,8 @@ func TestWebAdminRejectsNonAdmin(t *testing.T) {
 	calls["AdminApproveInviteRequest"] = svc.AdminApproveInviteRequest(ctx, userTG, 1)
 	calls["AdminRejectInviteRequest"] = svc.AdminRejectInviteRequest(ctx, userTG, 1)
 	calls["AdminSetDefaultTrafficReset"] = svc.AdminSetDefaultTrafficReset(ctx, userTG, "WEEK")
+	_, err = svc.AdminListUsers(ctx, userTG)
+	calls["AdminListUsers"] = err
 	_, err = svc.AdminFindUser(ctx, userTG, "alice")
 	calls["AdminFindUser"] = err
 	calls["AdminUpdateUser"] = svc.AdminUpdateUser(ctx, userTG, WebUserUpdate{UUID: "u-1"})
@@ -65,6 +67,27 @@ func TestAdminSetDefaultTrafficReset(t *testing.T) {
 	// Bad enum.
 	if err := svc.AdminSetDefaultTrafficReset(ctx, adminTG, "NOPE"); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("bad enum: err = %v, want ErrBadInput", err)
+	}
+}
+
+func TestAdminListUsers(t *testing.T) {
+	finder := &fakeFinder{all: []Subscriber{
+		{UUID: "u-1", Username: "alice", Status: "ACTIVE", ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)},
+		{UUID: "u-2", Username: "bob", Status: "DISABLED", ExpireAt: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)},
+	}}
+	svc, _ := newUserCtlService(t, finder, &fakeUpdater{})
+	rows, err := svc.AdminListUsers(context.Background(), adminTG)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	if rows[0].Username != "alice" || rows[0].Status != "ACTIVE" || rows[0].ExpireAt != "01.07.2026" {
+		t.Fatalf("row0: %+v", rows[0])
+	}
+	if rows[1].Username != "bob" || rows[1].ExpireAt != "15.08.2026" {
+		t.Fatalf("row1: %+v", rows[1])
 	}
 }
 

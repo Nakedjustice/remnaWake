@@ -353,6 +353,38 @@ func (s *Service) AdminSetDefaultSquad(ctx context.Context, telegramID int64, uu
 	return err
 }
 
+// WebUserRow is one lightweight row in the mini app "Manage users" table. Full
+// detail (limits, squads) is fetched per-user via AdminFindUser when a row is
+// opened.
+type WebUserRow struct {
+	UUID     string `json:"uuid"`
+	Username string `json:"username"`
+	Status   string `json:"status"`
+	ExpireAt string `json:"expire_at"` // DD.MM.YYYY
+}
+
+// AdminListUsers returns every panel user for the mini app "Manage users" page,
+// where the admin filters by username client-side.
+func (s *Service) AdminListUsers(ctx context.Context, telegramID int64) ([]WebUserRow, error) {
+	if err := s.adminGuard(telegramID); err != nil {
+		return nil, err
+	}
+	subs, err := s.finder.ListAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: list users: %v", ErrPanelUnavailable, err)
+	}
+	out := make([]WebUserRow, 0, len(subs))
+	for i := range subs {
+		out = append(out, WebUserRow{
+			UUID:     subs[i].UUID,
+			Username: subs[i].Username,
+			Status:   subs[i].Status,
+			ExpireAt: subs[i].ExpireAt.Format("02.01.2006"),
+		})
+	}
+	return out, nil
+}
+
 // AdminSetDefaultTrafficReset persists the traffic-reset strategy applied to
 // newly created users, selected from the mini app admin panel.
 func (s *Service) AdminSetDefaultTrafficReset(ctx context.Context, telegramID int64, strategy string) error {

@@ -109,6 +109,10 @@
   .item .st { color: var(--hint); font-size: 13px; }
   .item button { width: auto; margin: 0; padding: 7px 12px; font-size: 13px; flex-shrink: 0; }
   .item .btns { display: flex; gap: 6px; flex-shrink: 0; }
+  .utable { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .utable th, .utable td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--secondary-bg); font-size: 14px; }
+  .utable th { color: var(--hint); font-weight: 600; }
+  .utable tbody tr { cursor: pointer; }
   .pair { display: flex; gap: 8px; }
   .gift { border-top: 1px solid var(--secondary-bg); padding: 8px 0; font-size: 14px; }
   .gift:first-of-type { border-top: 0; }
@@ -287,19 +291,25 @@ const EN = {
   'Стратегия сброса трафика, применяемая к вновь создаваемым пользователям.': 'Traffic-reset strategy applied to newly created users.',
   '💾 Сохранить': '💾 Save',
   '👤 Управление пользователем': '👤 Manage user',
-  'Найдите пользователя по имени профиля или ссылке на подписку.': 'Find a user by profile name or subscription link.',
-  'Имя профиля или ссылка': 'Profile name or link',
-  '🔍 Найти': '🔍 Find',
-  'Введите имя профиля или ссылку.': 'Enter a profile name or link.',
+  '👤 Управление пользователями': '👤 Manage users',
+  'Список всех пользователей панели с поиском и редактированием.': 'All panel users, with search and editing.',
+  'Открыть': 'Open',
+  'Поиск по имени…': 'Search by name…',
+  'Имя': 'Name',
+  'Статус': 'Status',
+  'Подписка до': 'Subscription until',
+  'Пользователи не найдены.': 'No users found.',
+  '← Назад': '← Back',
+  '← К списку': '← Back to list',
   'Имя: ': 'Name: ',
   'Статус: ': 'Status: ',
   'Подписка до: ': 'Subscription until: ',
   '+30д': '+30d',
   '+90д': '+90d',
   '−30д': '−30d',
-  '± дней': '± days',
+  '± дней (напр. -15)': '± days (e.g. -15)',
   'Применить дни': 'Apply days',
-  'Введите число дней.': 'Enter a number of days.',
+  'Введите число дней (можно отрицательное).': 'Enter a number of days (negative allowed).',
   '📱 Лимит устройств (0 — без ограничения)': '📱 Device limit (0 = unlimited)',
   '📊 Лимит трафика, GB (0 — без ограничения)': '📊 Traffic limit, GB (0 = unlimited)',
   '🔄 Стратегия сброса': '🔄 Reset strategy',
@@ -1067,24 +1077,99 @@ function renderAdminTrafficReset(data) {
   return card;
 }
 
+// renderAdminUserControl is the launcher card on the admin panel that opens the
+// dedicated "Manage users" page.
 function renderAdminUserControl() {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, t('👤 Управление пользователем')));
-  card.appendChild(el('div', 'hint', t('Найдите пользователя по имени профиля или ссылке на подписку.')));
-  const search = Object.assign(el('input'), { placeholder: t('Имя профиля или ссылка') });
-  card.appendChild(search);
-  const find = el('button', null, t('🔍 Найти'));
-  const cardBody = el('div');
-  find.onclick = async () => {
-    if (!search.value.trim()) { tg.showAlert(t('Введите имя профиля или ссылку.')); return; }
-    try {
-      const res = await api('/api/admin/user/find', { method: 'POST', body: JSON.stringify({ query: search.value }) });
-      renderUserCard(cardBody, res.user);
-    } catch (e) { tg.showAlert(e.message); }
-  };
-  card.appendChild(find);
-  card.appendChild(cardBody);
+  card.appendChild(el('h2', null, t('👤 Управление пользователями')));
+  card.appendChild(el('div', 'hint', t('Список всех пользователей панели с поиском и редактированием.')));
+  const open = el('button', null, t('Открыть'));
+  open.onclick = showUserAdmin;
+  card.appendChild(open);
   return card;
+}
+
+// showUserAdmin is a dedicated page: the full user list with a live username
+// search; tapping a row opens that user's editable card.
+async function showUserAdmin() {
+  currentRender = showUserAdmin;
+  let users;
+  try {
+    users = (await api('/api/admin/users')).users || [];
+  } catch (e) { tg.showAlert(e.message); return; }
+
+  appEl.textContent = '';
+  const top = el('div', 'card');
+  top.appendChild(el('h2', null, t('👤 Управление пользователями')));
+  const back = el('button', 'secondary', t('← Назад'));
+  back.onclick = showAdmin;
+  top.appendChild(back);
+  appEl.appendChild(top);
+
+  const card = el('div', 'card');
+  const search = Object.assign(el('input'), { placeholder: t('Поиск по имени…') });
+  card.appendChild(search);
+
+  const table = el('table', 'utable');
+  const thead = el('thead');
+  const htr = el('tr');
+  [t('Имя'), t('Статус'), t('Подписка до')].forEach(h => htr.appendChild(el('th', null, h)));
+  thead.appendChild(htr);
+  table.appendChild(thead);
+  const tbody = el('tbody');
+  table.appendChild(tbody);
+  card.appendChild(table);
+  appEl.appendChild(card);
+
+  const renderRows = () => {
+    const q = search.value.trim().toLowerCase();
+    const matched = q ? users.filter(u => (u.username || '').toLowerCase().includes(q)) : users;
+    tbody.textContent = '';
+    if (!matched.length) {
+      const tr = el('tr');
+      const td = el('td', null, t('Пользователи не найдены.'));
+      td.colSpan = 3;
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+    matched.forEach(u => {
+      const tr = el('tr');
+      tr.appendChild(el('td', null, u.username));
+      tr.appendChild(el('td', null, u.status));
+      tr.appendChild(el('td', null, u.expire_at));
+      tr.onclick = () => openUser(u.username);
+      tbody.appendChild(tr);
+    });
+  };
+  search.oninput = renderRows;
+  renderRows();
+
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+// openUser swaps the page to one user's editable card with a back-to-list link.
+async function openUser(username) {
+  let user;
+  try {
+    user = (await api('/api/admin/user/find', { method: 'POST', body: JSON.stringify({ query: username }) })).user;
+  } catch (e) { tg.showAlert(e.message); return; }
+  currentRender = () => openUser(username);
+  appEl.textContent = '';
+  const top = el('div', 'card');
+  top.appendChild(el('h2', null, t('👤 Управление пользователем')));
+  const back = el('button', 'secondary', t('← К списку'));
+  back.onclick = showUserAdmin;
+  top.appendChild(back);
+  appEl.appendChild(top);
+
+  const card = el('div', 'card');
+  renderUserCard(card, user);
+  appEl.appendChild(card);
+
+  statusEl.hidden = true;
+  appEl.hidden = false;
 }
 
 // renderUserCard fills container with the editable card for one user. update()
@@ -1113,12 +1198,14 @@ function renderUserCard(container, user) {
     b.onclick = () => update({ expire_days: days });
     exp.appendChild(b);
   });
-  const expInput = Object.assign(el('input'), { type: 'number', placeholder: t('± дней') });
+  // A text input (not type=number) so negative days work even on Telegram's
+  // numeric soft keyboards, which often omit the minus key.
+  const expInput = Object.assign(el('input'), { type: 'text', inputMode: 'numeric', placeholder: t('± дней (напр. -15)') });
   exp.appendChild(expInput);
   const expSet = el('button', null, t('Применить дни'));
   expSet.onclick = () => {
-    const n = parseInt(expInput.value, 10);
-    if (isNaN(n)) { tg.showAlert(t('Введите число дней.')); return; }
+    const n = parseInt(expInput.value.trim(), 10);
+    if (isNaN(n)) { tg.showAlert(t('Введите число дней (можно отрицательное).')); return; }
     update({ expire_days: n });
   };
   exp.appendChild(expSet);

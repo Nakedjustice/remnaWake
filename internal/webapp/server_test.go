@@ -97,6 +97,15 @@ func (f *fakeAdmin) AdminSetDefaultSquad(_ context.Context, tgID int64, uuid str
 	f.calls = append(f.calls, adminCall{Name: "setsquad", A: tgID, Text: uuid})
 	return f.err
 }
+func (f *fakeAdmin) AdminListUsers(_ context.Context, tgID int64) ([]payments.WebUserRow, error) {
+	f.calls = append(f.calls, adminCall{Name: "listusers", A: tgID})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return []payments.WebUserRow{
+		{UUID: "u-1", Username: "alice", Status: "ACTIVE", ExpireAt: "01.07.2026"},
+	}, nil
+}
 func (f *fakeAdmin) AdminSetDefaultTrafficReset(_ context.Context, tgID int64, strategy string) error {
 	f.calls = append(f.calls, adminCall{Name: "settreset", A: tgID, Text: strategy})
 	return f.err
@@ -542,6 +551,41 @@ func TestHandleAdminListSquads(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if len(got.Squads) != 2 || !got.Squads[0].Selected || got.Squads[1].UUID != "sq-2" {
+		t.Fatalf("unexpected payload: %+v", got)
+	}
+}
+
+func TestHandleAdminListUsers(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	// No initData → 401; non-admin → 403.
+	for auth, want := range map[string]int{"": 401} {
+		req := httptest.NewRequest("GET", "/api/admin/users", nil)
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != want {
+			t.Fatalf("auth %q: status = %d, want %d", auth, w.Code, want)
+		}
+	}
+
+	req := httptest.NewRequest("GET", "/api/admin/users", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var got struct {
+		Users []payments.WebUserRow `json:"users"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Users) != 1 || got.Users[0].Username != "alice" || got.Users[0].ExpireAt != "01.07.2026" {
 		t.Fatalf("unexpected payload: %+v", got)
 	}
 }

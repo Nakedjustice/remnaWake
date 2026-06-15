@@ -41,6 +41,7 @@ type Admin interface {
 	AdminSetProviderEnabled(ctx context.Context, telegramID int64, provider string, on bool) error
 	AdminListSquads(ctx context.Context, telegramID int64) ([]payments.WebSquad, error)
 	AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error
+	AdminListUsers(ctx context.Context, telegramID int64) ([]payments.WebUserRow, error)
 	AdminSetDefaultTrafficReset(ctx context.Context, telegramID int64, strategy string) error
 	AdminFindUser(ctx context.Context, telegramID int64, query string) (*payments.WebManagedUser, error)
 	AdminUpdateUser(ctx context.Context, telegramID int64, req payments.WebUserUpdate) error
@@ -95,6 +96,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/payment-provider", s.handleAdminSetPaymentProvider)
 	mux.HandleFunc("GET /api/admin/squads", s.handleAdminListSquads)
 	mux.HandleFunc("POST /api/admin/squad", s.handleAdminSetDefaultSquad)
+	mux.HandleFunc("GET /api/admin/users", s.handleAdminListUsers)
 	mux.HandleFunc("POST /api/admin/traffic-reset", s.handleAdminSetDefaultTrafficReset)
 	mux.HandleFunc("POST /api/admin/user/find", s.handleAdminFindUser)
 	mux.HandleFunc("POST /api/admin/user/update", s.handleAdminUpdateUser)
@@ -460,6 +462,19 @@ func (s *Server) handleAdminSetDefaultSquad(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	users, err := s.admin.AdminListUsers(r.Context(), userID)
+	if err != nil {
+		s.writeAdminError(w, "list users", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 }
 
 func (s *Server) handleAdminSetDefaultTrafficReset(w http.ResponseWriter, r *http.Request) {

@@ -144,7 +144,9 @@ squad can be resolved). The same controls live in the Mini App admin panel.
   (±30/±90 days or an exact number), set the device (HWID) limit, set the
   traffic limit in GB (0 = unlimited), choose the traffic-reset strategy,
   add/remove internal squads, and **disable or enable** the subscription —
-  without opening the Remnawave panel.
+  without opening the Remnawave panel. In the Mini App this is a dedicated page
+  with a searchable table of every panel user; in the bot you look the user up
+  by name or link.
 - 🔄 **Traffic reset (new users)** — choose the traffic-reset strategy
   (`NO_RESET` / `DAY` / `WEEK` / `MONTH`) applied to **newly created** users
   (`/gift`, `/invite`); it does not rewrite existing users.
