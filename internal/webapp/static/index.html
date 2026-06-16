@@ -73,6 +73,7 @@
   .tariffs button.selected { outline: 3px solid var(--link); }
   .btn-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
   .btn-grid button { flex: 1 1 calc(50% - 4px); width: auto; margin-top: 0; padding: 14px 6px; }
+  .section-title { font-size: 16px; margin: 16px 4px 8px; }
   .hint { color: var(--hint); font-size: 13px; margin-top: 8px; }
   pre.requisites {
     white-space: pre-wrap;
@@ -303,7 +304,13 @@ const EN = {
   '— не выбран —': '— none —',
   'Ошибка загрузки сквадов': 'Failed to load squads',
   '⚙️ Админ-панель': '⚙️ Admin panel',
-  '← Назад в кабинет': '← Back to account',
+  '← Назад в кабинет': '← Back to user menu',
+  '📨 Меню заявок': '📨 Request menu',
+  'Заявки на оплату, подарки и приглашения.': 'Payment, gift and invite requests.',
+  'Тарифы и оплата': 'Tariffs and payment',
+  '🛠 Управление': '🛠 Management',
+  'Настройки, пользователи, подарочные коды и рассылка.': 'Settings, users, gift codes and broadcast.',
+  '⚙️ Настройки': '⚙️ Settings',
   '🔄 Сброс трафика (новые)': '🔄 Traffic reset (new users)',
   'Стратегия сброса трафика, применяемая к вновь создаваемым пользователям.': 'Traffic-reset strategy applied to newly created users.',
   '💾 Сохранить': '💾 Save',
@@ -869,20 +876,26 @@ async function showCabinet() {
   showHome();
 }
 
+// adminData caches the latest /api/admin payload so the admin hub and its
+// sub-views render from the same data without re-fetching on every navigation.
+let adminData = null;
+
+// showAdmin (re)loads /api/admin and renders the admin hub.
 async function showAdmin() {
-  currentRender = showAdmin;
   try {
-    renderAdmin(await api('/api/admin'));
-  } catch (e) { tg.showAlert(e.message); }
+    adminData = await api('/api/admin');
+  } catch (e) { tg.showAlert(e.message); return; }
+  renderAdminHome();
 }
 
-// adminAction posts a mutation (optionally after a confirm dialog) and
-// re-renders the panel from fresh data.
+// adminAction posts a mutation (optionally after a confirm dialog), refreshes
+// the cached panel data and re-renders the current admin view in place.
 async function adminAction(path, payload, message) {
   if (message && !(await confirmDialog(message))) return;
   try {
     await api(path, { method: 'POST', body: JSON.stringify(payload) });
-    await showAdmin();
+    adminData = await api('/api/admin');
+    currentRender();
   } catch (e) { tg.showAlert(e.message); }
 }
 
@@ -1204,18 +1217,6 @@ function renderAdminTrafficReset(data) {
   return card;
 }
 
-// renderAdminUserControl is the launcher card on the admin panel that opens the
-// dedicated "Manage users" page.
-function renderAdminUserControl() {
-  const card = el('div', 'card');
-  card.appendChild(el('h2', null, t('👤 Управление пользователями')));
-  card.appendChild(el('div', 'hint', t('Список всех пользователей панели с поиском и редактированием.')));
-  const open = el('button', null, t('Открыть'));
-  open.onclick = showUserAdmin;
-  card.appendChild(open);
-  return card;
-}
-
 // showUserAdmin is a dedicated page: the full user list with a live username
 // search; tapping a row opens that user's editable card.
 async function showUserAdmin() {
@@ -1229,7 +1230,7 @@ async function showUserAdmin() {
   const top = el('div', 'card');
   top.appendChild(el('h2', null, t('👤 Управление пользователями')));
   const back = el('button', 'secondary', t('← Назад'));
-  back.onclick = showAdmin;
+  back.onclick = renderAdminHome;
   top.appendChild(back);
   appEl.appendChild(top);
 
@@ -1398,7 +1399,21 @@ function numberField(label, value, onSave) {
   return item;
 }
 
-function renderAdmin(data) {
+// adminSubTop is the back bar shown atop every admin sub-view; the sub-view's
+// own cards carry their headings, so this only holds the back button.
+function adminSubTop() {
+  const top = el('div', 'card');
+  const back = el('button', 'secondary', t('← Назад'));
+  back.onclick = renderAdminHome;
+  top.appendChild(back);
+  return top;
+}
+
+// renderAdminHome is the admin hub: a request menu (each item opens its own
+// sub-view), the inline tariffs/payment editors, and a management menu.
+function renderAdminHome() {
+  currentRender = renderAdminHome;
+  const data = adminData || {};
   appEl.textContent = '';
 
   const top = el('div', 'card');
@@ -1408,20 +1423,95 @@ function renderAdmin(data) {
   top.appendChild(back);
   appEl.appendChild(top);
 
-  appEl.appendChild(renderAdminRequests(data));
-  appEl.appendChild(renderAdminGiftRequests(data));
-  appEl.appendChild(renderAdminInviteRequests(data));
+  // Request menu — buttons carry the pending count when there are any.
+  const count = (arr) => (arr && arr.length) ? ` (${arr.length})` : '';
+  appEl.appendChild(menuCard(
+    t('📨 Меню заявок'),
+    t('Заявки на оплату, подарки и приглашения.'),
+    [
+      [t('💰 Заявки на оплату') + count(data.requests), showAdminPaymentRequests],
+      [t('🎁 Заявки на подарки') + count(data.gift_requests), showAdminGiftRequests],
+      [t('👤 Заявки на приглашения') + count(data.invite_requests), showAdminInviteRequests],
+    ]));
+
+  // Tariffs and payment — editable inline.
+  appEl.appendChild(el('h2', 'section-title', t('Тарифы и оплата')));
   appEl.appendChild(renderAdminTariffs(data));
   appEl.appendChild(renderAdminRequisites(data));
+
+  // Management menu.
+  appEl.appendChild(menuCard(
+    t('🛠 Управление'),
+    t('Настройки, пользователи, подарочные коды и рассылка.'),
+    [
+      [t('⚙️ Настройки'), showAdminSettings],
+      [t('👤 Управление пользователями'), showUserAdmin],
+      [t('🎁 Активные подарочные коды'), showAdminGiftCodes],
+      [t('📢 Рассылка'), showAdminBroadcast],
+    ]));
+
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+// Admin sub-views: each renders the back bar plus the relevant existing
+// section cards, reading from the cached adminData so language switches and
+// in-place mutations re-render correctly.
+function showAdminPaymentRequests() {
+  currentRender = showAdminPaymentRequests;
+  appEl.textContent = '';
+  appEl.appendChild(adminSubTop());
+  appEl.appendChild(renderAdminRequests(adminData || {}));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+function showAdminGiftRequests() {
+  currentRender = showAdminGiftRequests;
+  appEl.textContent = '';
+  appEl.appendChild(adminSubTop());
+  appEl.appendChild(renderAdminGiftRequests(adminData || {}));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+function showAdminInviteRequests() {
+  currentRender = showAdminInviteRequests;
+  appEl.textContent = '';
+  appEl.appendChild(adminSubTop());
+  appEl.appendChild(renderAdminInviteRequests(adminData || {}));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+function showAdminSettings() {
+  currentRender = showAdminSettings;
+  const data = adminData || {};
+  appEl.textContent = '';
+  appEl.appendChild(adminSubTop());
   appEl.appendChild(renderAdminScreenshotToggle(data));
   const provider = renderAdminPaymentProvider(data);
   if (provider) appEl.appendChild(provider);
   appEl.appendChild(renderAdminSquad(data));
   appEl.appendChild(renderAdminTrafficReset(data));
-  appEl.appendChild(renderAdminUserControl());
-  appEl.appendChild(renderAdminGifts(data));
-  appEl.appendChild(renderAdminBroadcast());
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
 
+function showAdminGiftCodes() {
+  currentRender = showAdminGiftCodes;
+  appEl.textContent = '';
+  appEl.appendChild(adminSubTop());
+  appEl.appendChild(renderAdminGifts(adminData || {}));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+function showAdminBroadcast() {
+  currentRender = showAdminBroadcast;
+  appEl.textContent = '';
+  appEl.appendChild(adminSubTop());
+  appEl.appendChild(renderAdminBroadcast());
   statusEl.hidden = true;
   appEl.hidden = false;
 }
