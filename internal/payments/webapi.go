@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
@@ -26,11 +27,15 @@ var (
 // WebProfile is one linked subscription as shown in the mini app.
 type WebProfile struct {
 	RemnawaveID     int64  `json:"remnawave_id"`
+	UUID            string `json:"uuid,omitempty"`
 	Username        string `json:"username"`
 	Status          string `json:"status"`
 	StatusLabel     string `json:"status_label"`
 	ExpireAt        string `json:"expire_at,omitempty"` // DD.MM.YYYY
 	DaysLeft        int    `json:"days_left"`
+	HwidLimit       int    `json:"hwid_limit"`             // 0 = unlimited
+	TrafficLimitGB  int64  `json:"traffic_limit_gb"`      // 0 = unlimited
+	UsedTrafficGB   string `json:"used_traffic_gb,omitempty"` // formatted GB, e.g. "1.3"
 	SubscriptionURL string `json:"subscription_url,omitempty"`
 }
 
@@ -85,10 +90,18 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 		sub := &subs[i]
 		p := WebProfile{
 			RemnawaveID:     sub.RemnawaveID,
+			UUID:            sub.UUID,
 			Username:        sub.Username,
 			Status:          sub.Status,
 			StatusLabel:     subStatusLabel(sub.Status),
+			TrafficLimitGB:  sub.TrafficLimitBytes / bytesPerGB,
 			SubscriptionURL: sub.SubscriptionURL,
+		}
+		if sub.HwidDeviceLimit != nil {
+			p.HwidLimit = *sub.HwidDeviceLimit
+		}
+		if sub.UsedTrafficBytes > 0 {
+			p.UsedTrafficGB = strconv.FormatFloat(float64(sub.UsedTrafficBytes)/float64(bytesPerGB), 'f', 2, 64)
 		}
 		if !sub.ExpireAt.IsZero() {
 			p.ExpireAt = sub.ExpireAt.Format("02.01.2006")

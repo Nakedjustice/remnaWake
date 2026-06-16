@@ -25,6 +25,7 @@ type User struct {
 	SubscriptionURL      string          `json:"subscriptionUrl"`
 	HwidDeviceLimit      *int            `json:"hwidDeviceLimit"`
 	TrafficLimitBytes    int64           `json:"trafficLimitBytes"`
+	UsedTrafficBytes     int64           `json:"usedTrafficBytes"`
 	TrafficLimitStrategy string          `json:"trafficLimitStrategy"`
 	ActiveInternalSquads []InternalSquad `json:"activeInternalSquads"`
 	CreatedAt            time.Time       `json:"createdAt"`

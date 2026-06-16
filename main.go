@@ -463,6 +463,7 @@ func toSubscriber(u remnawave.User) payments.Subscriber {
 		SubscriptionURL:      u.SubscriptionURL,
 		HwidDeviceLimit:      u.HwidDeviceLimit,
 		TrafficLimitBytes:    u.TrafficLimitBytes,
+		UsedTrafficBytes:     u.UsedTrafficBytes,
 		TrafficLimitStrategy: u.TrafficLimitStrategy,
 		SquadUUIDs:           squadUUIDs,
 		SquadNames:           squadNames,

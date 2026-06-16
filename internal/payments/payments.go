@@ -134,6 +134,7 @@ type Subscriber struct {
 	// FindByShortUUID) for the admin "Manage user" flow.
 	HwidDeviceLimit      *int
 	TrafficLimitBytes    int64
+	UsedTrafficBytes     int64
 	TrafficLimitStrategy string
 	SquadUUIDs           []string
 	SquadNames           []string
