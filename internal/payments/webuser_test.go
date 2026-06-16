@@ -162,6 +162,45 @@ func TestCreateInviteRequestErrors(t *testing.T) {
 	}
 }
 
+func TestCabinetDataExposesSubscriptionDetail(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	ctx := context.Background()
+	hwid := 3
+	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
+		42: {{
+			RemnawaveID:       7,
+			UUID:              "uuid-detail",
+			Username:          "alice",
+			TelegramID:        42,
+			Status:            "ACTIVE",
+			HwidDeviceLimit:   &hwid,
+			TrafficLimitBytes: 5 * bytesPerGB,
+			UsedTrafficBytes:  bytesPerGB + bytesPerGB/2, // 1.50 GB
+		}},
+	}}
+
+	data, err := svc.CabinetData(ctx, 42)
+	if err != nil {
+		t.Fatalf("CabinetData: %v", err)
+	}
+	if len(data.Profiles) != 1 {
+		t.Fatalf("profiles = %d, want 1", len(data.Profiles))
+	}
+	p := data.Profiles[0]
+	if p.UUID != "uuid-detail" {
+		t.Errorf("UUID = %q, want uuid-detail", p.UUID)
+	}
+	if p.HwidLimit != 3 {
+		t.Errorf("HwidLimit = %d, want 3", p.HwidLimit)
+	}
+	if p.TrafficLimitGB != 5 {
+		t.Errorf("TrafficLimitGB = %d, want 5", p.TrafficLimitGB)
+	}
+	if p.UsedTrafficGB != "1.50" {
+		t.Errorf("UsedTrafficGB = %q, want 1.50", p.UsedTrafficGB)
+	}
+}
+
 func TestCabinetDataExposesLang(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	ctx := context.Background()

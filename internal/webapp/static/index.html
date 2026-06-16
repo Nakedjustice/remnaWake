@@ -71,6 +71,8 @@
     padding: 10px 6px;
   }
   .tariffs button.selected { outline: 3px solid var(--link); }
+  .btn-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .btn-grid button { flex: 1 1 calc(50% - 4px); width: auto; margin-top: 0; padding: 14px 6px; }
   .hint { color: var(--hint); font-size: 13px; margin-top: 8px; }
   pre.requisites {
     white-space: pre-wrap;
@@ -207,7 +209,22 @@ const EN = {
   '🔗 Привязать в чате': '🔗 Link in chat',
   '⚙️ Администрирование': '⚙️ Administration',
   'Тарифы, реквизиты, подарочные коды и заявки на оплату.': 'Tariffs, payment details, gift codes and payment requests.',
-  '⚙️ Открыть админ-панель': '⚙️ Open admin panel',
+  '⚙️ Открыть админ-панель': '⚙️ Open admin menu',
+  '📡 Моя подписка': '📡 My subscription',
+  'UUID, срок действия, лимит устройств и трафик.': 'UUID, expiry, device limit and traffic.',
+  '📡 Открыть подписку': '📡 Open subscription',
+  '🎟 Приглашения': '🎟 Invitation',
+  'Подарите подписку или пригласите пользователя.': 'Gift a subscription or invite a user.',
+  '🎁 Подарить': '🎁 Gift sub',
+  '👥 Пригласить': '👥 Invite user',
+  '👥 Мои приглашения': '👥 My invites',
+  'UUID': 'UUID',
+  'Лимит устройств': 'Device limit',
+  'Использовано трафика': 'Used traffic',
+  'Лимит трафика': 'Traffic limit',
+  'Подписки не найдены.': 'No subscriptions found.',
+  'Приглашений пока нет.': 'No invitations yet.',
+  'Подарков пока нет.': 'No gifts yet.',
   '💳 Реквизиты для оплаты': '💳 Payment details',
   '👥 Приглашения': '👥 Invitations',
   'Всего': 'Total',
@@ -431,6 +448,10 @@ function renderProfile(p, data) {
     if (p.days_left > 0) v += ` (${t('осталось {n} {word}', { n: p.days_left, word: daysWord(p.days_left) })})`;
     row(card, t('Действует до'), v);
   }
+  if (p.uuid) row(card, t('UUID'), p.uuid);
+  row(card, t('Лимит устройств'), p.hwid_limit > 0 ? String(p.hwid_limit) : '∞');
+  row(card, t('Использовано трафика'), (p.used_traffic_gb || '0') + ' GB');
+  row(card, t('Лимит трафика'), p.traffic_limit_gb > 0 ? p.traffic_limit_gb + ' GB' : '∞');
   if (p.subscription_url) {
     const a = el('a', 'sub-link', p.subscription_url);
     a.href = p.subscription_url;
@@ -671,47 +692,67 @@ function renderUnlinked() {
   return card;
 }
 
-function render(data) {
+// cabinetData caches the latest /api/me payload so the hub and its sub-views
+// can render from the same data without re-fetching on every navigation.
+let cabinetData = null;
+
+// menuCard builds one hub section: a title, a hint and one or more buttons that
+// navigate to a sub-view.
+function menuCard(title, hint, buttons) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, title));
+  if (hint) card.appendChild(el('div', 'hint', hint));
+  const grid = el('div', 'btn-grid');
+  buttons.forEach(([label, onClick]) => {
+    const b = el('button', null, label);
+    b.onclick = onClick;
+    grid.appendChild(b);
+  });
+  card.appendChild(grid);
+  return card;
+}
+
+// subPageTop is the header card shown atop every sub-view: a title plus a back
+// button that returns to the hub.
+function subPageTop(title) {
+  const top = el('div', 'card');
+  top.appendChild(el('h2', null, title));
+  const back = el('button', 'secondary', t('← Назад'));
+  back.onclick = showHome;
+  top.appendChild(back);
+  return top;
+}
+
+// showHome renders the "My account" hub: an Administration section (admins
+// only), a My subscription section and an Invitation section.
+function showHome() {
+  currentRender = showHome;
+  const data = cabinetData || {};
   appEl.textContent = '';
 
   if (data.is_admin) {
-    const card = el('div', 'card');
-    card.appendChild(el('h2', null, t('⚙️ Администрирование')));
-    card.appendChild(el('div', 'hint', t('Тарифы, реквизиты, подарочные коды и заявки на оплату.')));
-    const open = el('button', null, t('⚙️ Открыть админ-панель'));
-    open.onclick = showAdmin;
-    card.appendChild(open);
-    appEl.appendChild(card);
+    appEl.appendChild(menuCard(
+      t('⚙️ Администрирование'),
+      t('Тарифы, реквизиты, подарочные коды и заявки на оплату.'),
+      [[t('⚙️ Открыть админ-панель'), showAdmin]]));
   }
 
   if (!data.linked) {
     appEl.appendChild(renderUnlinked());
   } else {
-    (data.profiles || []).forEach(p => appEl.appendChild(renderProfile(p, data)));
-  }
-
-  if (data.requisites) {
-    const card = el('div', 'card');
-    card.appendChild(el('h2', null, t('💳 Реквизиты для оплаты')));
-    card.appendChild(Object.assign(el('pre', 'requisites'), { textContent: data.requisites }));
-    appEl.appendChild(card);
-  }
-
-  if (data.linked) {
-    appEl.appendChild(renderGiftBuy(data));
-    appEl.appendChild(renderInvite());
-  }
-
-  const myGifts = renderMyGifts(data);
-  if (myGifts) appEl.appendChild(myGifts);
-
-  if (data.invites) {
-    const card = el('div', 'card');
-    card.appendChild(el('h2', null, t('👥 Приглашения')));
-    let v = String(data.invites.total);
-    if (data.invites.pending > 0) v += ` (${t('{n} на рассмотрении', { n: data.invites.pending })})`;
-    row(card, t('Всего'), v);
-    appEl.appendChild(card);
+    appEl.appendChild(menuCard(
+      t('📡 Моя подписка'),
+      t('UUID, срок действия, лимит устройств и трафик.'),
+      [[t('📡 Открыть подписку'), showSubscription]]));
+    appEl.appendChild(menuCard(
+      t('🎟 Приглашения'),
+      t('Подарите подписку или пригласите пользователя.'),
+      [
+        [t('🎁 Подарить'), showGift],
+        [t('👥 Пригласить'), showInvite],
+        [t('📦 Мои подарки'), showMyGifts],
+        [t('👥 Мои приглашения'), showMyInvites],
+      ]));
   }
 
   const actions = el('div', 'card');
@@ -726,6 +767,90 @@ function render(data) {
   appEl.hidden = false;
 }
 
+// showSubscription lists the linked profiles with full detail (uuid, expiry,
+// device/traffic limits) plus the renew/payment flow and payment requisites.
+function showSubscription() {
+  currentRender = showSubscription;
+  const data = cabinetData || {};
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('📡 Моя подписка')));
+  const profiles = data.profiles || [];
+  if (!profiles.length) {
+    const card = el('div', 'card');
+    card.appendChild(el('div', 'hint', t('Подписки не найдены.')));
+    appEl.appendChild(card);
+  } else {
+    profiles.forEach(p => appEl.appendChild(renderProfile(p, data)));
+  }
+  if (data.requisites) {
+    const card = el('div', 'card');
+    card.appendChild(el('h2', null, t('💳 Реквизиты для оплаты')));
+    card.appendChild(Object.assign(el('pre', 'requisites'), { textContent: data.requisites }));
+    appEl.appendChild(card);
+  }
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+// showGift opens the gift-purchase flow.
+function showGift() {
+  currentRender = showGift;
+  const data = cabinetData || {};
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('🎁 Подарить подписку')));
+  appEl.appendChild(renderGiftBuy(data));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+// showInvite opens the user-invitation flow.
+function showInvite() {
+  currentRender = showInvite;
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('👥 Пригласить пользователя')));
+  appEl.appendChild(renderInvite());
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+// showMyGifts lists the user's issued gift codes grouped by status.
+function showMyGifts() {
+  currentRender = showMyGifts;
+  const data = cabinetData || {};
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('📦 Мои подарки')));
+  const card = renderMyGifts(data);
+  if (card) {
+    appEl.appendChild(card);
+  } else {
+    const empty = el('div', 'card');
+    empty.appendChild(el('div', 'hint', t('Подарков пока нет.')));
+    appEl.appendChild(empty);
+  }
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+// showMyInvites shows the invite-requests summary.
+function showMyInvites() {
+  currentRender = showMyInvites;
+  const data = cabinetData || {};
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('👥 Мои приглашения')));
+  const card = el('div', 'card');
+  const inv = data.invites;
+  if (inv && inv.total > 0) {
+    let v = String(inv.total);
+    if (inv.pending > 0) v += ` (${t('{n} на рассмотрении', { n: inv.pending })})`;
+    row(card, t('Всего'), v);
+  } else {
+    card.appendChild(el('div', 'hint', t('Приглашений пока нет.')));
+  }
+  appEl.appendChild(card);
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
 // --- Admin panel (the server re-checks admin rights on every /api/admin call) ---
 
 function confirmDialog(message) {
@@ -735,11 +860,13 @@ function confirmDialog(message) {
   });
 }
 
+// showCabinet (re)loads /api/me and renders the hub. It is the canonical
+// "go to the account home" action used after mutations and from the admin panel.
 async function showCabinet() {
-  currentRender = showCabinet;
   try {
-    render(await api('/api/me'));
-  } catch (e) { tg.showAlert(e.message); }
+    cabinetData = await api('/api/me');
+  } catch (e) { tg.showAlert(e.message); return; }
+  showHome();
 }
 
 async function showAdmin() {
@@ -1315,7 +1442,8 @@ function renderAdmin(data) {
       langSel.value = LANG;
       applyStaticText();
     }
-    render(data);
+    cabinetData = data;
+    showHome();
   } catch (e) {
     statusEl.textContent = '⚠️ ' + e.message;
   }
