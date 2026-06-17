@@ -559,22 +559,27 @@ func TestHandleAdminListUsers(t *testing.T) {
 	adm := &fakeAdmin{}
 	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
 
-	// No initData → 401; non-admin → 403.
-	for auth, want := range map[string]int{"": 401} {
-		req := httptest.NewRequest("GET", "/api/admin/users", nil)
-		if auth != "" {
-			req.Header.Set("Authorization", auth)
-		}
-		w := httptest.NewRecorder()
-		srv.Handler().ServeHTTP(w, req)
-		if w.Code != want {
-			t.Fatalf("auth %q: status = %d, want %d", auth, w.Code, want)
-		}
+	// No initData → 401.
+	req := httptest.NewRequest("GET", "/api/admin/users", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 401 {
+		t.Fatalf("unauthenticated: status = %d, want 401", w.Code)
 	}
 
-	req := httptest.NewRequest("GET", "/api/admin/users", nil)
+	// Valid initData, non-admin → 403.
+	denied := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: payments.ErrNotAdmin})
+	req = httptest.NewRequest("GET", "/api/admin/users", nil)
 	req.Header.Set("Authorization", validAuth(t))
-	w := httptest.NewRecorder()
+	w = httptest.NewRecorder()
+	denied.Handler().ServeHTTP(w, req)
+	if w.Code != 403 {
+		t.Fatalf("non-admin: status = %d, want 403", w.Code)
+	}
+
+	req = httptest.NewRequest("GET", "/api/admin/users", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
