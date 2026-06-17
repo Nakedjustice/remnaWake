@@ -1220,11 +1220,11 @@ function renderAdminTrafficReset(data) {
 // showUserAdmin is a dedicated page: the full user list with a live username
 // search; tapping a row opens that user's editable card.
 async function showUserAdmin() {
-  currentRender = showUserAdmin;
   let users;
   try {
     users = (await api('/api/admin/users')).users || [];
   } catch (e) { tg.showAlert(e.message); return; }
+  currentRender = showUserAdmin;
 
   appEl.textContent = '';
   const top = el('div', 'card');
