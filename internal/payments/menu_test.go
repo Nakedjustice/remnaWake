@@ -50,14 +50,17 @@ func TestSendMenuWithWebAppHidesAllButRegister(t *testing.T) {
 		t.Fatal("menu should be sent")
 	}
 	kb := bot.sent[0].Keyboard
-	if kb == nil || len(kb.InlineKeyboard) != 2 {
-		t.Fatalf("expected 2 rows (mini app + register), got %+v", kb)
+	if kb == nil || len(kb.InlineKeyboard) != 3 {
+		t.Fatalf("expected 3 rows (mini app + register + support), got %+v", kb)
 	}
 	if kb.InlineKeyboard[0][0].WebApp == nil || kb.InlineKeyboard[0][0].WebApp.URL != "https://app.example.com" {
 		t.Fatalf("first row must open the mini app: %+v", kb.InlineKeyboard[0])
 	}
 	if kb.InlineKeyboard[1][0].CallbackData != "menu:register" {
 		t.Fatalf("second row must be register: %+v", kb.InlineKeyboard[1])
+	}
+	if kb.InlineKeyboard[2][0].CallbackData != "menu:support" {
+		t.Fatalf("third row must be support: %+v", kb.InlineKeyboard[2])
 	}
 }
 

@@ -42,6 +42,14 @@ func (f *fakeCabinet) CreateInviteRequest(_ context.Context, _ int64, username s
 	return f.inviteErr
 }
 
+func (f *fakeCabinet) SupportHistoryUser(_ context.Context, _ int64) (*payments.WebSupport, error) {
+	return &payments.WebSupport{}, nil
+}
+
+func (f *fakeCabinet) SupportSendUser(_ context.Context, _ int64, _ string) error { return nil }
+
+func (f *fakeCabinet) SupportCloseUser(_ context.Context, _ int64) error { return nil }
+
 type adminCall struct {
 	Name string
 	A, B int64
@@ -155,6 +163,29 @@ func (f *fakeAdmin) AdminBroadcast(_ context.Context, tgID int64, text string) (
 		return nil, f.err
 	}
 	return &payments.WebBroadcastResult{Sent: 3, Failed: 1}, nil
+}
+
+func (f *fakeAdmin) SupportConversations(_ context.Context, tgID int64) ([]payments.WebSupportConversation, error) {
+	f.calls = append(f.calls, adminCall{Name: "support_conversations", A: tgID})
+	return nil, f.err
+}
+
+func (f *fakeAdmin) SupportThreadAdmin(_ context.Context, tgID, targetUserID int64) (*payments.WebSupport, error) {
+	f.calls = append(f.calls, adminCall{Name: "support_thread", A: tgID, B: targetUserID})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &payments.WebSupport{}, nil
+}
+
+func (f *fakeAdmin) SupportSendAdmin(_ context.Context, tgID, targetUserID int64, text string) error {
+	f.calls = append(f.calls, adminCall{Name: "support_send", A: tgID, B: targetUserID, Text: text})
+	return f.err
+}
+
+func (f *fakeAdmin) SupportCloseAdmin(_ context.Context, tgID, targetUserID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "support_close", A: tgID, B: targetUserID})
+	return f.err
 }
 
 // fakeWebhooks records Platega webhook bodies handed to the service.

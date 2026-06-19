@@ -98,6 +98,8 @@ func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 		return s.consumeUserTraffic(ctx, chatID, text)
 	case adminInputUserExpiry:
 		return s.consumeUserExpiry(ctx, chatID, text)
+	case adminInputSupportReply:
+		return s.consumeSupportReply(ctx, chatID, text)
 	}
 	return false
 }
