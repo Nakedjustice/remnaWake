@@ -85,6 +85,13 @@
     padding: 10px;
     margin: 8px 0 0;
   }
+  .chat { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; padding: 4px 2px; }
+  .bubble { max-width: 82%; padding: 8px 11px; border-radius: 14px; font-size: 14px; word-break: break-word; white-space: pre-wrap; }
+  .bubble.from-user { align-self: flex-end; background: var(--link); color: #fff; }
+  .bubble.from-admin { align-self: flex-start; background: var(--secondary-bg); color: var(--text); }
+  .bubble .meta { display: block; font-size: 11px; opacity: .7; margin-top: 4px; }
+  .conv { width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .conv .badge { background: var(--link); color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
   #status { text-align: center; color: var(--hint); padding: 32px 8px; font-size: 15px; }
   input, textarea, select {
     width: 100%;
@@ -341,6 +348,25 @@ const EN = {
   '✅ Включить подписку': '✅ Enable subscription',
   '🛡 Сквады': '🛡 Squads',
   'Введите целое число ≥ 0.': 'Enter an integer ≥ 0.',
+  '💬 Поддержка': '💬 Support',
+  'Связаться с администратором по любым вопросам.': 'Contact the administrator with any questions.',
+  'Открыть чат': 'Open chat',
+  '💬 Чат с поддержкой': '💬 Support chat',
+  'Чат пуст. Напишите сообщение администратору.': 'No messages yet. Write a message to the administrator.',
+  'Введите сообщение…': 'Type a message…',
+  'Отправить': 'Send',
+  'Завершить чат': 'End chat',
+  'Завершить чат с поддержкой? История будет удалена.': 'End the support chat? The history will be deleted.',
+  'Сообщение не может быть пустым.': 'The message cannot be empty.',
+  'Вы': 'You',
+  'Поддержка': 'Support',
+  '💬 Чат поддержки': '💬 Support chat',
+  'Открытые обращения пользователей.': 'Open user conversations.',
+  'Нет открытых обращений.': 'No open conversations.',
+  'Ответить': 'Reply',
+  'Завершить': 'Close',
+  'Завершить обращение? История будет удалена.': 'Close this conversation? The history will be deleted.',
+  'Без имени': 'No name',
 };
 
 function resolveLang(serverLang) {
@@ -734,6 +760,7 @@ function subPageTop(title) {
 // only), a My subscription section and an Invitation section.
 function showHome() {
   currentRender = showHome;
+  stopSupportPoll();
   const data = cabinetData || {};
   appEl.textContent = '';
 
@@ -761,6 +788,11 @@ function showHome() {
         [t('👥 Мои приглашения'), showMyInvites],
       ]));
   }
+
+  appEl.appendChild(menuCard(
+    t('💬 Поддержка'),
+    t('Связаться с администратором по любым вопросам.'),
+    [[t('Открыть чат'), showSupport]]));
 
   const actions = el('div', 'card');
   actions.appendChild(el('h2', null, t('Действия в чате')));
@@ -886,6 +918,180 @@ async function showAdmin() {
     adminData = await api('/api/admin');
   } catch (e) { tg.showAlert(e.message); return; }
   renderAdminHome();
+}
+
+// ---- Support chat (user + admin) ----
+
+// supportTimer holds the active polling interval so it can be cleared on any
+// navigation. Every top-level view that is not a support view calls
+// stopSupportPoll(); support views restart it via startSupportPoll().
+let supportTimer = null;
+
+function stopSupportPoll() {
+  if (supportTimer) { clearInterval(supportTimer); supportTimer = null; }
+}
+
+function startSupportPoll(fn, ms) {
+  stopSupportPoll();
+  supportTimer = setInterval(() => { fn().catch(() => {}); }, ms);
+}
+
+// renderChatMessages fills a container with styled message bubbles, newest at
+// the bottom, and scrolls to the latest.
+function renderChatMessages(box, messages) {
+  box.textContent = '';
+  if (!messages || !messages.length) {
+    box.appendChild(el('div', 'hint', t('Чат пуст. Напишите сообщение администратору.')));
+    return;
+  }
+  messages.forEach(m => {
+    const b = el('div', 'bubble ' + (m.from_admin ? 'from-admin' : 'from-user'));
+    b.appendChild(el('span', null, m.text));
+    b.appendChild(el('span', 'meta', (m.from_admin ? t('Поддержка') : t('Вы')) + ' · ' + (m.created_at || '')));
+    box.appendChild(b);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+// showSupport is the user's own support thread with a send box and a close
+// (delete) button, polling for admin replies while open.
+async function showSupport() {
+  currentRender = showSupport;
+  stopSupportPoll();
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('💬 Чат с поддержкой')));
+
+  const chatCard = el('div', 'card');
+  const box = el('div', 'chat');
+  chatCard.appendChild(box);
+  const text = Object.assign(el('textarea'), { placeholder: t('Введите сообщение…') });
+  chatCard.appendChild(text);
+  const send = el('button', null, t('Отправить'));
+  send.onclick = async () => {
+    const v = text.value.trim();
+    if (!v) { tg.showAlert(t('Сообщение не может быть пустым.')); return; }
+    send.disabled = true;
+    try {
+      await api('/api/support/send', { method: 'POST', body: JSON.stringify({ text: v }) });
+      text.value = '';
+      await refreshSupport(box);
+    } catch (e) { tg.showAlert(e.message); }
+    send.disabled = false;
+  };
+  chatCard.appendChild(send);
+  const close = el('button', 'secondary', t('Завершить чат'));
+  close.onclick = async () => {
+    if (!(await confirmDialog(t('Завершить чат с поддержкой? История будет удалена.')))) return;
+    try {
+      await api('/api/support/close', { method: 'POST', body: '{}' });
+      showHome();
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  chatCard.appendChild(close);
+  appEl.appendChild(chatCard);
+
+  statusEl.hidden = true;
+  appEl.hidden = false;
+  await refreshSupport(box);
+  startSupportPoll(() => refreshSupport(box), 4000);
+}
+
+async function refreshSupport(box) {
+  const data = await api('/api/support');
+  renderChatMessages(box, data.messages);
+}
+
+// showAdminSupport lists open conversations; each opens a reply thread.
+async function showAdminSupport() {
+  currentRender = showAdminSupport;
+  stopSupportPoll();
+  appEl.textContent = '';
+  appEl.appendChild(adminSubTop());
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('💬 Чат поддержки')));
+  card.appendChild(el('div', 'hint', t('Открытые обращения пользователей.')));
+  const list = el('div', 'btn-grid');
+  card.appendChild(list);
+  appEl.appendChild(card);
+  statusEl.hidden = true;
+  appEl.hidden = false;
+  await refreshAdminSupportList(list);
+  startSupportPoll(() => refreshAdminSupportList(list), 5000);
+}
+
+async function refreshAdminSupportList(list) {
+  const data = await api('/api/admin/support');
+  const convs = data.conversations || [];
+  list.textContent = '';
+  if (!convs.length) {
+    list.appendChild(el('div', 'hint', t('Нет открытых обращений.')));
+    return;
+  }
+  convs.forEach(c => {
+    const btn = el('button', 'secondary');
+    btn.style.flex = '1 1 100%';
+    const wrap = el('div', 'conv');
+    const left = el('div');
+    left.appendChild(el('div', null, c.username || t('Без имени')));
+    if (c.last_text) left.appendChild(el('div', 'hint', c.last_text));
+    wrap.appendChild(left);
+    if (c.unread) wrap.appendChild(el('span', 'badge', String(c.unread)));
+    btn.appendChild(wrap);
+    btn.onclick = () => showAdminSupportThread(c.user_id, c.username);
+    list.appendChild(btn);
+  });
+}
+
+// showAdminSupportThread is one conversation with a reply box and close button.
+async function showAdminSupportThread(userId, username) {
+  currentRender = () => showAdminSupportThread(userId, username);
+  stopSupportPoll();
+  appEl.textContent = '';
+  const top = el('div', 'card');
+  top.appendChild(el('h2', null, username || t('Без имени')));
+  const back = el('button', 'secondary', t('← К списку'));
+  back.onclick = showAdminSupport;
+  top.appendChild(back);
+  appEl.appendChild(top);
+
+  const chatCard = el('div', 'card');
+  const box = el('div', 'chat');
+  chatCard.appendChild(box);
+  const text = Object.assign(el('textarea'), { placeholder: t('Введите сообщение…') });
+  chatCard.appendChild(text);
+  const send = el('button', null, t('Ответить'));
+  send.onclick = async () => {
+    const v = text.value.trim();
+    if (!v) { tg.showAlert(t('Сообщение не может быть пустым.')); return; }
+    send.disabled = true;
+    try {
+      await api('/api/admin/support/send', { method: 'POST', body: JSON.stringify({ user_id: userId, text: v }) });
+      text.value = '';
+      await refreshAdminThread(box, userId);
+    } catch (e) { tg.showAlert(e.message); }
+    send.disabled = false;
+  };
+  chatCard.appendChild(send);
+  const close = el('button', 'secondary', t('Завершить'));
+  close.onclick = async () => {
+    if (!(await confirmDialog(t('Завершить обращение? История будет удалена.')))) return;
+    try {
+      await api('/api/admin/support/close', { method: 'POST', body: JSON.stringify({ id: userId }) });
+      showAdminSupport();
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  chatCard.appendChild(close);
+  appEl.appendChild(chatCard);
+
+  statusEl.hidden = true;
+  appEl.hidden = false;
+  await refreshAdminThread(box, userId);
+  startSupportPoll(() => refreshAdminThread(box, userId), 4000);
+}
+
+async function refreshAdminThread(box, userId) {
+  const data = await api('/api/admin/support/thread', { method: 'POST', body: JSON.stringify({ user_id: userId }) });
+  renderChatMessages(box, data.messages);
 }
 
 // adminAction posts a mutation (optionally after a confirm dialog), refreshes
@@ -1413,6 +1619,7 @@ function adminSubTop() {
 // sub-view), the inline tariffs/payment editors, and a management menu.
 function renderAdminHome() {
   currentRender = renderAdminHome;
+  stopSupportPoll();
   const data = adminData || {};
   appEl.textContent = '';
 
@@ -1448,6 +1655,7 @@ function renderAdminHome() {
       [t('👤 Управление пользователями'), showUserAdmin],
       [t('🎁 Активные подарочные коды'), showAdminGiftCodes],
       [t('📢 Рассылка'), showAdminBroadcast],
+      [t('💬 Чат поддержки'), showAdminSupport],
     ]));
 
   statusEl.hidden = true;

@@ -27,6 +27,9 @@ type Cabinet interface {
 	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider string) (*payments.RenewResult, error)
 	CreateGiftRequest(ctx context.Context, telegramID int64, months int) error
 	CreateInviteRequest(ctx context.Context, telegramID int64, username string) error
+	SupportHistoryUser(ctx context.Context, telegramID int64) (*payments.WebSupport, error)
+	SupportSendUser(ctx context.Context, telegramID int64, text string) error
+	SupportCloseUser(ctx context.Context, telegramID int64) error
 }
 
 // Admin is the subset of *payments.Service the mini app admin API needs.
@@ -53,6 +56,10 @@ type Admin interface {
 	AdminApproveInviteRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminRejectInviteRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminBroadcast(ctx context.Context, telegramID int64, text string) (*payments.WebBroadcastResult, error)
+	SupportConversations(ctx context.Context, telegramID int64) ([]payments.WebSupportConversation, error)
+	SupportThreadAdmin(ctx context.Context, telegramID, targetUserID int64) (*payments.WebSupport, error)
+	SupportSendAdmin(ctx context.Context, telegramID, targetUserID int64, text string) error
+	SupportCloseAdmin(ctx context.Context, telegramID, targetUserID int64) error
 }
 
 // Webhooks is the subset of *payments.Service the public (non-initData)
@@ -88,7 +95,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/renew", s.handleRenew)
 	mux.HandleFunc("POST /api/gift", s.handleGift)
 	mux.HandleFunc("POST /api/invite", s.handleInvite)
+	mux.HandleFunc("GET /api/support", s.handleSupport)
+	mux.HandleFunc("POST /api/support/send", s.handleSupportSend)
+	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
+	mux.HandleFunc("GET /api/admin/support", s.handleAdminSupport)
+	mux.HandleFunc("POST /api/admin/support/thread", s.handleAdminSupportThread)
+	mux.HandleFunc("POST /api/admin/support/send", s.handleAdminSupportSend)
+	mux.HandleFunc("POST /api/admin/support/close", s.adminIDAction("close support", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.SupportCloseAdmin(ctx, tgID, id)
+	}))
 	mux.HandleFunc("POST /api/admin/tariff", s.handleAdminSetTariff)
 	mux.HandleFunc("POST /api/admin/tariff/delete", s.handleAdminDeleteTariff)
 	mux.HandleFunc("POST /api/admin/requisites", s.handleAdminSetRequisites)

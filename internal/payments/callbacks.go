@@ -85,6 +85,12 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleUpdateInstall(ctx, cb)
 	case cb.Data == "upd:dismiss":
 		return s.handleUpdateDismiss(ctx, cb)
+	case cb.Data == "menu:support":
+		return s.handleMenuSupport(ctx, cb)
+	case cb.Data == "sup:close":
+		return s.handleSupportClose(ctx, cb)
+	case strings.HasPrefix(cb.Data, "sup:reply:"):
+		return s.handleSupportReplyStart(ctx, cb)
 	case strings.HasPrefix(cb.Data, "adm:"):
 		return s.handleAdminMenu(ctx, cb)
 	default:

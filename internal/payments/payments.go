@@ -162,6 +162,7 @@ const (
 	adminInputUserHwid
 	adminInputUserTraffic
 	adminInputUserExpiry
+	adminInputSupportReply
 )
 
 type adminInputState struct {
@@ -172,6 +173,10 @@ type adminInputState struct {
 	// the admin pressing the confirm button (step is back to adminInputNone by
 	// then, so regular chat keeps working while the confirmation is pending).
 	pendingBroadcast string
+	// supportTarget is the user Telegram ID an admin is replying to while step
+	// is adminInputSupportReply (set when the admin taps the reply button on a
+	// support notification).
+	supportTarget int64
 }
 
 type adminMsgRef struct {
@@ -258,6 +263,12 @@ type Service struct {
 	payPhotos map[int64]*payPhotoState
 	userCtl   map[int64]*userCtlState // protected by mu; admin "Manage user" target
 
+	// supportSessions tracks users who are in /support typing mode in the bot:
+	// while set, their plain text is routed to the support conversation. The
+	// flag is cleared by /cancel or by closing the chat. Persisting the
+	// conversation lives in the store; this is only the bot-chat input mode.
+	supportSessions map[int64]bool // protected by mu
+
 	botUsername string // protected by mu; empty = unknown, fall back to raw code
 	webAppURL   string // protected by mu; empty = mini app disabled
 
@@ -340,29 +351,30 @@ const defaultTrafficResetKey = "default_traffic_reset_strategy"
 
 func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater UserUpdater, finder Finder, registrar Registrar, squads SquadLister, adminIDs []int64, currency string, dryRun bool, logger *slog.Logger) *Service {
 	s := &Service{
-		store:       st,
-		bot:         bot,
-		extender:    ext,
-		creator:     creator,
-		userUpdater: updater,
-		registrar:   registrar,
-		finder:      finder,
-		squads:      squads,
-		adminIDs:    adminIDs,
-		currency:    currency,
-		dryRun:      dryRun,
-		logger:      logger,
-		now:         time.Now,
-		invites:     make(map[int64]*inviteState),
-		registers:   make(map[int64]*registerState),
-		giftCodes:   make(map[int64]*giftCodeState),
-		redeems:     make(map[int64]*redeemState),
-		payPhotos:   make(map[int64]*payPhotoState),
-		userCtl:     make(map[int64]*userCtlState),
-		adminInput:  make(map[int64]adminInputState),
-		payMsgs:     make(map[int64]adminMsgEntry),
-		inviteMsgs:  make(map[int64]adminMsgEntry),
-		giftMsgs:    make(map[int64]adminMsgEntry),
+		store:           st,
+		bot:             bot,
+		extender:        ext,
+		creator:         creator,
+		userUpdater:     updater,
+		registrar:       registrar,
+		finder:          finder,
+		squads:          squads,
+		adminIDs:        adminIDs,
+		currency:        currency,
+		dryRun:          dryRun,
+		logger:          logger,
+		now:             time.Now,
+		invites:         make(map[int64]*inviteState),
+		registers:       make(map[int64]*registerState),
+		giftCodes:       make(map[int64]*giftCodeState),
+		redeems:         make(map[int64]*redeemState),
+		payPhotos:       make(map[int64]*payPhotoState),
+		userCtl:         make(map[int64]*userCtlState),
+		supportSessions: make(map[int64]bool),
+		adminInput:      make(map[int64]adminInputState),
+		payMsgs:         make(map[int64]adminMsgEntry),
+		inviteMsgs:      make(map[int64]adminMsgEntry),
+		giftMsgs:        make(map[int64]adminMsgEntry),
 	}
 	// Load persisted payment requisites into the in-memory cache so the user
 	// flow never needs a DB read on each button tap.
