@@ -17,6 +17,45 @@ var enPayments = map[string]string{
 	"Обновление запущено, бот скоро перезапустится.":                                             "Update started, the bot will restart shortly.",
 	"Не удалось запустить обновление.":                                                           "Failed to start the update.",
 
+	// Free trial
+	"🎁 Попробовать бесплатно": "🎁 Try for free",
+	"У вас уже есть профиль — пробный период доступен только новым пользователям.": "You already have a profile — the trial is available to new users only.",
+	"🎁 Бесплатный пробный период на %d %s!\n\nВведите желаемое имя пользователя для вашего профиля (буквы, цифры и «_», от 3 до 32 символов). /cancel — отмена.": "🎁 A free %d-%s trial!\n\nEnter the desired username for your profile (letters, digits and \"_\", 3 to 32 characters). /cancel to cancel.",
+	"Вы уже использовали пробный период.":                  "You have already used your trial.",
+	"Ошибка активации пробного периода. Попробуйте позже.": "Failed to activate the trial. Please try again later.",
+	"✅ (dry-run) Пробный период активирован! Профиль «%s» создан, подписка до %s.": "✅ (dry-run) Trial activated! Profile \"%s\" created, subscription until %s.",
+	"✅ Пробный период активирован! Профиль «%s» создан, подписка до %s.":           "✅ Trial activated! Profile \"%s\" created, subscription until %s.",
+
+	// Referral bonus
+	"\n\n🎉 Вам начислено %d %s бонуса за приглашение.": "\n\n🎉 You earned a %d-%s bonus for the referral.",
+
+	// Admin trial & referral settings (bot cards)
+	"🎁 Пробный период":                                       "🎁 Free trial",
+	"🎉 Реферальная программа":                                "🎉 Referral program",
+	"🎁 Пробный период: %s\nДлительность: %d %s":              "🎁 Free trial: %s\nDuration: %d %s",
+	"🎉 Реферальная программа: %s\nБонус пригласившему: %d дн.\nБонус приглашённому: %d дн.": "🎉 Referral program: %s\nInviter bonus: %d d.\nInvitee bonus: %d d.",
+	"включён":                                                  "on",
+	"выключен":                                                 "off",
+	"включена":                                                 "on",
+	"выключена":                                                "off",
+	"✅ Включить":                                               "✅ Enable",
+	"🚫 Выключить":                                              "🚫 Disable",
+	"✏️ Изменить длительность (дни)":                           "✏️ Change duration (days)",
+	"✏️ Бонус пригласившему":                                   "✏️ Inviter bonus",
+	"✏️ Бонус приглашённому":                                   "✏️ Invitee bonus",
+	"Введите длительность пробного периода в днях (целое ≥ 1):": "Enter the trial length in days (integer ≥ 1):",
+	"Введите количество бонусных дней (целое ≥ 0):":            "Enter the number of bonus days (integer ≥ 0):",
+	"Введите целое число ≥ 0. Пример: 30":                      "Enter an integer ≥ 0. Example: 30",
+	"Сначала задайте хотя бы один ненулевой бонус.":            "Set at least one non-zero bonus first.",
+
+	// Notification preferences
+	"🔔 Уведомления": "🔔 Notifications",
+	"Настройки уведомлений. Нажмите кнопку, чтобы включить или выключить.": "Notification settings. Tap a button to turn it on or off.",
+	"🔔 Напоминания об окончании: вкл":     "🔔 Expiry reminders: on",
+	"🔕 Напоминания об окончании: выкл":    "🔕 Expiry reminders: off",
+	"🔔 Напоминания после окончания: вкл":  "🔔 Win-back reminders: on",
+	"🔕 Напоминания после окончания: выкл": "🔕 Win-back reminders: off",
+
 	// Payment providers (Platega, Telegram Stars, P2P) and the provider picker
 	"Продление подписки":                    "Subscription renewal",
 	"Выберите способ оплаты:":               "Choose a payment method:",

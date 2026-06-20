@@ -27,6 +27,8 @@ type Cabinet interface {
 	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider string) (*payments.RenewResult, error)
 	CreateGiftRequest(ctx context.Context, telegramID int64, months int) error
 	CreateInviteRequest(ctx context.Context, telegramID int64, username string) error
+	SetNotificationPref(ctx context.Context, telegramID int64, kind string, muted bool) error
+	ClaimTrial(ctx context.Context, telegramID int64, username string) (*payments.WebTrialResult, error)
 	SupportHistoryUser(ctx context.Context, telegramID int64) (*payments.WebSupport, error)
 	SupportSendUser(ctx context.Context, telegramID int64, text string) error
 	SupportCloseUser(ctx context.Context, telegramID int64) error
@@ -46,6 +48,8 @@ type Admin interface {
 	AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error
 	AdminListUsers(ctx context.Context, telegramID int64) ([]payments.WebUserRow, error)
 	AdminSetDefaultTrafficReset(ctx context.Context, telegramID int64, strategy string) error
+	AdminSetTrial(ctx context.Context, telegramID int64, enabled bool, days int) error
+	AdminSetReferral(ctx context.Context, telegramID int64, enabled bool, inviterDays, inviteeDays int) error
 	AdminFindUser(ctx context.Context, telegramID int64, query string) (*payments.WebManagedUser, error)
 	AdminUpdateUser(ctx context.Context, telegramID int64, req payments.WebUserUpdate) error
 	AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error
@@ -95,6 +99,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/renew", s.handleRenew)
 	mux.HandleFunc("POST /api/gift", s.handleGift)
 	mux.HandleFunc("POST /api/invite", s.handleInvite)
+	mux.HandleFunc("POST /api/notifications", s.handleNotifications)
+	mux.HandleFunc("POST /api/trial", s.handleTrial)
 	mux.HandleFunc("GET /api/support", s.handleSupport)
 	mux.HandleFunc("POST /api/support/send", s.handleSupportSend)
 	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
@@ -114,6 +120,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/squad", s.handleAdminSetDefaultSquad)
 	mux.HandleFunc("GET /api/admin/users", s.handleAdminListUsers)
 	mux.HandleFunc("POST /api/admin/traffic-reset", s.handleAdminSetDefaultTrafficReset)
+	mux.HandleFunc("POST /api/admin/trial", s.handleAdminSetTrial)
+	mux.HandleFunc("POST /api/admin/referral", s.handleAdminSetReferral)
 	mux.HandleFunc("POST /api/admin/user/find", s.handleAdminFindUser)
 	mux.HandleFunc("POST /api/admin/user/update", s.handleAdminUpdateUser)
 	mux.HandleFunc("POST /api/admin/broadcast", s.handleAdminBroadcast)
@@ -269,8 +277,15 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 		writeJSONError(w, http.StatusBadRequest, "tariff not found")
 	case errors.Is(err, payments.ErrBadInput):
 		writeJSONError(w, http.StatusBadRequest, "invalid input")
-	case errors.Is(err, payments.ErrPaymentsDisabled):
+	case errors.Is(err, payments.ErrPaymentsDisabled), errors.Is(err, payments.ErrTrialDisabled):
 		writeJSONError(w, http.StatusServiceUnavailable, "payments are disabled")
+	case errors.Is(err, payments.ErrUsernameTaken):
+		writeJSONError(w, http.StatusConflict, "username already taken")
+	case errors.Is(err, payments.ErrTrialAlreadyUsed), errors.Is(err, payments.ErrTrialNotEligible):
+		writeJSONError(w, http.StatusConflict, "trial not available")
+	case errors.Is(err, payments.ErrPanelCreateFailed):
+		s.logger.Error("webapp: "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
+		writeJSONError(w, http.StatusBadGateway, "panel request failed, try again later")
 	default:
 		s.logger.Error("webapp: "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusInternalServerError, "internal error, try again later")
@@ -313,6 +328,50 @@ func (s *Server) handleInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Kind  string `json:"kind"`
+		Muted bool   `json:"muted"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.cabinet.SetNotificationPref(r.Context(), userID, req.Kind, req.Muted); err != nil {
+		s.writeCabinetError(w, "notification pref", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleTrial(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	result, err := s.cabinet.ClaimTrial(r.Context(), userID, req.Username)
+	if err != nil {
+		s.writeCabinetError(w, "claim trial", userID, err)
+		return
+	}
+	resp := map[string]any{"ok": true, "username": result.Username}
+	if result.SubscriptionURL != "" {
+		resp["subscription_url"] = result.SubscriptionURL
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // writeAdminError maps admin service errors to HTTP statuses.
@@ -507,6 +566,47 @@ func (s *Server) handleAdminSetDefaultTrafficReset(w http.ResponseWriter, r *htt
 	}
 	if err := s.admin.AdminSetDefaultTrafficReset(r.Context(), userID, req.Strategy); err != nil {
 		s.writeAdminError(w, "set default traffic reset", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminSetTrial(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+		Days    int  `json:"days"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetTrial(r.Context(), userID, req.Enabled, req.Days); err != nil {
+		s.writeAdminError(w, "set trial", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminSetReferral(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Enabled     bool `json:"enabled"`
+		InviterDays int  `json:"inviter_days"`
+		InviteeDays int  `json:"invitee_days"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetReferral(r.Context(), userID, req.Enabled, req.InviterDays, req.InviteeDays); err != nil {
+		s.writeAdminError(w, "set referral", userID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

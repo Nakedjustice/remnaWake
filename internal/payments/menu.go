@@ -38,17 +38,25 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 			},
 		}
 	} else {
-		kb = &tg.InlineKeyboardMarkup{
-			InlineKeyboard: [][]tg.InlineKeyboardButton{
-				{{Text: i18n.T("👤 Личный кабинет"), CallbackData: "menu:cabinet"}},
-				{{Text: i18n.T("💵 Тарифы"), CallbackData: "menu:tariffs"}},
-				{{Text: i18n.T("🎁 Подарить подписку"), CallbackData: "menu:gift"}},
-				{{Text: i18n.T("📦 Мои подарки"), CallbackData: "menu:mygifts"}},
-				{{Text: i18n.T("👤 Пригласить пользователя"), CallbackData: "menu:invite"}},
-				{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
-				{{Text: i18n.T("💬 Поддержка"), CallbackData: "menu:support"}},
-			},
+		var rows [][]tg.InlineKeyboardButton
+		// The free-trial button leads the menu when enabled, since it targets new
+		// users who have nothing else to do yet.
+		if enabled, _ := s.trialConfig(); enabled {
+			rows = append(rows, []tg.InlineKeyboardButton{
+				{Text: i18n.T("🎁 Попробовать бесплатно"), CallbackData: "menu:trial"},
+			})
 		}
+		rows = append(rows,
+			[]tg.InlineKeyboardButton{{Text: i18n.T("👤 Личный кабинет"), CallbackData: "menu:cabinet"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("💵 Тарифы"), CallbackData: "menu:tariffs"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("🎁 Подарить подписку"), CallbackData: "menu:gift"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("📦 Мои подарки"), CallbackData: "menu:mygifts"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("👤 Пригласить пользователя"), CallbackData: "menu:invite"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("💬 Поддержка"), CallbackData: "menu:support"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("🔔 Уведомления"), CallbackData: "notif:menu"}},
+		)
+		kb = &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
 	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
 	return true
@@ -100,8 +108,9 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		hasGiftCode := s.getGiftCode(chatID) != nil
 		hasRedeem := s.getRedeem(chatID) != nil
 		hasPayPhoto := s.getPayPhoto(chatID) != nil
+		hasTrial := s.getTrial(chatID) != nil
 		hasSupport := s.inSupportSession(chatID)
-		if !hasInvite && !hasRegister && !hasGiftCode && !hasRedeem && !hasPayPhoto && !hasSupport {
+		if !hasInvite && !hasRegister && !hasGiftCode && !hasRedeem && !hasPayPhoto && !hasTrial && !hasSupport {
 			return false
 		}
 		s.clearInvite(chatID)
@@ -109,6 +118,7 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		s.clearGiftCode(chatID)
 		s.clearRedeem(chatID)
 		s.clearPayPhoto(chatID)
+		s.clearTrial(chatID)
 		s.setSupportSession(chatID, false)
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отменено."))
 		return true
@@ -119,6 +129,9 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		return true
 	}
 
+	if s.handleTrialUsernameInput(ctx, m) {
+		return true
+	}
 	if s.handleInviteUsernameInput(ctx, m) {
 		return true
 	}

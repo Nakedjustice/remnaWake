@@ -86,6 +86,17 @@ CREATE TABLE IF NOT EXISTS sent_notifications (
   sent_at           TEXT NOT NULL,
   PRIMARY KEY (remnawave_user_id, kind, milestone, expire_at)
 );
+CREATE TABLE IF NOT EXISTS trial_claims (
+  telegram_id INTEGER PRIMARY KEY,
+  username    TEXT NOT NULL,
+  claimed_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS notification_prefs (
+  telegram_id   INTEGER PRIMARY KEY,
+  expiry_muted  INTEGER NOT NULL DEFAULT 0,
+  winback_muted INTEGER NOT NULL DEFAULT 0,
+  updated_at    TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS support_messages (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
   user_telegram_id   INTEGER NOT NULL,

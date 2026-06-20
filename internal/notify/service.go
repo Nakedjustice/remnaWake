@@ -37,23 +37,31 @@ type sentMarker interface {
 	UnmarkNotificationSent(ctx context.Context, remnawaveID int64, kind string, milestone int, expireAt time.Time) error
 }
 
+// muteChecker is the subset of *store.Store the notify job needs to honour
+// per-user notification mute preferences.
+type muteChecker interface {
+	NotificationMuted(ctx context.Context, telegramID int64, kind string) (bool, error)
+}
+
 type Service struct {
 	rw          userSource
 	tg          sender
 	pay         payFlow
 	marks       sentMarker
+	prefs       muteChecker
 	logger      *slog.Logger
 	dryRun      bool
 	winbackDays []int // days after expiry to send win-back messages; empty = off
 	now         func() time.Time
 }
 
-func NewService(rw userSource, tg sender, pay payFlow, marks sentMarker, logger *slog.Logger, dryRun bool, winbackDays []int) *Service {
+func NewService(rw userSource, tg sender, pay payFlow, marks sentMarker, prefs muteChecker, logger *slog.Logger, dryRun bool, winbackDays []int) *Service {
 	return &Service{
 		rw:          rw,
 		tg:          tg,
 		pay:         pay,
 		marks:       marks,
+		prefs:       prefs,
 		logger:      logger,
 		dryRun:      dryRun,
 		winbackDays: winbackDays,
@@ -80,6 +88,7 @@ func (s *Service) Run(ctx context.Context) error {
 		skippedNoExp  int
 		skippedStatus int
 		skippedDup    int
+		skippedMuted  int
 		notified      int
 		winbackSent   int
 		failed        int
@@ -126,6 +135,18 @@ func (s *Service) Run(ctx context.Context) error {
 		default:
 			skippedStatus++
 			continue
+		}
+
+		// Honour the user's per-kind mute preference (best-effort: a lookup error
+		// falls through and still notifies). Applies on both the dry-run and real
+		// paths so logs reflect what would actually be sent.
+		if s.prefs != nil {
+			if muted, err := s.prefs.NotificationMuted(ctx, *u.TelegramID, kind); err != nil {
+				logger.Error("check notification mute failed", "err", err.Error(), "chat_id", *u.TelegramID)
+			} else if muted {
+				skippedMuted++
+				continue
+			}
 		}
 
 		var text string
@@ -205,6 +226,7 @@ func (s *Service) Run(ctx context.Context) error {
 		"skipped_no_expire", skippedNoExp,
 		"skipped_inactive", skippedStatus,
 		"skipped_dup", skippedDup,
+		"skipped_muted", skippedMuted,
 		"notified", notified,
 		"winback", winbackSent,
 		"failed", failed,

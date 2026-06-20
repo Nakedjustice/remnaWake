@@ -75,11 +75,15 @@ func main() {
 		pay.SetTelegramStars(cfg.Stars.Rate)
 		logger.Info("telegram stars provider configured", "rate", cfg.Stars.Rate)
 	}
+	// Trial and referral are runtime-toggleable: the env values seed the initial
+	// defaults, but a persisted admin override (bot or mini app) wins thereafter.
+	pay.InitTrial(cfg.Trial.Enabled, cfg.Trial.Days)
+	pay.InitReferral(cfg.Referral.Enabled, cfg.Referral.InviterDays, cfg.Referral.InviteeDays)
 	var winbackDays []int
 	if cfg.Winback.Enabled {
 		winbackDays = cfg.Winback.Days
 	}
-	svc := notify.NewService(rwClient, bot, pay, db, logger, cfg.DryRun, winbackDays)
+	svc := notify.NewService(rwClient, bot, pay, db, db, logger, cfg.DryRun, winbackDays)
 
 	rootCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -286,6 +290,10 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 					}
 				case "/register":
 					if pay.StartRegisterFlow(ctx, u.Message) {
+						continue
+					}
+				case "/trial":
+					if pay.StartTrialFlow(ctx, u.Message) {
 						continue
 					}
 				case "/support":

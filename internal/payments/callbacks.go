@@ -52,6 +52,14 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleInviteCancel(ctx, cb)
 	case cb.Data == "menu:register":
 		return s.handleMenuRegister(ctx, cb)
+	case cb.Data == "menu:trial":
+		return s.handleMenuTrial(ctx, cb)
+	case cb.Data == "notif:menu":
+		return s.handleNotifMenu(ctx, cb)
+	case cb.Data == "notif:expiry":
+		return s.handleNotifToggle(ctx, cb, store.NotificationExpiry)
+	case cb.Data == "notif:winback":
+		return s.handleNotifToggle(ctx, cb, store.NotificationWinback)
 	case cb.Data == "reg_confirm":
 		return s.handleRegisterConfirm(ctx, cb)
 	case cb.Data == "reg_cancel":
@@ -550,6 +558,20 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.sendUserSquads(ctx, chatID)
 	case strings.HasPrefix(cb.Data, "adm:u:sq:"):
 		s.handleUserSquadToggle(ctx, chatID, cb.Data)
+	case cb.Data == "adm:trial":
+		s.sendTrialAdminCard(ctx, chatID)
+	case cb.Data == "adm:trial:toggle":
+		s.handleTrialToggle(ctx, chatID)
+	case cb.Data == "adm:trial:days":
+		s.startTrialDaysInput(ctx, chatID)
+	case cb.Data == "adm:referral":
+		s.sendReferralAdminCard(ctx, chatID)
+	case cb.Data == "adm:referral:toggle":
+		s.handleReferralToggle(ctx, chatID)
+	case cb.Data == "adm:referral:inviter":
+		s.startReferralBonusInput(ctx, chatID, adminInputReferralInviter)
+	case cb.Data == "adm:referral:invitee":
+		s.startReferralBonusInput(ctx, chatID, adminInputReferralInvitee)
 	case cb.Data == "adm:bcast":
 		s.startBroadcastFlow(ctx, chatID)
 	case cb.Data == "adm:bc_send":

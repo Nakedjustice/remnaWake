@@ -286,15 +286,23 @@ func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store
 		return nil, nil, time.Time{}, ErrRequestResolved
 	}
 
+	// Referral: the invitee may be granted bonus days on top of the invite's
+	// base term so the new user starts with a longer subscription.
+	refEnabled, _, inviteeDays := s.referralConfig()
 	expireAt := s.now().AddDate(0, req.Months, 0)
+	if refEnabled && inviteeDays > 0 {
+		expireAt = expireAt.AddDate(0, 0, inviteeDays)
+	}
 
 	if s.dryRun {
 		s.logger.Info("dry-run: would create user", "username", req.NewUsername, "expire_at", expireAt.Format("2006-01-02"))
 		_, _ = s.store.ResolveInviteRequest(ctx, reqID, "approved", s.now())
 		s.clearInviteButtons(ctx, reqID)
+		bonus := s.awardInviterReferralBonus(ctx, req.InviterTelegramID)
 		if req.InviterTelegramID != 0 {
-			_ = s.bot.SendPlain(ctx, req.InviterTelegramID,
-				fmt.Sprintf(i18n.T("✅ Ваша заявка одобрена! Пользователь «%s» создан (dry-run)."), req.NewUsername))
+			msg := fmt.Sprintf(i18n.T("✅ Ваша заявка одобрена! Пользователь «%s» создан (dry-run)."), req.NewUsername)
+			msg += referralBonusSuffix(bonus)
+			_ = s.bot.SendPlain(ctx, req.InviterTelegramID, msg)
 		}
 		return req, nil, expireAt, nil
 	}
@@ -316,15 +324,63 @@ func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store
 	}
 
 	s.clearInviteButtons(ctx, reqID)
+	bonus := s.awardInviterReferralBonus(ctx, req.InviterTelegramID)
 	if req.InviterTelegramID != 0 {
 		msg := fmt.Sprintf(i18n.T("✅ Заявка одобрена! Пользователь «%s» создан, подписка до %s."),
 			created.Username, expireAt.Format("02.01.2006"))
 		if created.SubscriptionURL != "" {
 			msg += i18n.T("\n\nСсылка на подписку для нового пользователя:\n") + created.SubscriptionURL
 		}
+		msg += referralBonusSuffix(bonus)
 		_ = s.bot.SendPlain(ctx, req.InviterTelegramID, msg)
 	}
 	return req, created, expireAt, nil
+}
+
+// awardInviterReferralBonus extends the inviter's own subscription by the
+// configured referral bonus when referrals are enabled. Best-effort: any
+// failure is logged and swallowed so it never fails the approval. Returns the
+// number of bonus days actually granted (0 when disabled or the inviter has no
+// profile). Honors dry-run by logging only.
+func (s *Service) awardInviterReferralBonus(ctx context.Context, inviterTGID int64) int {
+	refEnabled, inviterDays, _ := s.referralConfig()
+	if !refEnabled || inviterDays <= 0 || inviterTGID == 0 {
+		return 0
+	}
+	subs, err := s.finder.FindByTelegramID(ctx, inviterTGID)
+	if err != nil {
+		s.logger.Error("referral: find inviter failed", "err", err.Error())
+		return 0
+	}
+	if len(subs) == 0 {
+		s.logger.Info("referral: inviter has no profile, skipping bonus", "telegram_id", inviterTGID)
+		return 0
+	}
+	sub := subs[0]
+	base := sub.ExpireAt
+	if now := s.now(); base.Before(now) {
+		base = now
+	}
+	newExpireAt := base.AddDate(0, 0, inviterDays)
+	if s.dryRun {
+		s.logger.Info("dry-run: would award referral bonus to inviter",
+			"uuid", sub.UUID, "days", inviterDays)
+		return inviterDays
+	}
+	if err := s.extender.ExtendSubscriptionByUUID(ctx, sub.UUID, newExpireAt); err != nil {
+		s.logger.Error("referral: extend inviter failed", "uuid", sub.UUID, "err", err.Error())
+		return 0
+	}
+	return inviterDays
+}
+
+// referralBonusSuffix returns a line announcing the inviter's referral bonus,
+// or an empty string when no bonus was granted.
+func referralBonusSuffix(days int) string {
+	if days <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(i18n.T("\n\n🎉 Вам начислено %d %s бонуса за приглашение."), days, i18n.PluralDays(days))
 }
 
 // handleInviteReject processes admin's "Отклонить" button.

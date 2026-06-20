@@ -22,6 +22,16 @@ extends the subscription by the chosen number of months.
   one-time code / `t.me` deep link; recipient activates it themselves.
 - ➕ **Invites** (`/invite`) — subscribers request a new panel account; admin
   approves and the new subscription URL is sent back.
+- 🎁 **Free trial** (`/trial` or the Mini App, optional) — a brand-new user
+  creates a trial profile lasting `TRIAL_DAYS` days, once per Telegram ID
+  (`TRIAL_ENABLED`). Admins can also toggle it and change the length at runtime
+  from the bot admin menu or the Mini App admin panel.
+- 🎉 **Referral bonus** (optional) — an approved invite grants bonus days to the
+  inviter and/or the invitee (`REFERRAL_ENABLED`). Runtime-configurable from the
+  bot admin menu and the Mini App admin panel.
+- 🔔 **Notification preferences** — users mute expiry reminders and win-back
+  messages independently, from the bot **🔔 Notifications** button or the Mini
+  App cabinet.
 - 📊 **Stats** (`/stats`) — panel users, 30-day payments & revenue, gifts,
   invites.
 - 🖥 **Telegram Mini App** — web version of the cabinet (set `WEBAPP_URL`).
@@ -367,6 +377,11 @@ docker compose restart caddy    # in your caddy directory
 | `PLATEGA_RETURN_URL`   | no       | `https://t.me`   | Where Platega returns the user after payment                 |
 | `TELEGRAM_STARS_ENABLED` | no     | `false`          | Enable native Telegram Stars (XTR) payments (uses the bot token; no webhook) |
 | `TELEGRAM_STARS_RATE`  | no¹      | —                | Price units per Star; Stars charged = `ceil(price / rate)`. ¹Required when `TELEGRAM_STARS_ENABLED=true` |
+| `TRIAL_ENABLED`        | no       | `false`          | Enable the one-time free trial for new users (no linked profile)            |
+| `TRIAL_DAYS`           | no²      | `3`              | Trial length in days. ²Required (positive) when `TRIAL_ENABLED=true`        |
+| `REFERRAL_ENABLED`     | no       | `false`          | Reward approved invites with bonus days for inviter and/or invitee          |
+| `REFERRAL_INVITER_BONUS_DAYS` | no | `30`            | Bonus days added to the inviter's own subscription per approved invite      |
+| `REFERRAL_INVITEE_BONUS_DAYS` | no | `0`             | Extra days granted to the invited user on top of the 1-month invite term    |
 
 ## 🚀 Running
 
