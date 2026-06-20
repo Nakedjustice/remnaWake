@@ -34,6 +34,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 			InlineKeyboard: [][]tg.InlineKeyboardButton{
 				{{Text: i18n.T("🖥 Открыть мини-приложение"), WebApp: &tg.WebAppInfo{URL: url}}},
 				{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
+				{{Text: i18n.T("💬 Поддержка"), CallbackData: "menu:support"}},
 			},
 		}
 	} else {
@@ -52,6 +53,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 			[]tg.InlineKeyboardButton{{Text: i18n.T("📦 Мои подарки"), CallbackData: "menu:mygifts"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("👤 Пригласить пользователя"), CallbackData: "menu:invite"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
+			[]tg.InlineKeyboardButton{{Text: i18n.T("💬 Поддержка"), CallbackData: "menu:support"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("🔔 Уведомления"), CallbackData: "notif:menu"}},
 		)
 		kb = &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
@@ -107,7 +109,8 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		hasRedeem := s.getRedeem(chatID) != nil
 		hasPayPhoto := s.getPayPhoto(chatID) != nil
 		hasTrial := s.getTrial(chatID) != nil
-		if !hasInvite && !hasRegister && !hasGiftCode && !hasRedeem && !hasPayPhoto && !hasTrial {
+		hasSupport := s.inSupportSession(chatID)
+		if !hasInvite && !hasRegister && !hasGiftCode && !hasRedeem && !hasPayPhoto && !hasTrial && !hasSupport {
 			return false
 		}
 		s.clearInvite(chatID)
@@ -116,7 +119,13 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		s.clearRedeem(chatID)
 		s.clearPayPhoto(chatID)
 		s.clearTrial(chatID)
+		s.setSupportSession(chatID, false)
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отменено."))
+		return true
+	}
+
+	// A live support session captures all plain text until /cancel or close.
+	if s.handleSupportSessionInput(ctx, m) {
 		return true
 	}
 

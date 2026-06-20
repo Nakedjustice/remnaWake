@@ -97,6 +97,18 @@ CREATE TABLE IF NOT EXISTS notification_prefs (
   winback_muted INTEGER NOT NULL DEFAULT 0,
   updated_at    TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS support_messages (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_telegram_id   INTEGER NOT NULL,
+  user_username      TEXT NOT NULL DEFAULT '',
+  from_admin         INTEGER NOT NULL,
+  author_telegram_id INTEGER NOT NULL DEFAULT 0,
+  text               TEXT NOT NULL,
+  created_at         TEXT NOT NULL,
+  read_by_user       INTEGER NOT NULL DEFAULT 0,
+  read_by_admin      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_support_user ON support_messages(user_telegram_id);
 `
 
 // New opens (creating if needed) the SQLite database at path and applies migrations.

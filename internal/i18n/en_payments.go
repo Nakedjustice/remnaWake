@@ -391,4 +391,21 @@ var enPayments = map[string]string{
 	"Неизвестная стратегия.":                                         "Unknown strategy.",
 	"Некорректное значение.":                                         "Invalid value.",
 	"Панель недоступна, попробуйте позже.":                           "The panel is unavailable, try again later.",
+
+	// Support chat
+	"Связаться с поддержкой":       "Contact support",
+	"Поддержка сейчас недоступна.": "Support is currently unavailable.",
+	"💬 Поддержка":                  "💬 Support",
+	"✖️ Завершить чат":             "✖️ End chat",
+	"💬 Вы открыли чат с поддержкой. Напишите ваше сообщение — оно будет передано администратору. Отправьте /cancel или нажмите кнопку ниже, чтобы завершить чат.": "💬 You have opened a chat with support. Write your message — it will be forwarded to an administrator. Send /cancel or tap the button below to end the chat.",
+	"Не удалось отправить сообщение, попробуйте позже.": "Could not send the message, try again later.",
+	"🛟 Сообщение в поддержку от %s:\n\n%s":              "🛟 Support message from %s:\n\n%s",
+	"✍️ Ответить":     "✍️ Reply",
+	"🛟 Поддержка: %s": "🛟 Support: %s",
+	"🛟 Пользователь %s завершил чат с поддержкой.":                              "🛟 User %s ended the support chat.",
+	"🛟 Чат с поддержкой завершён администратором.":                              "🛟 The support chat was closed by an administrator.",
+	"💬 Чат с поддержкой завершён.":                                              "💬 The support chat has ended.",
+	"Введите ответ пользователю следующим сообщением (или /cancel для отмены):": "Type your reply to the user in the next message (or /cancel to abort):",
+	"Не удалось отправить ответ.":                                               "Could not send the reply.",
+	"✅ Ответ отправлен.":                                                        "✅ Reply sent.",
 }

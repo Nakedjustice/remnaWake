@@ -104,6 +104,8 @@ func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 		return s.consumeReferralBonus(ctx, chatID, text, true)
 	case adminInputReferralInvitee:
 		return s.consumeReferralBonus(ctx, chatID, text, false)
+	case adminInputSupportReply:
+		return s.consumeSupportReply(ctx, chatID, text)
 	}
 	return false
 }

@@ -296,6 +296,10 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 					if pay.StartTrialFlow(ctx, u.Message) {
 						continue
 					}
+				case "/support":
+					if pay.StartSupport(ctx, u.Message.Chat.ID) {
+						continue
+					}
 				}
 				if pay.HandleText(ctx, u.Message) {
 					continue
@@ -327,6 +331,7 @@ func userBotCommands() []tgbot.BotCommand {
 		{Command: "mygifts", Description: i18n.T("Мои подарочные подписки")},
 		{Command: "invite", Description: i18n.T("Пригласить нового пользователя")},
 		{Command: "register", Description: i18n.T("Привязать свой Telegram к профилю")},
+		{Command: "support", Description: i18n.T("Связаться с поддержкой")},
 		{Command: "cancel", Description: i18n.T("Отменить текущее действие")},
 		{Command: "help", Description: i18n.T("Помощь")},
 		{Command: "start", Description: i18n.T("О боте")},
