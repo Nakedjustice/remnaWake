@@ -29,16 +29,15 @@
     --tone-active: #34C759;
     --tone-expiring: #FF9F0A;
     --tone-expired: #FF453A;
-    /* Surfaces/text adapt to the Telegram theme; design dark values are fallbacks. */
-    --bg: var(--tg-theme-bg-color, #0d0f13);
-    --surface: var(--tg-theme-secondary-bg-color, #15171d);
-    --surface-2: var(--tg-theme-bg-color, #1a1d24);
-    --text: var(--tg-theme-text-color, #f3f4f7);
-    --hint: var(--tg-theme-hint-color, #9b9ba3);
-    --link: var(--tg-theme-link-color, var(--accent));
-    /* Neutral, semi-transparent border/track readable on light *and* dark. */
-    --border: rgba(128, 128, 128, 0.22);
-    --track: rgba(128, 128, 128, 0.28);
+    /* The supplied design intentionally uses one dark branded palette. */
+    --bg: #0d0f13;
+    --surface: #15171d;
+    --surface-2: #1a1d24;
+    --text: #f3f4f7;
+    --hint: #8b92a0;
+    --link: var(--accent);
+    --border: rgba(255, 255, 255, 0.07);
+    --track: rgba(255, 255, 255, 0.09);
     /* Per-status tone, set on the profile card; defaults to accent. */
     --tone: var(--accent);
     --tone-soft: var(--accent-soft);
@@ -47,7 +46,8 @@
   html, body { background: var(--bg); }
   body {
     margin: 0;
-    padding: 14px 14px calc(28px + env(safe-area-inset-bottom));
+    width: 100%; max-width: 460px; min-height: 100vh; margin-inline: auto;
+    padding: calc(12px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
     font-family: 'Onest', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     color: var(--text);
     -webkit-font-smoothing: antialiased;
@@ -100,30 +100,52 @@
   .pill.accent { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-bd); }
   .pill svg { width: 15px; height: 15px; }
 
-  /* ---- Profile ring ---- */
-  .profile-head { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 6px 0 4px; }
-  .ring { position: relative; width: 168px; height: 168px; border-radius: 50%;
-    background: conic-gradient(var(--tone) var(--ring-deg, 0deg), var(--track) 0deg); padding: 9px; }
-  .ring .ring-inner { width: 100%; height: 100%; border-radius: 50%; background: var(--surface);
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
-  .ring .days-num { font-size: 40px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
-  .ring .days-word { font-size: 12px; font-weight: 600; color: var(--hint); }
-  .ring .expired-mark { font-size: 17px; font-weight: 800; color: var(--tone); }
-  .avatar { width: 64px; height: 64px; border-radius: 50%; background: var(--accent-soft);
+  /* ---- Profile dashboard ---- */
+  .profile-card { padding: 18px 16px; }
+  .profile-select-wrap { margin-bottom: 14px; }
+  .profile-select-wrap label { display: block; color: var(--hint); font-size: 12px; font-weight: 700; margin: 0 2px 5px; }
+  .profile-select-wrap select { margin: 0; }
+  .profile-head { display: flex; flex-direction: row; align-items: center; gap: 14px; padding: 0; }
+  .avatar { width: 58px; height: 58px; border-radius: 18px; background: var(--accent-soft);
     border: 1.5px solid var(--accent-bd); display: flex; align-items: center; justify-content: center;
-    font-size: 22px; font-weight: 800; color: var(--accent); position: relative; }
-  .avatar .dot { position: absolute; right: 1px; bottom: 1px; width: 14px; height: 14px; border-radius: 50%;
-    background: var(--tone); border: 2.5px solid var(--surface); }
+    font-size: 21px; font-weight: 800; color: var(--accent); position: relative; flex: none; }
+  .profile-identity { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .profile-name { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
   .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
     background: var(--tone-soft); color: var(--tone); font-size: 12.5px; font-weight: 700; }
   .status-pill .pdot { width: 7px; height: 7px; border-radius: 50%; background: var(--tone); }
 
-  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
-  .stat { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 11px 13px; }
+  .validity { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    margin-top: 18px; padding: 18px 20px; border-radius: 22px;
+    background: linear-gradient(135deg, var(--accent-soft), rgba(255,255,255,0.02)); border: 1px solid var(--accent-bd); }
+  .validity-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .validity-label { color: #9aa0ab; font-size: 12.5px; font-weight: 600; }
+  .validity-date { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+  .validity-note { color: var(--tone); font-size: 12.5px; font-weight: 700; }
+  .days-ring { width: 66px; height: 66px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    background: conic-gradient(var(--tone) var(--ring-deg, 0deg), var(--track) 0deg); }
+  .days-ring-inner { width: 50px; height: 50px; border-radius: 50%; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .days-ring .days-num { font-size: 18px; font-weight: 800; line-height: 1; }
+  .days-ring .days-word { color: var(--hint); font-size: 9px; font-weight: 600; }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 14px 15px; }
   .stat .lbl { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--hint); }
   .stat .val { font-size: 16px; font-weight: 800; margin-top: 3px; word-break: break-word; }
-  .stat.wide { grid-column: 1 / -1; }
+  .traffic-card { margin-top: 14px; padding: 15px 16px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); }
+  .traffic-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .traffic-label { color: var(--hint); font-size: 13px; font-weight: 600; }
+  .traffic-value { font-size: 14px; font-weight: 700; text-align: right; }
+  .traffic-track { height: 8px; margin-top: 10px; border-radius: 999px; background: var(--track); overflow: hidden; }
+  .traffic-fill { height: 100%; border-radius: inherit; background: var(--accent); }
+
+  .copy-link { display: flex; align-items: center; justify-content: center; gap: 9px; border-radius: 999px;
+    margin-top: 18px; border: 1.5px solid var(--accent-bd); background: var(--accent-soft); color: var(--accent); }
+  .copy-link svg, .profile-actions svg { width: 17px; height: 17px; flex: none; }
+  .profile-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 12px; }
+  .profile-actions button { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; border-radius: 999px; }
 
   .sub-link {
     display: block; font-size: 13px; color: var(--link); word-break: break-all;
@@ -200,6 +222,12 @@
   details { border-top: 1px solid var(--border); }
   details:first-of-type { border-top: 0; }
   summary { cursor: pointer; padding: 10px 0; font-size: 15px; font-weight: 700; }
+  @media (max-width: 360px) {
+    body { padding-inline: 12px; }
+    .validity { padding-inline: 15px; }
+    .validity-date { font-size: 19px; }
+    .profile-actions button { padding-inline: 8px; font-size: 13px; }
+  }
 </style>
 </head>
 <body>
@@ -217,7 +245,10 @@
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
-try { tg.setHeaderColor && tg.setHeaderColor('secondary_bg'); } catch (e) {}
+try {
+  tg.setHeaderColor && tg.setHeaderColor('#0d0f13');
+  tg.setBackgroundColor && tg.setBackgroundColor('#0d0f13');
+} catch (e) {}
 
 const statusEl = document.getElementById('status');
 const appEl = document.getElementById('app');
@@ -242,6 +273,14 @@ const EN = {
   'Устройства': 'Devices',
   'Трафик': 'Traffic',
   'Подписка истекла': 'Subscription expired',
+  'Активна': 'Active',
+  'Истекает': 'Expiring',
+  'Истекла': 'Expired',
+  'Отключена': 'Disabled',
+  'Лимит трафика': 'Traffic limited',
+  'Без срока': 'No expiry',
+  'Выберите подписку': 'Select subscription',
+  'дн.': 'days',
   // Profile statuses (mirror the server's subStatusLabel).
   '✅ Активна': '✅ Active',
   '⛔ Истекла': '⛔ Expired',
@@ -635,21 +674,39 @@ function giftStatusLabel(g) {
   return g.status;
 }
 
-// toneFor picks the status colour: green for a healthy active subscription,
-// amber when it is active but expiring within 7 days, red otherwise.
-function toneFor(p) {
-  if (p.status === 'ACTIVE') {
-    if (p.days_left > 0 && p.days_left <= 7) return 'var(--tone-expiring)';
-    if (p.status === 'ACTIVE' && (!p.expire_at || p.days_left > 0)) return 'var(--tone-active)';
+// profileStatus maps the panel status and remaining time to the three visual
+// tones from the design. ACTIVE enters the amber state during its final week.
+function profileStatus(p) {
+  if (p.status === 'ACTIVE' && p.days_left > 0 && p.days_left <= 7) {
+    return { tone: '#FF9F0A', soft: 'rgba(255,159,10,.16)', label: t('Истекает') };
   }
-  if (p.status === 'LIMITED') return 'var(--tone-expiring)';
-  return 'var(--tone-expired)';
+  if (p.status === 'ACTIVE' && (!p.expire_at || p.days_left > 0)) {
+    return { tone: '#34C759', soft: 'rgba(52,199,89,.16)', label: t('Активна') };
+  }
+  if (p.status === 'LIMITED') {
+    return { tone: '#FF9F0A', soft: 'rgba(255,159,10,.16)', label: t('Лимит трафика') };
+  }
+  if (p.status === 'DISABLED') {
+    return { tone: '#FF453A', soft: 'rgba(255,69,58,.16)', label: t('Отключена') };
+  }
+  return { tone: '#FF453A', soft: 'rgba(255,69,58,.16)', label: t('Истекла') };
 }
 
-// initialsOf derives up to two uppercase letters/digits for the avatar.
+function profileDisplayName(p) {
+  const u = tg.initDataUnsafe && tg.initDataUnsafe.user;
+  if (u) {
+    const full = [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
+    if (full) return full;
+    if (u.username) return u.username;
+  }
+  return p.username || t('Мой профиль');
+}
+
+// initialsOf derives the first and last word initials ("Alex K." -> "AK").
 function initialsOf(name) {
-  const cleaned = (name || '').replace(/[^\p{L}\p{N}]/gu, '');
-  return (cleaned.slice(0, 2) || '?').toUpperCase();
+  const words = (name || '').trim().split(/\s+/).map(x => x.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
+  if (words.length > 1) return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+  return ((words[0] || '?').slice(0, 2)).toUpperCase();
 }
 
 // shortUUID trims a UUID to the design's `a8f3…e21b` form.
@@ -659,92 +716,93 @@ function shortUUID(u) {
   return c.length > 12 ? c.slice(0, 4) + '…' + c.slice(-4) : u;
 }
 
-// renderProfile builds the ring-style profile card: avatar, name, status pill,
-// a days-left ring, a stat grid (UUID / devices / traffic) and a copy-link
-// button, followed by the inline renewal tiles.
+// renderProfile builds the selected subscription dashboard from the supplied
+// card/grid design. It intentionally uses only fields already present in /api/me.
 function renderProfile(p, data) {
-  const card = el('div', 'card');
-  const tone = toneFor(p);
-  card.style.setProperty('--tone', tone);
-  card.style.setProperty('--tone-soft', 'color-mix(in srgb, ' + tone + ' 16%, transparent)');
+  const card = el('div', 'profile-card');
+  const meta = profileStatus(p);
+  card.style.setProperty('--tone', meta.tone);
+  card.style.setProperty('--tone-soft', meta.soft);
 
   const head = el('div', 'profile-head');
-  const avatar = el('div', 'avatar', initialsOf(p.username));
-  avatar.appendChild(el('span', 'dot'));
+  const name = profileDisplayName(p);
+  const avatar = el('div', 'avatar', initialsOf(name));
   head.appendChild(avatar);
-  head.appendChild(el('div', 'profile-name', p.username));
+  const identity = el('div', 'profile-identity');
+  identity.appendChild(el('div', 'profile-name', name));
   const pill = el('span', 'status-pill');
   pill.appendChild(el('span', 'pdot'));
-  pill.appendChild(el('span', null, statusLabel(p.status)));
-  head.appendChild(pill);
-
-  // Days ring — fraction of a 90-day window, empty when expired.
-  const expired = !(p.days_left > 0);
-  const deg = expired ? 0 : Math.min(p.days_left, 90) / 90 * 360;
-  const ring = el('div', 'ring');
-  ring.style.setProperty('--ring-deg', deg.toFixed(0) + 'deg');
-  const inner = el('div', 'ring-inner');
-  if (expired) {
-    inner.appendChild(el('div', 'expired-mark', '✕'));
-    inner.appendChild(el('div', 'days-word', t('Подписка истекла')));
-  } else {
-    inner.appendChild(el('div', 'days-num', String(p.days_left)));
-    inner.appendChild(el('div', 'days-word', daysWord(p.days_left)));
-  }
-  ring.appendChild(inner);
-  head.appendChild(ring);
+  pill.appendChild(el('span', null, meta.label));
+  identity.appendChild(pill);
+  head.appendChild(identity);
   card.appendChild(head);
 
-  // Stat grid.
+  const noExpiry = !p.expire_at;
+  const expired = !noExpiry && !(p.days_left > 0);
+  const deg = noExpiry ? 360 : (expired ? 0 : Math.min(Math.max(Number(p.days_left) || 0, 0), 90) / 90 * 360);
+  const validity = el('div', 'validity');
+  const copy = el('div', 'validity-copy');
+  copy.appendChild(el('span', 'validity-label', t('Действует до')));
+  copy.appendChild(el('span', 'validity-date', p.expire_at || t('Без срока')));
+  copy.appendChild(el('span', 'validity-note', expired ? t('Подписка истекла') : (p.days_left > 0 ? t('осталось {n} {word}', { n: p.days_left, word: daysWord(p.days_left) }) : t('Активна'))));
+  validity.appendChild(copy);
+  const ring = el('div', 'days-ring');
+  ring.style.setProperty('--ring-deg', deg.toFixed(0) + 'deg');
+  const inner = el('div', 'days-ring-inner');
+  inner.appendChild(el('span', 'days-num', noExpiry ? '∞' : (expired ? '0' : String(Math.max(Number(p.days_left) || 0, 0)))));
+  inner.appendChild(el('span', 'days-word', t('дн.')));
+  ring.appendChild(inner);
+  validity.appendChild(ring);
+  card.appendChild(validity);
+
   const grid = el('div', 'stat-grid');
-  const stat = (lbl, val, wide) => {
-    const s = el('div', 'stat' + (wide ? ' wide' : ''));
+  const stat = (lbl, val) => {
+    const s = el('div', 'stat');
     s.appendChild(el('div', 'lbl', lbl));
     s.appendChild(el('div', 'val', val));
     grid.appendChild(s);
   };
-  if (p.expire_at) stat(t('Действует до'), p.expire_at);
+  stat(t('UUID'), shortUUID(p.uuid));
   stat(t('Устройства'), p.hwid_limit > 0 ? String(p.hwid_limit) : '∞');
-  stat(t('Использовано трафика'), (p.used_traffic_gb || '0') + ' GB');
-  stat(t('Лимит трафика'), p.traffic_limit_gb > 0 ? p.traffic_limit_gb + ' GB' : '∞');
-  if (p.uuid) stat(t('UUID'), shortUUID(p.uuid), true);
   card.appendChild(grid);
 
+  const used = Math.max(Number.parseFloat(p.used_traffic_gb) || 0, 0);
+  const limit = Math.max(Number(p.traffic_limit_gb) || 0, 0);
+  const pct = limit > 0 ? Math.min(used / limit * 100, 100) : 0;
+  const traffic = el('div', 'traffic-card');
+  const trafficHead = el('div', 'traffic-head');
+  trafficHead.appendChild(el('span', 'traffic-label', t('Трафик')));
+  trafficHead.appendChild(el('span', 'traffic-value', used.toFixed(2) + ' GB / ' + (limit > 0 ? limit + ' GB' : '∞')));
+  traffic.appendChild(trafficHead);
+  const track = el('div', 'traffic-track');
+  const fill = el('div', 'traffic-fill');
+  fill.style.width = pct.toFixed(1) + '%';
+  track.appendChild(fill);
+  traffic.appendChild(track);
+  card.appendChild(traffic);
+
   if (p.subscription_url) {
-    const a = el('a', 'sub-link', p.subscription_url);
-    a.href = p.subscription_url;
-    a.target = '_blank';
-    card.appendChild(a);
-    const copy = el('button', 'secondary', t('Скопировать ссылку на подписку'));
-    copy.onclick = async () => {
+    const copyButton = el('button', 'copy-link');
+    copyButton.appendChild(svg(['M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1', 'M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1']));
+    const copyLabel = el('span', null, t('Скопировать ссылку на подписку'));
+    copyButton.appendChild(copyLabel);
+    copyButton.onclick = async () => {
       try {
         await navigator.clipboard.writeText(p.subscription_url);
-        copy.textContent = t('Скопировано!');
-        setTimeout(() => copy.textContent = t('Скопировать ссылку на подписку'), 1500);
+        copyLabel.textContent = t('Скопировано!');
+        setTimeout(() => copyLabel.textContent = t('Скопировать ссылку на подписку'), 1500);
       } catch { tg.showAlert(t('Не удалось скопировать, выделите ссылку вручную.')); }
     };
-    card.appendChild(copy);
+    card.appendChild(copyButton);
   }
   return card;
 }
 
-// renderRenew builds the period tiles + pay button. profiles is the full linked
-// list so the user can pick which profile to extend when more than one exists.
-function renderRenew(profiles, data) {
+// renderRenew builds the period tiles + pay button for the dashboard-selected
+// profile, keeping renewal and payment checks scoped to the same subscription.
+function renderRenew(target, data) {
   const wrap = el('div', 'card');
   wrap.appendChild(el('h2', null, t('Выберите период подписки')));
-
-  // Profile selector (only when several are linked).
-  let target = profiles[0];
-  if (profiles.length > 1) {
-    const sel = el('select');
-    profiles.forEach((p, i) => {
-      const opt = Object.assign(el('option', null, p.username), { value: String(i) });
-      sel.appendChild(opt);
-    });
-    sel.onchange = () => { target = profiles[parseInt(sel.value, 10)] || profiles[0]; };
-    wrap.appendChild(sel);
-  }
 
   let months = 0;
   const tariffs = data.tariffs || [];
@@ -785,7 +843,7 @@ function renderRenew(profiles, data) {
     catch (e) { receiptSend.disabled = false; tg.showAlert(e.message); }
   };
   receiptBox.appendChild(receiptFile); receiptBox.appendChild(receiptNote); receiptBox.appendChild(receiptSend);
-  const checkKey = 'platega_request_' + p.remnawave_id;
+  const checkKey = 'platega_request_' + target.remnawave_id;
   const check = el('button', 'secondary', t('🔄 Проверить оплату'));
   const checkPayment = async () => {
     const requestID = Number(localStorage.getItem(checkKey)); if (!requestID) return;
@@ -1016,6 +1074,37 @@ function renderGiftRedemption() {
 // cabinetData caches the latest /api/me payload so the hub and its sub-views
 // can render from the same data without re-fetching on every navigation.
 let cabinetData = null;
+let selectedProfileKey = '';
+
+function profileKey(p) {
+  return p.uuid || String(p.remnawave_id || p.username || '');
+}
+
+function selectedProfile(data) {
+  const profiles = data.profiles || [];
+  if (!profiles.length) return null;
+  const selected = profiles.find(p => profileKey(p) === selectedProfileKey) || profiles[0];
+  selectedProfileKey = profileKey(selected);
+  return selected;
+}
+
+function renderProfileSelector(profiles, selected) {
+  const wrap = el('div', 'profile-select-wrap');
+  wrap.appendChild(el('label', null, t('Выберите подписку')));
+  const select = el('select');
+  profiles.forEach(p => {
+    const option = el('option', null, p.username);
+    option.value = profileKey(p);
+    option.selected = profileKey(p) === profileKey(selected);
+    select.appendChild(option);
+  });
+  select.onchange = () => {
+    selectedProfileKey = select.value;
+    showHome();
+  };
+  wrap.appendChild(select);
+  return wrap;
+}
 
 // pillRow builds the top-of-profile quick actions (Admin / Support).
 function pillRow(data) {
@@ -1043,6 +1132,22 @@ function actionGrid(buttons) {
     b.onclick = onClick;
     grid.appendChild(b);
   });
+  return grid;
+}
+
+function profileActions() {
+  const grid = el('div', 'profile-actions');
+  const add = (label, paths, onClick, primary) => {
+    const button = el('button', primary ? null : 'secondary');
+    button.appendChild(svg(paths));
+    button.appendChild(el('span', null, label));
+    button.onclick = onClick;
+    grid.appendChild(button);
+  };
+  add(t('Продлить'), ['M3 11a9 9 0 0 1 15-4l3 3', 'M21 4v6h-6', 'M21 13a9 9 0 0 1-15 4l-3-3', 'M3 20v-6h6'], showRenew, true);
+  add(t('Друзья'), ['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2', 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8', 'M19 8v6', 'M16 11h6'], showInvite, false);
+  add(t('Подарок'), ['M3 9h18v12H3z', 'M3 13h18', 'M12 9v12', 'M12 9c-3 0-5-5-2.5-5.8C11 2.7 12 5 12 9z', 'M12 9c3 0 5-5 2.5-5.8C13 2.7 12 5 12 9z'], showGift, false);
+  add(t('Настройки'), ['M4 7h9', 'M17 7h3', 'M4 17h3', 'M11 17h9'], showSettings, false);
   return grid;
 }
 
@@ -1153,16 +1258,18 @@ function showHome() {
         [t('📦 Мои подарки'), showMyGifts],
         [t('👥 Мои приглашения'), showMyInvites],
       ]));
+    appEl.appendChild(menuCard(
+      t('💬 Поддержка'),
+      t('Связаться с администратором по любым вопросам.'),
+      [[t('Открыть чат'), showSupport]]));
+    appEl.appendChild(renderGiftRedemption());
+  } else {
+    const profiles = data.profiles || [];
+    const profile = selectedProfile(data);
+    if (profiles.length > 1) appEl.appendChild(renderProfileSelector(profiles, profile));
+    if (profile) appEl.appendChild(renderProfile(profile, data));
+    appEl.appendChild(profileActions());
   }
-
-  appEl.appendChild(menuCard(
-    t('💬 Поддержка'),
-    t('Связаться с администратором по любым вопросам.'),
-    [[t('Открыть чат'), showSupport]]));
-
-  if (data.notifications) appEl.appendChild(renderNotifPrefs(data));
-  if (data.linked) appEl.appendChild(renderRegistration());
-  appEl.appendChild(renderGiftRedemption());
 
   statusEl.hidden = true;
   appEl.hidden = false;
@@ -1175,13 +1282,13 @@ function showRenew() {
   const data = cabinetData || {};
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('Продлить')));
-  const profiles = data.profiles || [];
-  if (!profiles.length) {
+  const profile = selectedProfile(data);
+  if (!profile) {
     const card = el('div', 'card');
     card.appendChild(el('div', 'hint', t('Подписки не найдены.')));
     appEl.appendChild(card);
   } else {
-    appEl.appendChild(renderRenew(profiles, data));
+    appEl.appendChild(renderRenew(profile, data));
   }
   if (data.requisites) {
     const card = el('div', 'card');
@@ -1200,6 +1307,8 @@ function showSettings() {
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('Настройки')));
   if (data.notifications) appEl.appendChild(renderNotifPrefs(data));
+  appEl.appendChild(renderRegistration());
+  appEl.appendChild(renderGiftRedemption());
   statusEl.hidden = true;
   appEl.hidden = false;
 }
@@ -1211,6 +1320,14 @@ function showGift() {
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('🎁 Подарить подписку')));
   appEl.appendChild(renderGiftBuy(data));
+  const gifts = renderMyGifts(data);
+  if (gifts) appEl.appendChild(gifts);
+  else {
+    const empty = el('div', 'card');
+    empty.appendChild(el('h2', null, t('📦 Мои подарки')));
+    empty.appendChild(el('div', 'hint', t('Подарков пока нет.')));
+    appEl.appendChild(empty);
+  }
   statusEl.hidden = true;
   appEl.hidden = false;
 }
@@ -1221,6 +1338,7 @@ function showInvite() {
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('👥 Пригласить пользователя')));
   appEl.appendChild(renderInvite());
+  appEl.appendChild(renderMyInvites(cabinetData || {}, true));
   statusEl.hidden = true;
   appEl.hidden = false;
 }
@@ -1244,12 +1362,9 @@ function showMyGifts() {
 }
 
 // showMyInvites shows the invite-requests summary.
-function showMyInvites() {
-  currentRender = showMyInvites;
-  const data = cabinetData || {};
-  appEl.textContent = '';
-  appEl.appendChild(subPageTop(t('👥 Мои приглашения')));
+function renderMyInvites(data, withHeading) {
   const card = el('div', 'card');
+  if (withHeading) card.appendChild(el('h2', null, t('👥 Мои приглашения')));
   const inv = data.invites;
   if (inv && inv.total > 0) {
     let v = String(inv.total);
@@ -1258,7 +1373,15 @@ function showMyInvites() {
   } else {
     card.appendChild(el('div', 'hint', t('Приглашений пока нет.')));
   }
-  appEl.appendChild(card);
+  return card;
+}
+
+function showMyInvites() {
+  currentRender = showMyInvites;
+  const data = cabinetData || {};
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('👥 Мои приглашения')));
+  appEl.appendChild(renderMyInvites(data, false));
   statusEl.hidden = true;
   appEl.hidden = false;
 }
