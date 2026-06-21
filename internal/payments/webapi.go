@@ -22,6 +22,12 @@ var (
 	// admin requires a payment screenshot; the user was asked to attach it in
 	// the bot chat.
 	ErrScreenshotRequired = errors.New("payment screenshot required")
+
+	// Free-trial errors shared by the bot flow and the mini app claim endpoint.
+	ErrTrialDisabled    = errors.New("free trial is disabled")
+	ErrTrialNotEligible = errors.New("trial is for new users only")
+	ErrTrialAlreadyUsed = errors.New("trial already used by this telegram id")
+	ErrUsernameTaken    = errors.New("username already taken")
 )
 
 // WebProfile is one linked subscription as shown in the mini app.
@@ -63,6 +69,19 @@ type WebInvites struct {
 	Pending int `json:"pending"`
 }
 
+// WebNotifPrefs carries the user's notification mute toggles for the mini app.
+type WebNotifPrefs struct {
+	ExpiryMuted  bool `json:"expiry_muted"`
+	WinbackMuted bool `json:"winback_muted"`
+}
+
+// WebTrialResult is returned after a successful free-trial claim from the mini
+// app: the created profile name and its subscription link.
+type WebTrialResult struct {
+	Username        string `json:"username"`
+	SubscriptionURL string `json:"subscription_url,omitempty"`
+}
+
 // WebCabinet is the full /api/me payload for the mini app.
 type WebCabinet struct {
 	Linked     bool         `json:"linked"`
@@ -73,6 +92,11 @@ type WebCabinet struct {
 	Requisites string       `json:"requisites,omitempty"`
 	Gifts      []WebGift    `json:"gifts,omitempty"`
 	Invites    *WebInvites  `json:"invites,omitempty"`
+	// Notifications carries the per-user mute toggles (always present).
+	Notifications *WebNotifPrefs `json:"notifications,omitempty"`
+	// TrialAvailable is true when the free trial is enabled and this user has no
+	// linked profile yet, so the frontend can offer the claim card.
+	TrialAvailable bool `json:"trial_available,omitempty"`
 }
 
 // CabinetData assembles the personal-cabinet view for the mini app: linked
@@ -170,7 +194,49 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 		out.Invites = inv
 	}
 
+	// Per-user notification mute toggles (always present so the card can render).
+	expiryMuted, winbackMuted, err := s.store.GetNotificationPrefs(ctx, telegramID)
+	if err != nil {
+		s.logger.Error("webapp: get notification prefs failed", "err", err.Error())
+	}
+	out.Notifications = &WebNotifPrefs{ExpiryMuted: expiryMuted, WinbackMuted: winbackMuted}
+
+	// Offer the free trial only to enabled deployments where this user has no
+	// linked profile yet.
+	if enabled, _ := s.trialConfig(); enabled && len(subs) == 0 {
+		out.TrialAvailable = true
+	}
+
 	return out, nil
+}
+
+// SetNotificationPref toggles one of the user's notification mute flags from the
+// mini app (kind must be store.NotificationExpiry or store.NotificationWinback).
+func (s *Service) SetNotificationPref(ctx context.Context, telegramID int64, kind string, muted bool) error {
+	switch kind {
+	case store.NotificationExpiry, store.NotificationWinback:
+	default:
+		return ErrBadInput
+	}
+	if err := s.store.SetNotificationPref(ctx, telegramID, kind, muted); err != nil {
+		return fmt.Errorf("set notification pref: %w", err)
+	}
+	return nil
+}
+
+// ClaimTrial activates the one-time free trial for telegramID from the mini app,
+// reusing the shared claimTrial core. Returns the created profile and its
+// subscription link, or a trial sentinel error mapped to an HTTP status by the
+// webapp handler. On dry-run the result echoes the requested username.
+func (s *Service) ClaimTrial(ctx context.Context, telegramID int64, username string) (*WebTrialResult, error) {
+	created, _, err := s.claimTrial(ctx, telegramID, strings.TrimSpace(username))
+	if err != nil {
+		return nil, err
+	}
+	if created == nil { // dry-run
+		return &WebTrialResult{Username: strings.TrimSpace(username)}, nil
+	}
+	return &WebTrialResult{Username: created.Username, SubscriptionURL: created.SubscriptionURL}, nil
 }
 
 // CreateRenewRequest creates a pending payment request from the mini app:

@@ -61,9 +61,60 @@ func newRunService(t *testing.T, users []remnawave.User, winbackDays []int) (*Se
 	snd := &fakeSender{}
 	pay := &fakePay{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := NewService(&fakeSource{users: users}, snd, pay, st, logger, false, winbackDays)
+	svc := NewService(&fakeSource{users: users}, snd, pay, st, st, logger, false, winbackDays)
 	svc.now = func() time.Time { return runNow }
 	return svc, snd, pay
+}
+
+// newRunServiceWithStore is like newRunService but also returns the store so a
+// test can set per-user notification preferences before running.
+func newRunServiceWithStore(t *testing.T, users []remnawave.User, winbackDays []int) (*Service, *fakeSender, *store.Store) {
+	t.Helper()
+	st, err := store.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	snd := &fakeSender{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewService(&fakeSource{users: users}, snd, &fakePay{}, st, st, logger, false, winbackDays)
+	svc.now = func() time.Time { return runNow }
+	return svc, snd, st
+}
+
+func TestRunSkipsMutedUsers(t *testing.T) {
+	users := []remnawave.User{
+		rwUser(1, "expiring", remnawave.StatusActive, runNow.Add(7*24*time.Hour), 100),
+		rwUser(2, "lapsed", remnawave.StatusExpired, runNow.Add(-25*time.Hour), 200),
+	}
+	svc, snd, st := newRunServiceWithStore(t, users, []int{1, 3})
+	ctx := context.Background()
+
+	// User 100 mutes only expiry reminders; user 200 mutes only win-back.
+	if err := st.SetNotificationPref(ctx, 100, store.NotificationExpiry, true); err != nil {
+		t.Fatalf("mute expiry: %v", err)
+	}
+	if err := st.SetNotificationPref(ctx, 200, store.NotificationWinback, true); err != nil {
+		t.Fatalf("mute winback: %v", err)
+	}
+
+	if err := svc.Run(ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(snd.sent) != 0 {
+		t.Fatalf("both users muted their respective notice, expected none sent, got %+v", snd.sent)
+	}
+
+	// Unmuting expiry for user 100 lets the reminder through on the next run.
+	if err := st.SetNotificationPref(ctx, 100, store.NotificationExpiry, false); err != nil {
+		t.Fatalf("unmute expiry: %v", err)
+	}
+	if err := svc.Run(ctx); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if len(snd.sent) != 1 || snd.sent[0].chatID != 100 {
+		t.Fatalf("expected reminder to 100 after unmute, got %+v", snd.sent)
+	}
 }
 
 func rwUser(id int64, username string, status remnawave.Status, expireAt time.Time, tgID int64) remnawave.User {

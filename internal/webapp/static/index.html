@@ -85,6 +85,13 @@
     padding: 10px;
     margin: 8px 0 0;
   }
+  .chat { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; padding: 4px 2px; }
+  .bubble { max-width: 82%; padding: 8px 11px; border-radius: 14px; font-size: 14px; word-break: break-word; white-space: pre-wrap; }
+  .bubble.from-user { align-self: flex-end; background: var(--link); color: #fff; }
+  .bubble.from-admin { align-self: flex-start; background: var(--secondary-bg); color: var(--text); }
+  .bubble .meta { display: block; font-size: 11px; opacity: .7; margin-top: 4px; }
+  .conv { width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .conv .badge { background: var(--link); color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
   #status { text-align: center; color: var(--hint); padding: 32px 8px; font-size: 15px; }
   input, textarea, select {
     width: 100%;
@@ -356,6 +363,54 @@ const EN = {
   '✅ Включить подписку': '✅ Enable subscription',
   '🛡 Сквады': '🛡 Squads',
   'Введите целое число ≥ 0.': 'Enter an integer ≥ 0.',
+  // Notification preferences (user cabinet)
+  '🔔 Уведомления': '🔔 Notifications',
+  'Управляйте напоминаниями о подписке.': 'Manage your subscription reminders.',
+  '🔔 Напоминания об окончании: вкл': '🔔 Expiry reminders: on',
+  '🔕 Напоминания об окончании: выкл': '🔕 Expiry reminders: off',
+  '🔔 Напоминания после окончания: вкл': '🔔 Win-back reminders: on',
+  '🔕 Напоминания после окончания: выкл': '🔕 Win-back reminders: off',
+  // Free-trial claim (user cabinet)
+  '🎁 Бесплатный пробный период': '🎁 Free trial',
+  'Создайте профиль и попробуйте сервис бесплатно. Доступно один раз.': 'Create a profile and try the service for free. Available once.',
+  'Имя пользователя (буквы, цифры и «_»)': 'Username (letters, digits and "_")',
+  '🎁 Активировать пробный период': '🎁 Activate trial',
+  'Введите имя пользователя.': 'Enter a username.',
+  '✅ Пробный период активирован!': '✅ Trial activated!',
+  // Admin: trial & referral settings
+  '🎁 Пробный период': '🎁 Free trial',
+  'Включён: новые пользователи могут активировать пробный профиль.': 'Enabled: new users can activate a trial profile.',
+  'Выключен.': 'Disabled.',
+  'Длительность (дни)': 'Duration (days)',
+  '💾 Сохранить длительность': '💾 Save duration',
+  '🚫 Выключить': '🚫 Disable',
+  '✅ Включить': '✅ Enable',
+  '🎉 Реферальная программа': '🎉 Referral program',
+  'Включена: одобрённое приглашение начисляет бонусные дни.': 'Enabled: an approved invite grants bonus days.',
+  'Выключена.': 'Disabled.',
+  'Бонус пригласившему (дни)': 'Inviter bonus (days)',
+  'Бонус приглашённому (дни)': 'Invitee bonus (days)',
+  '💾 Сохранить бонусы': '💾 Save bonuses',
+  // Support chat
+  '💬 Поддержка': '💬 Support',
+  'Связаться с администратором по любым вопросам.': 'Contact the administrator with any questions.',
+  'Открыть чат': 'Open chat',
+  '💬 Чат с поддержкой': '💬 Support chat',
+  'Чат пуст. Напишите сообщение администратору.': 'No messages yet. Write a message to the administrator.',
+  'Введите сообщение…': 'Type a message…',
+  'Отправить': 'Send',
+  'Завершить чат': 'End chat',
+  'Завершить чат с поддержкой? История будет удалена.': 'End the support chat? The history will be deleted.',
+  'Сообщение не может быть пустым.': 'The message cannot be empty.',
+  'Вы': 'You',
+  'Поддержка': 'Support',
+  '💬 Чат поддержки': '💬 Support chat',
+  'Открытые обращения пользователей.': 'Open user conversations.',
+  'Нет открытых обращений.': 'No open conversations.',
+  'Ответить': 'Reply',
+  'Завершить': 'Close',
+  'Завершить обращение? История будет удалена.': 'Close this conversation? The history will be deleted.',
+  'Без имени': 'No name',
 };
 
 function resolveLang(serverLang) {
@@ -745,10 +800,59 @@ function subPageTop(title) {
   return top;
 }
 
+// renderNotifPrefs builds the per-user notification toggles card. The two mute
+// flags are independent, mirroring the bot's 🔔 Уведомления card.
+function renderNotifPrefs(data) {
+  const n = data.notifications || {};
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('🔔 Уведомления')));
+  card.appendChild(el('div', 'hint', t('Управляйте напоминаниями о подписке.')));
+  const mkToggle = (kind, mutedLabel, onLabel, muted) => {
+    const btn = el('button', muted ? 'secondary' : null, muted ? mutedLabel : onLabel);
+    btn.onclick = () => cabinetAction('/api/notifications', { kind, muted: !muted });
+    card.appendChild(btn);
+  };
+  mkToggle('expiry', t('🔕 Напоминания об окончании: выкл'), t('🔔 Напоминания об окончании: вкл'), !!n.expiry_muted);
+  mkToggle('winback', t('🔕 Напоминания после окончания: выкл'), t('🔔 Напоминания после окончания: вкл'), !!n.winback_muted);
+  return card;
+}
+
+// renderTrialClaim builds the free-trial claim card shown to new (unlinked)
+// users when the trial is enabled.
+function renderTrialClaim() {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('🎁 Бесплатный пробный период')));
+  card.appendChild(el('div', 'hint', t('Создайте профиль и попробуйте сервис бесплатно. Доступно один раз.')));
+  const input = Object.assign(el('input'), { type: 'text', placeholder: t('Имя пользователя (буквы, цифры и «_»)') });
+  card.appendChild(input);
+  const btn = el('button', null, t('🎁 Активировать пробный период'));
+  btn.onclick = async () => {
+    const username = input.value.trim();
+    if (!username) { tg.showAlert(t('Введите имя пользователя.')); return; }
+    btn.disabled = true;
+    btn.textContent = t('Отправка…');
+    try {
+      const res = await api('/api/trial', { method: 'POST', body: JSON.stringify({ username }) });
+      cabinetData = await api('/api/me');
+      let msg = t('✅ Пробный период активирован!');
+      if (res.subscription_url) msg += '\n' + res.subscription_url;
+      tg.showAlert(msg);
+      showHome();
+    } catch (e) {
+      tg.showAlert(e.message);
+      btn.disabled = false;
+      btn.textContent = t('🎁 Активировать пробный период');
+    }
+  };
+  card.appendChild(btn);
+  return card;
+}
+
 // showHome renders the "My account" hub: an Administration section (admins
 // only), a My subscription section and an Invitation section.
 function showHome() {
   currentRender = showHome;
+  stopSupportPoll();
   const data = cabinetData || {};
   appEl.textContent = '';
 
@@ -761,6 +865,7 @@ function showHome() {
 
   if (!data.linked) {
     appEl.appendChild(renderUnlinked());
+    if (data.trial_available) appEl.appendChild(renderTrialClaim());
   } else {
     appEl.appendChild(menuCard(
       t('📡 Моя подписка'),
@@ -776,6 +881,13 @@ function showHome() {
         [t('👥 Мои приглашения'), showMyInvites],
       ]));
   }
+
+  appEl.appendChild(menuCard(
+    t('💬 Поддержка'),
+    t('Связаться с администратором по любым вопросам.'),
+    [[t('Открыть чат'), showSupport]]));
+
+  if (data.notifications) appEl.appendChild(renderNotifPrefs(data));
 
   const actions = el('div', 'card');
   actions.appendChild(el('h2', null, t('Действия в чате')));
@@ -903,6 +1015,180 @@ async function showAdmin() {
   renderAdminHome();
 }
 
+// ---- Support chat (user + admin) ----
+
+// supportTimer holds the active polling interval so it can be cleared on any
+// navigation. Every top-level view that is not a support view calls
+// stopSupportPoll(); support views restart it via startSupportPoll().
+let supportTimer = null;
+
+function stopSupportPoll() {
+  if (supportTimer) { clearInterval(supportTimer); supportTimer = null; }
+}
+
+function startSupportPoll(fn, ms) {
+  stopSupportPoll();
+  supportTimer = setInterval(() => { fn().catch(() => {}); }, ms);
+}
+
+// renderChatMessages fills a container with styled message bubbles, newest at
+// the bottom, and scrolls to the latest.
+function renderChatMessages(box, messages) {
+  box.textContent = '';
+  if (!messages || !messages.length) {
+    box.appendChild(el('div', 'hint', t('Чат пуст. Напишите сообщение администратору.')));
+    return;
+  }
+  messages.forEach(m => {
+    const b = el('div', 'bubble ' + (m.from_admin ? 'from-admin' : 'from-user'));
+    b.appendChild(el('span', null, m.text));
+    b.appendChild(el('span', 'meta', (m.from_admin ? t('Поддержка') : t('Вы')) + ' · ' + (m.created_at || '')));
+    box.appendChild(b);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+// showSupport is the user's own support thread with a send box and a close
+// (delete) button, polling for admin replies while open.
+async function showSupport() {
+  currentRender = showSupport;
+  stopSupportPoll();
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('💬 Чат с поддержкой')));
+
+  const chatCard = el('div', 'card');
+  const box = el('div', 'chat');
+  chatCard.appendChild(box);
+  const text = Object.assign(el('textarea'), { placeholder: t('Введите сообщение…') });
+  chatCard.appendChild(text);
+  const send = el('button', null, t('Отправить'));
+  send.onclick = async () => {
+    const v = text.value.trim();
+    if (!v) { tg.showAlert(t('Сообщение не может быть пустым.')); return; }
+    send.disabled = true;
+    try {
+      await api('/api/support/send', { method: 'POST', body: JSON.stringify({ text: v }) });
+      text.value = '';
+      await refreshSupport(box);
+    } catch (e) { tg.showAlert(e.message); }
+    send.disabled = false;
+  };
+  chatCard.appendChild(send);
+  const close = el('button', 'secondary', t('Завершить чат'));
+  close.onclick = async () => {
+    if (!(await confirmDialog(t('Завершить чат с поддержкой? История будет удалена.')))) return;
+    try {
+      await api('/api/support/close', { method: 'POST', body: '{}' });
+      showHome();
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  chatCard.appendChild(close);
+  appEl.appendChild(chatCard);
+
+  statusEl.hidden = true;
+  appEl.hidden = false;
+  await refreshSupport(box);
+  startSupportPoll(() => refreshSupport(box), 4000);
+}
+
+async function refreshSupport(box) {
+  const data = await api('/api/support');
+  renderChatMessages(box, data.messages);
+}
+
+// showAdminSupport lists open conversations; each opens a reply thread.
+async function showAdminSupport() {
+  currentRender = showAdminSupport;
+  stopSupportPoll();
+  appEl.textContent = '';
+  appEl.appendChild(adminSubTop());
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('💬 Чат поддержки')));
+  card.appendChild(el('div', 'hint', t('Открытые обращения пользователей.')));
+  const list = el('div', 'btn-grid');
+  card.appendChild(list);
+  appEl.appendChild(card);
+  statusEl.hidden = true;
+  appEl.hidden = false;
+  await refreshAdminSupportList(list);
+  startSupportPoll(() => refreshAdminSupportList(list), 5000);
+}
+
+async function refreshAdminSupportList(list) {
+  const data = await api('/api/admin/support');
+  const convs = data.conversations || [];
+  list.textContent = '';
+  if (!convs.length) {
+    list.appendChild(el('div', 'hint', t('Нет открытых обращений.')));
+    return;
+  }
+  convs.forEach(c => {
+    const btn = el('button', 'secondary');
+    btn.style.flex = '1 1 100%';
+    const wrap = el('div', 'conv');
+    const left = el('div');
+    left.appendChild(el('div', null, c.username || t('Без имени')));
+    if (c.last_text) left.appendChild(el('div', 'hint', c.last_text));
+    wrap.appendChild(left);
+    if (c.unread) wrap.appendChild(el('span', 'badge', String(c.unread)));
+    btn.appendChild(wrap);
+    btn.onclick = () => showAdminSupportThread(c.user_id, c.username);
+    list.appendChild(btn);
+  });
+}
+
+// showAdminSupportThread is one conversation with a reply box and close button.
+async function showAdminSupportThread(userId, username) {
+  currentRender = () => showAdminSupportThread(userId, username);
+  stopSupportPoll();
+  appEl.textContent = '';
+  const top = el('div', 'card');
+  top.appendChild(el('h2', null, username || t('Без имени')));
+  const back = el('button', 'secondary', t('← К списку'));
+  back.onclick = showAdminSupport;
+  top.appendChild(back);
+  appEl.appendChild(top);
+
+  const chatCard = el('div', 'card');
+  const box = el('div', 'chat');
+  chatCard.appendChild(box);
+  const text = Object.assign(el('textarea'), { placeholder: t('Введите сообщение…') });
+  chatCard.appendChild(text);
+  const send = el('button', null, t('Ответить'));
+  send.onclick = async () => {
+    const v = text.value.trim();
+    if (!v) { tg.showAlert(t('Сообщение не может быть пустым.')); return; }
+    send.disabled = true;
+    try {
+      await api('/api/admin/support/send', { method: 'POST', body: JSON.stringify({ user_id: userId, text: v }) });
+      text.value = '';
+      await refreshAdminThread(box, userId);
+    } catch (e) { tg.showAlert(e.message); }
+    send.disabled = false;
+  };
+  chatCard.appendChild(send);
+  const close = el('button', 'secondary', t('Завершить'));
+  close.onclick = async () => {
+    if (!(await confirmDialog(t('Завершить обращение? История будет удалена.')))) return;
+    try {
+      await api('/api/admin/support/close', { method: 'POST', body: JSON.stringify({ id: userId }) });
+      showAdminSupport();
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  chatCard.appendChild(close);
+  appEl.appendChild(chatCard);
+
+  statusEl.hidden = true;
+  appEl.hidden = false;
+  await refreshAdminThread(box, userId);
+  startSupportPoll(() => refreshAdminThread(box, userId), 4000);
+}
+
+async function refreshAdminThread(box, userId) {
+  const data = await api('/api/admin/support/thread', { method: 'POST', body: JSON.stringify({ user_id: userId }) });
+  renderChatMessages(box, data.messages);
+}
+
 // adminAction posts a mutation (optionally after a confirm dialog), refreshes
 // the cached panel data and re-renders the current admin view in place.
 async function adminAction(path, payload, message) {
@@ -910,6 +1196,16 @@ async function adminAction(path, payload, message) {
   try {
     await api(path, { method: 'POST', body: JSON.stringify(payload) });
     adminData = await api('/api/admin');
+    currentRender();
+  } catch (e) { tg.showAlert(e.message); }
+}
+
+// cabinetAction is the user-side mirror of adminAction: post a mutation, refresh
+// the cached /api/me payload and re-render the current cabinet view in place.
+async function cabinetAction(path, payload) {
+  try {
+    await api(path, { method: 'POST', body: JSON.stringify(payload) });
+    cabinetData = await api('/api/me');
     currentRender();
   } catch (e) { tg.showAlert(e.message); }
 }
@@ -1232,6 +1528,55 @@ function renderAdminTrafficReset(data) {
   return card;
 }
 
+function renderAdminTrial(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('🎁 Пробный период')));
+  card.appendChild(el('div', 'hint', data.trial_enabled
+    ? t('Включён: новые пользователи могут активировать пробный профиль.')
+    : t('Выключен.')));
+  const days = Object.assign(el('input'), { type: 'number', min: '1', value: data.trial_days || 1 });
+  const r = el('div', 'row');
+  r.appendChild(el('span', 'k', t('Длительность (дни)')));
+  r.appendChild(days);
+  card.appendChild(r);
+  const save = el('button', null, t('💾 Сохранить длительность'));
+  save.onclick = () => adminAction('/api/admin/trial', { enabled: data.trial_enabled, days: parseInt(days.value, 10) || 0 });
+  card.appendChild(save);
+  const toggle = el('button', data.trial_enabled ? 'secondary' : null, data.trial_enabled ? t('🚫 Выключить') : t('✅ Включить'));
+  toggle.onclick = () => adminAction('/api/admin/trial', { enabled: !data.trial_enabled, days: data.trial_days || 1 });
+  card.appendChild(toggle);
+  return card;
+}
+
+function renderAdminReferral(data) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('🎉 Реферальная программа')));
+  card.appendChild(el('div', 'hint', data.referral_enabled
+    ? t('Включена: одобрённое приглашение начисляет бонусные дни.')
+    : t('Выключена.')));
+  const inviter = Object.assign(el('input'), { type: 'number', min: '0', value: data.referral_inviter_days || 0 });
+  const invitee = Object.assign(el('input'), { type: 'number', min: '0', value: data.referral_invitee_days || 0 });
+  const r1 = el('div', 'row'); r1.appendChild(el('span', 'k', t('Бонус пригласившему (дни)'))); r1.appendChild(inviter);
+  const r2 = el('div', 'row'); r2.appendChild(el('span', 'k', t('Бонус приглашённому (дни)'))); r2.appendChild(invitee);
+  card.appendChild(r1);
+  card.appendChild(r2);
+  const save = el('button', null, t('💾 Сохранить бонусы'));
+  save.onclick = () => adminAction('/api/admin/referral', {
+    enabled: data.referral_enabled,
+    inviter_days: parseInt(inviter.value, 10) || 0,
+    invitee_days: parseInt(invitee.value, 10) || 0,
+  });
+  card.appendChild(save);
+  const toggle = el('button', data.referral_enabled ? 'secondary' : null, data.referral_enabled ? t('🚫 Выключить') : t('✅ Включить'));
+  toggle.onclick = () => adminAction('/api/admin/referral', {
+    enabled: !data.referral_enabled,
+    inviter_days: data.referral_inviter_days || 0,
+    invitee_days: data.referral_invitee_days || 0,
+  });
+  card.appendChild(toggle);
+  return card;
+}
+
 // showUserAdmin is a dedicated page: the full user list with a live username
 // search; tapping a row opens that user's editable card.
 async function showUserAdmin() {
@@ -1428,6 +1773,7 @@ function adminSubTop() {
 // sub-view), the inline tariffs/payment editors, and a management menu.
 function renderAdminHome() {
   currentRender = renderAdminHome;
+  stopSupportPoll();
   const data = adminData || {};
   appEl.textContent = '';
 
@@ -1464,6 +1810,7 @@ function renderAdminHome() {
       [t('👤 Управление пользователями'), showUserAdmin],
       [t('🎁 Активные подарочные коды'), showAdminGiftCodes],
       [t('📢 Рассылка'), showAdminBroadcast],
+      [t('💬 Чат поддержки'), showAdminSupport],
     ]));
 
   statusEl.hidden = true;
@@ -1550,6 +1897,8 @@ function showAdminSettings() {
   if (provider) appEl.appendChild(provider);
   appEl.appendChild(renderAdminSquad(data));
   appEl.appendChild(renderAdminTrafficReset(data));
+  appEl.appendChild(renderAdminTrial(data));
+  appEl.appendChild(renderAdminReferral(data));
   statusEl.hidden = true;
   appEl.hidden = false;
 }

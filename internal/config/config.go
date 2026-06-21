@@ -22,6 +22,8 @@ type Config struct {
 	Winback    WinbackConfig
 	Platega    PlategaConfig
 	Stars      StarsConfig
+	Trial      TrialConfig
+	Referral   ReferralConfig
 	AutoUpdate AutoUpdateConfig
 	Lang       i18n.Lang
 	LogLevel   slog.Level
@@ -104,6 +106,23 @@ func (s StarsConfig) Available() bool {
 	return s.Enabled && s.Rate > 0
 }
 
+// TrialConfig configures the optional one-time free trial. When Enabled, a new
+// user (one with no linked profile) can create a trial profile lasting Days
+// days, once per Telegram ID.
+type TrialConfig struct {
+	Enabled bool
+	Days    int
+}
+
+// ReferralConfig configures the optional invite-referral bonus. When Enabled, an
+// approved invite grants the inviter InviterDays bonus days on their own
+// subscription and the invitee InviteeDays extra days on top of the invite term.
+type ReferralConfig struct {
+	Enabled     bool
+	InviterDays int
+	InviteeDays int
+}
+
 // AutoUpdateConfig configures the optional update checker: the bot polls the
 // configured image's registry manifest digest and DMs admins when it changes.
 // When a Watchtower sidecar is wired in (WatchtowerURL set), the admin can apply
@@ -180,6 +199,15 @@ func Load() (*Config, error) {
 		},
 		Stars: StarsConfig{
 			Enabled: getenvBool("TELEGRAM_STARS_ENABLED", false),
+		},
+		Trial: TrialConfig{
+			Enabled: getenvBool("TRIAL_ENABLED", false),
+			Days:    getenvInt("TRIAL_DAYS", 3),
+		},
+		Referral: ReferralConfig{
+			Enabled:     getenvBool("REFERRAL_ENABLED", false),
+			InviterDays: getenvInt("REFERRAL_INVITER_BONUS_DAYS", 30),
+			InviteeDays: getenvInt("REFERRAL_INVITEE_BONUS_DAYS", 0),
 		},
 		AutoUpdate: AutoUpdateConfig{
 			Enabled:         getenvBool("AUTOUPDATE_ENABLED", false),
@@ -259,6 +287,17 @@ func (c *Config) validate() error {
 	if c.Stars.Enabled && c.Stars.Rate <= 0 {
 		return errors.New("TELEGRAM_STARS_RATE must be a positive integer when TELEGRAM_STARS_ENABLED is true")
 	}
+	if c.Trial.Enabled && c.Trial.Days < 1 {
+		return errors.New("TRIAL_DAYS must be a positive integer when TRIAL_ENABLED is true")
+	}
+	if c.Referral.Enabled {
+		if c.Referral.InviterDays < 0 || c.Referral.InviteeDays < 0 {
+			return errors.New("REFERRAL_INVITER_BONUS_DAYS and REFERRAL_INVITEE_BONUS_DAYS must be non-negative")
+		}
+		if c.Referral.InviterDays == 0 && c.Referral.InviteeDays == 0 {
+			return errors.New("at least one of REFERRAL_INVITER_BONUS_DAYS / REFERRAL_INVITEE_BONUS_DAYS must be positive when REFERRAL_ENABLED is true")
+		}
+	}
 	if c.AutoUpdate.Enabled {
 		if c.AutoUpdate.CheckInterval <= 0 {
 			return fmt.Errorf("AUTOUPDATE_CHECK_INTERVAL must be positive: %v", c.AutoUpdate.CheckInterval)
@@ -288,6 +327,20 @@ func getenv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// getenvInt reads an integer env var, falling back to def when unset, empty or
+// unparseable.
+func getenvInt(key string, def int) int {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 func getenvBool(key string, def bool) bool {

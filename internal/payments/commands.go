@@ -98,6 +98,14 @@ func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 		return s.consumeUserTraffic(ctx, chatID, text)
 	case adminInputUserExpiry:
 		return s.consumeUserExpiry(ctx, chatID, text)
+	case adminInputTrialDays:
+		return s.consumeTrialDays(ctx, chatID, text)
+	case adminInputReferralInviter:
+		return s.consumeReferralBonus(ctx, chatID, text, true)
+	case adminInputReferralInvitee:
+		return s.consumeReferralBonus(ctx, chatID, text, false)
+	case adminInputSupportReply:
+		return s.consumeSupportReply(ctx, chatID, text)
 	}
 	return false
 }
@@ -230,6 +238,8 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 		{{Text: i18n.T("🛡 Сквад по умолчанию"), CallbackData: "adm:squad"}},
 		{{Text: i18n.T("👤 Управление пользователем"), CallbackData: "adm:user"}},
 		{{Text: i18n.T("🔄 Сброс трафика (новые)"), CallbackData: "adm:treset"}},
+		{{Text: i18n.T("🎁 Пробный период"), CallbackData: "adm:trial"}},
+		{{Text: i18n.T("🎉 Реферальная программа"), CallbackData: "adm:referral"}},
 		{{Text: i18n.T("📢 Рассылка всем"), CallbackData: "adm:bcast"}},
 	}
 	// The payment-provider picker is only meaningful when at least one automatic

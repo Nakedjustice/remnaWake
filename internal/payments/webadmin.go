@@ -93,6 +93,12 @@ type WebAdminPanel struct {
 	// DefaultTrafficResetStrategy is the traffic-reset strategy applied to newly
 	// created users (NO_RESET | DAY | WEEK | MONTH).
 	DefaultTrafficResetStrategy string `json:"default_traffic_reset_strategy"`
+	// Trial / referral runtime settings, editable from the admin panel.
+	TrialEnabled        bool `json:"trial_enabled"`
+	TrialDays           int  `json:"trial_days"`
+	ReferralEnabled     bool `json:"referral_enabled"`
+	ReferralInviterDays int  `json:"referral_inviter_days"`
+	ReferralInviteeDays int  `json:"referral_invitee_days"`
 }
 
 // WebSquad is one panel internal squad offered in the mini app default-squad
@@ -145,6 +151,9 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 
 	_, out.DefaultSquadName = s.defaultSquadSelection(ctx)
 	out.DefaultTrafficResetStrategy = s.getDefaultTrafficReset()
+
+	out.TrialEnabled, out.TrialDays = s.trialConfig()
+	out.ReferralEnabled, out.ReferralInviterDays, out.ReferralInviteeDays = s.referralConfig()
 
 	buyers, err := s.store.ListGiftBuyers(ctx)
 	if err != nil {
@@ -320,6 +329,30 @@ func (s *Service) AdminSetProviderEnabled(ctx context.Context, telegramID int64,
 		return err
 	}
 	return s.setProviderEnabled(ctx, provider, on)
+}
+
+// AdminSetTrial enables/disables the free trial and sets its length (days ≥ 1)
+// from the mini app admin panel (same settings as the adm:trial bot card).
+func (s *Service) AdminSetTrial(ctx context.Context, telegramID int64, enabled bool, days int) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	if err := s.setTrialDays(ctx, days); err != nil {
+		return err
+	}
+	return s.setTrialEnabled(ctx, enabled)
+}
+
+// AdminSetReferral enables/disables the referral bonus and sets the inviter and
+// invitee day amounts. Enabling with both at zero returns ErrBadInput.
+func (s *Service) AdminSetReferral(ctx context.Context, telegramID int64, enabled bool, inviterDays, inviteeDays int) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	if err := s.setReferralDays(ctx, inviterDays, inviteeDays); err != nil {
+		return err
+	}
+	return s.setReferralEnabled(ctx, enabled)
 }
 
 // AdminListSquads returns the panel's internal squads for the mini app

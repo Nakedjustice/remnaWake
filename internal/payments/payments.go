@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -162,6 +163,10 @@ const (
 	adminInputUserHwid
 	adminInputUserTraffic
 	adminInputUserExpiry
+	adminInputTrialDays
+	adminInputReferralInviter
+	adminInputReferralInvitee
+	adminInputSupportReply
 )
 
 type adminInputState struct {
@@ -172,6 +177,10 @@ type adminInputState struct {
 	// the admin pressing the confirm button (step is back to adminInputNone by
 	// then, so regular chat keeps working while the confirmation is pending).
 	pendingBroadcast string
+	// supportTarget is the user Telegram ID an admin is replying to while step
+	// is adminInputSupportReply (set when the admin taps the reply button on a
+	// support notification).
+	supportTarget int64
 }
 
 type adminMsgRef struct {
@@ -258,6 +267,12 @@ type Service struct {
 	payPhotos map[int64]*payPhotoState
 	userCtl   map[int64]*userCtlState // protected by mu; admin "Manage user" target
 
+	// supportSessions tracks users who are in /support typing mode in the bot:
+	// while set, their plain text is routed to the support conversation. The
+	// flag is cleared by /cancel or by closing the chat. Persisting the
+	// conversation lives in the store; this is only the bot-chat input mode.
+	supportSessions map[int64]bool // protected by mu
+
 	botUsername string // protected by mu; empty = unknown, fall back to raw code
 	webAppURL   string // protected by mu; empty = mini app disabled
 
@@ -307,6 +322,18 @@ type Service struct {
 	// now" (typically a Watchtower HTTP-API call). nil = no one-tap install;
 	// the button then shows manual instructions. Wired once at startup.
 	updateTrigger func(context.Context) error
+
+	// trialEnabled / trialDays configure the one-time free-trial flow, wired at
+	// startup via SetTrial when TRIAL_ENABLED. Protected by mu.
+	trialEnabled bool
+	trialDays    int
+	trials       map[int64]*trialState // protected by mu; per-chat trial conversation
+
+	// referral* configure the invite-referral bonus, wired at startup via
+	// SetReferral when REFERRAL_ENABLED. Protected by mu.
+	referralEnabled     bool
+	referralInviterDays int
+	referralInviteeDays int
 }
 
 // requisitesKey is the settings-table key under which payment requisites text
@@ -338,31 +365,43 @@ const (
 // strategy applied to newly created users (absent = NO_RESET).
 const defaultTrafficResetKey = "default_traffic_reset_strategy"
 
+// Settings-table keys for the runtime-toggleable free-trial and referral
+// settings. Absent = use the env-provided default (see InitTrial / InitReferral).
+const (
+	trialEnabledKey        = "trial_enabled"
+	trialDaysKey           = "trial_days"
+	referralEnabledKey     = "referral_enabled"
+	referralInviterDaysKey = "referral_inviter_days"
+	referralInviteeDaysKey = "referral_invitee_days"
+)
+
 func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater UserUpdater, finder Finder, registrar Registrar, squads SquadLister, adminIDs []int64, currency string, dryRun bool, logger *slog.Logger) *Service {
 	s := &Service{
-		store:       st,
-		bot:         bot,
-		extender:    ext,
-		creator:     creator,
-		userUpdater: updater,
-		registrar:   registrar,
-		finder:      finder,
-		squads:      squads,
-		adminIDs:    adminIDs,
-		currency:    currency,
-		dryRun:      dryRun,
-		logger:      logger,
-		now:         time.Now,
-		invites:     make(map[int64]*inviteState),
-		registers:   make(map[int64]*registerState),
-		giftCodes:   make(map[int64]*giftCodeState),
-		redeems:     make(map[int64]*redeemState),
-		payPhotos:   make(map[int64]*payPhotoState),
-		userCtl:     make(map[int64]*userCtlState),
-		adminInput:  make(map[int64]adminInputState),
-		payMsgs:     make(map[int64]adminMsgEntry),
-		inviteMsgs:  make(map[int64]adminMsgEntry),
-		giftMsgs:    make(map[int64]adminMsgEntry),
+		store:           st,
+		bot:             bot,
+		extender:        ext,
+		creator:         creator,
+		userUpdater:     updater,
+		registrar:       registrar,
+		finder:          finder,
+		squads:          squads,
+		adminIDs:        adminIDs,
+		currency:        currency,
+		dryRun:          dryRun,
+		logger:          logger,
+		now:             time.Now,
+		invites:         make(map[int64]*inviteState),
+		registers:       make(map[int64]*registerState),
+		giftCodes:       make(map[int64]*giftCodeState),
+		redeems:         make(map[int64]*redeemState),
+		payPhotos:       make(map[int64]*payPhotoState),
+		userCtl:         make(map[int64]*userCtlState),
+		supportSessions: make(map[int64]bool),
+		adminInput:      make(map[int64]adminInputState),
+		payMsgs:         make(map[int64]adminMsgEntry),
+		inviteMsgs:      make(map[int64]adminMsgEntry),
+		giftMsgs:        make(map[int64]adminMsgEntry),
+		trials:          make(map[int64]*trialState),
 	}
 	// Load persisted payment requisites into the in-memory cache so the user
 	// flow never needs a DB read on each button tap.
@@ -465,6 +504,156 @@ func (s *Service) SetTelegramStars(rate int) {
 	defer s.mu.Unlock()
 	s.starsEnabled = true
 	s.starsRate = rate
+}
+
+// InitTrial loads the persisted free-trial settings into the in-memory cache,
+// falling back to the env-provided defaults when nothing is stored yet. An admin
+// override (via the bot or mini app) is persisted and takes precedence on the
+// next start. Called once at startup, unconditionally.
+func (s *Service) InitTrial(envEnabled bool, envDays int) {
+	ctx := context.Background()
+	enabled := envEnabled
+	if v, found, err := s.store.GetSetting(ctx, trialEnabledKey); err != nil {
+		s.logger.Error("load trial enabled setting failed", "err", err.Error())
+	} else if found {
+		enabled = v == "1"
+	}
+	days := envDays
+	if v, found, err := s.store.GetSetting(ctx, trialDaysKey); err != nil {
+		s.logger.Error("load trial days setting failed", "err", err.Error())
+	} else if found {
+		if n, perr := strconv.Atoi(v); perr == nil && n >= 1 {
+			days = n
+		}
+	}
+	if days < 1 {
+		days = 1
+	}
+	s.mu.Lock()
+	s.trialEnabled = enabled
+	s.trialDays = days
+	s.mu.Unlock()
+}
+
+// trialConfig returns whether the free trial is enabled and its length in days.
+func (s *Service) trialConfig() (enabled bool, days int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.trialEnabled, s.trialDays
+}
+
+// setTrialEnabled persists the free-trial on/off flag and refreshes the cache.
+func (s *Service) setTrialEnabled(ctx context.Context, on bool) error {
+	if err := s.store.UpsertSetting(ctx, trialEnabledKey, boolSetting(on)); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.trialEnabled = on
+	s.mu.Unlock()
+	return nil
+}
+
+// setTrialDays validates and persists the trial length, refreshing the cache.
+func (s *Service) setTrialDays(ctx context.Context, days int) error {
+	if days < 1 {
+		return ErrBadInput
+	}
+	if err := s.store.UpsertSetting(ctx, trialDaysKey, strconv.Itoa(days)); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.trialDays = days
+	s.mu.Unlock()
+	return nil
+}
+
+// InitReferral loads the persisted referral settings into the in-memory cache,
+// falling back to the env-provided defaults when nothing is stored yet. Called
+// once at startup, unconditionally.
+func (s *Service) InitReferral(envEnabled bool, envInviter, envInvitee int) {
+	ctx := context.Background()
+	enabled := envEnabled
+	if v, found, err := s.store.GetSetting(ctx, referralEnabledKey); err != nil {
+		s.logger.Error("load referral enabled setting failed", "err", err.Error())
+	} else if found {
+		enabled = v == "1"
+	}
+	inviter := loadDaysSetting(s, ctx, referralInviterDaysKey, envInviter)
+	invitee := loadDaysSetting(s, ctx, referralInviteeDaysKey, envInvitee)
+	s.mu.Lock()
+	s.referralEnabled = enabled
+	s.referralInviterDays = inviter
+	s.referralInviteeDays = invitee
+	s.mu.Unlock()
+}
+
+// referralConfig returns whether referral bonuses are enabled and the inviter
+// and invitee bonus day counts.
+func (s *Service) referralConfig() (enabled bool, inviterDays, inviteeDays int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.referralEnabled, s.referralInviterDays, s.referralInviteeDays
+}
+
+// setReferralEnabled persists the referral on/off flag and refreshes the cache.
+// Enabling with both bonuses at zero is rejected (it would reward nothing).
+func (s *Service) setReferralEnabled(ctx context.Context, on bool) error {
+	if on {
+		_, inviter, invitee := s.referralConfig()
+		if inviter == 0 && invitee == 0 {
+			return ErrBadInput
+		}
+	}
+	if err := s.store.UpsertSetting(ctx, referralEnabledKey, boolSetting(on)); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.referralEnabled = on
+	s.mu.Unlock()
+	return nil
+}
+
+// setReferralDays validates and persists both referral bonus amounts.
+func (s *Service) setReferralDays(ctx context.Context, inviter, invitee int) error {
+	if inviter < 0 || invitee < 0 {
+		return ErrBadInput
+	}
+	if err := s.store.UpsertSetting(ctx, referralInviterDaysKey, strconv.Itoa(inviter)); err != nil {
+		return err
+	}
+	if err := s.store.UpsertSetting(ctx, referralInviteeDaysKey, strconv.Itoa(invitee)); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.referralInviterDays = inviter
+	s.referralInviteeDays = invitee
+	s.mu.Unlock()
+	return nil
+}
+
+// loadDaysSetting reads a non-negative integer setting, returning def when the
+// key is absent or unparseable.
+func loadDaysSetting(s *Service, ctx context.Context, key string, def int) int {
+	v, found, err := s.store.GetSetting(ctx, key)
+	if err != nil {
+		s.logger.Error("load days setting failed", "key", key, "err", err.Error())
+		return def
+	}
+	if !found {
+		return def
+	}
+	if n, perr := strconv.Atoi(v); perr == nil && n >= 0 {
+		return n
+	}
+	return def
+}
+
+// boolSetting renders a boolean as the "1"/"0" string used in the settings table.
+func boolSetting(on bool) string {
+	if on {
+		return "1"
+	}
+	return "0"
 }
 
 // plategaConfigured reports whether a Platega gateway is wired in.

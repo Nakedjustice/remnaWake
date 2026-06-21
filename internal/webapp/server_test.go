@@ -3,6 +3,7 @@ package webapp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http/httptest"
 	"strings"
@@ -21,6 +22,11 @@ type fakeCabinet struct {
 	gifted      []int
 	inviteErr   error
 	invited     []string
+	notifErr    error
+	notifSet    []string // "<kind>:<muted>" per call
+	trialErr    error
+	trialResult *payments.WebTrialResult
+	trialNames  []string
 }
 
 func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabinet, error) {
@@ -41,6 +47,24 @@ func (f *fakeCabinet) CreateInviteRequest(_ context.Context, _ int64, username s
 	f.invited = append(f.invited, username)
 	return f.inviteErr
 }
+
+func (f *fakeCabinet) SetNotificationPref(_ context.Context, _ int64, kind string, muted bool) error {
+	f.notifSet = append(f.notifSet, fmt.Sprintf("%s:%t", kind, muted))
+	return f.notifErr
+}
+
+func (f *fakeCabinet) ClaimTrial(_ context.Context, _ int64, username string) (*payments.WebTrialResult, error) {
+	f.trialNames = append(f.trialNames, username)
+	return f.trialResult, f.trialErr
+}
+
+func (f *fakeCabinet) SupportHistoryUser(_ context.Context, _ int64) (*payments.WebSupport, error) {
+	return &payments.WebSupport{}, nil
+}
+
+func (f *fakeCabinet) SupportSendUser(_ context.Context, _ int64, _ string) error { return nil }
+
+func (f *fakeCabinet) SupportCloseUser(_ context.Context, _ int64) error { return nil }
 
 type adminCall struct {
 	Name string
@@ -73,6 +97,14 @@ func (f *fakeAdmin) AdminDeleteTariff(_ context.Context, tgID int64, months int)
 }
 func (f *fakeAdmin) AdminSetRequisites(_ context.Context, tgID int64, text string) error {
 	f.calls = append(f.calls, adminCall{Name: "setreq", Text: text})
+	return f.err
+}
+func (f *fakeAdmin) AdminSetTrial(_ context.Context, tgID int64, enabled bool, days int) error {
+	f.calls = append(f.calls, adminCall{Name: "settrial", A: tgID, B: int64(days), Text: fmt.Sprintf("%t", enabled)})
+	return f.err
+}
+func (f *fakeAdmin) AdminSetReferral(_ context.Context, tgID int64, enabled bool, inviter, invitee int) error {
+	f.calls = append(f.calls, adminCall{Name: "setreferral", A: int64(inviter), B: int64(invitee), Text: fmt.Sprintf("%t", enabled)})
 	return f.err
 }
 func (f *fakeAdmin) AdminSetRequireScreenshot(_ context.Context, tgID int64, on bool) error {
@@ -160,6 +192,29 @@ func (f *fakeAdmin) AdminBroadcast(_ context.Context, tgID int64, text string) (
 		return nil, f.err
 	}
 	return &payments.WebBroadcastResult{Sent: 3, Failed: 1}, nil
+}
+
+func (f *fakeAdmin) SupportConversations(_ context.Context, tgID int64) ([]payments.WebSupportConversation, error) {
+	f.calls = append(f.calls, adminCall{Name: "support_conversations", A: tgID})
+	return nil, f.err
+}
+
+func (f *fakeAdmin) SupportThreadAdmin(_ context.Context, tgID, targetUserID int64) (*payments.WebSupport, error) {
+	f.calls = append(f.calls, adminCall{Name: "support_thread", A: tgID, B: targetUserID})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &payments.WebSupport{}, nil
+}
+
+func (f *fakeAdmin) SupportSendAdmin(_ context.Context, tgID, targetUserID int64, text string) error {
+	f.calls = append(f.calls, adminCall{Name: "support_send", A: tgID, B: targetUserID, Text: text})
+	return f.err
+}
+
+func (f *fakeAdmin) SupportCloseAdmin(_ context.Context, tgID, targetUserID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "support_close", A: tgID, B: targetUserID})
+	return f.err
 }
 
 // fakeWebhooks records Platega webhook bodies handed to the service.
@@ -693,5 +748,123 @@ func TestServesIndex(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "Личный кабинет") {
 		t.Fatalf("index not served: status=%d", w.Code)
+	}
+}
+
+func TestHandleNotifications(t *testing.T) {
+	cab := &fakeCabinet{}
+	srv := newTestServer(cab)
+	req := httptest.NewRequest("POST", "/api/notifications", strings.NewReader(`{"kind":"expiry","muted":true}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if len(cab.notifSet) != 1 || cab.notifSet[0] != "expiry:true" {
+		t.Fatalf("service calls = %v", cab.notifSet)
+	}
+
+	// No initData → 401.
+	req = httptest.NewRequest("POST", "/api/notifications", strings.NewReader(`{"kind":"expiry","muted":true}`))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 401 {
+		t.Fatalf("unauthenticated: status = %d, want 401", w.Code)
+	}
+
+	// Bad kind → 400 via ErrBadInput.
+	cab2 := &fakeCabinet{notifErr: payments.ErrBadInput}
+	srv = newTestServer(cab2)
+	req = httptest.NewRequest("POST", "/api/notifications", strings.NewReader(`{"kind":"x","muted":true}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 400 {
+		t.Fatalf("bad kind: status = %d, want 400", w.Code)
+	}
+}
+
+func TestHandleTrial(t *testing.T) {
+	cab := &fakeCabinet{trialResult: &payments.WebTrialResult{Username: "newbie", SubscriptionURL: "https://sub/x"}}
+	srv := newTestServer(cab)
+	req := httptest.NewRequest("POST", "/api/trial", strings.NewReader(`{"username":"newbie"}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["subscription_url"] != "https://sub/x" {
+		t.Fatalf("unexpected payload: %v", resp)
+	}
+	if len(cab.trialNames) != 1 || cab.trialNames[0] != "newbie" {
+		t.Fatalf("service calls = %v", cab.trialNames)
+	}
+
+	// Sentinel error mapping.
+	cases := []struct {
+		err  error
+		want int
+	}{
+		{payments.ErrTrialDisabled, 503},
+		{payments.ErrTrialAlreadyUsed, 409},
+		{payments.ErrTrialNotEligible, 409},
+		{payments.ErrUsernameTaken, 409},
+		{payments.ErrBadInput, 400},
+	}
+	for _, tc := range cases {
+		c := &fakeCabinet{trialErr: tc.err}
+		s := newTestServer(c)
+		r := httptest.NewRequest("POST", "/api/trial", strings.NewReader(`{"username":"newbie"}`))
+		r.Header.Set("Authorization", validAuth(t))
+		rw := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rw, r)
+		if rw.Code != tc.want {
+			t.Errorf("err=%v: status = %d, want %d", tc.err, rw.Code, tc.want)
+		}
+	}
+}
+
+func TestHandleAdminTrialReferral(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req := httptest.NewRequest("POST", "/api/admin/trial", strings.NewReader(`{"enabled":true,"days":5}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("trial status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "settrial" || adm.calls[0].B != 5 {
+		t.Fatalf("trial calls = %+v", adm.calls)
+	}
+
+	adm2 := &fakeAdmin{}
+	srv2 := newTestServerWithAdmin(&fakeCabinet{}, adm2)
+	req = httptest.NewRequest("POST", "/api/admin/referral", strings.NewReader(`{"enabled":true,"inviter_days":30,"invitee_days":10}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv2.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("referral status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if len(adm2.calls) != 1 || adm2.calls[0].Name != "setreferral" || adm2.calls[0].A != 30 || adm2.calls[0].B != 10 {
+		t.Fatalf("referral calls = %+v", adm2.calls)
+	}
+
+	// Non-admin service error → 403.
+	adm3 := &fakeAdmin{err: payments.ErrNotAdmin}
+	srv3 := newTestServerWithAdmin(&fakeCabinet{}, adm3)
+	req = httptest.NewRequest("POST", "/api/admin/trial", strings.NewReader(`{"enabled":true,"days":5}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv3.Handler().ServeHTTP(w, req)
+	if w.Code != 403 {
+		t.Fatalf("non-admin: status = %d, want 403", w.Code)
 	}
 }
