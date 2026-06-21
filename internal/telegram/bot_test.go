@@ -33,6 +33,50 @@ func TestSendPlainWithKeyboardReturnsMessageID(t *testing.T) {
 	}
 }
 
+func TestMultipartReceiptUploadsReturnReusableFileIDs(t *testing.T) {
+	for _, tc := range []struct {
+		method, field string
+		call          func(*Bot) (int64, string, error)
+		result        string
+	}{
+		{"/sendPhoto", "photo", func(b *Bot) (int64, string, error) {
+			return b.SendPhotoUpload(context.Background(), 100, "r.png", []byte("png"), "paid", nil)
+		}, `{"ok":true,"result":{"message_id":42,"photo":[{"file_id":"small"},{"file_id":"photo-file"}]}}`},
+		{"/sendDocument", "document", func(b *Bot) (int64, string, error) {
+			return b.SendDocumentUpload(context.Background(), 100, "r.pdf", []byte("pdf"), "paid", nil)
+		}, `{"ok":true,"result":{"message_id":43,"document":{"file_id":"document-file"}}}`},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tc.method {
+					t.Errorf("path=%s", r.URL.Path)
+				}
+				if err := r.ParseMultipartForm(1 << 20); err != nil {
+					t.Errorf("multipart: %v", err)
+				}
+				if r.FormValue("chat_id") != "100" || r.FormValue("caption") != "paid" {
+					t.Errorf("form=%v", r.Form)
+				}
+				f, _, err := r.FormFile(tc.field)
+				if err != nil {
+					t.Errorf("file: %v", err)
+				} else {
+					_ = f.Close()
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.result))
+			}))
+			defer srv.Close()
+			b := NewBot("token", "", time.Second)
+			b.apiBase = srv.URL
+			msgID, fileID, err := tc.call(b)
+			if err != nil || msgID == 0 || !strings.HasSuffix(fileID, "-file") {
+				t.Fatalf("msg=%d file=%q err=%v", msgID, fileID, err)
+			}
+		})
+	}
+}
+
 func TestSendMessageRetriesAfterRateLimit(t *testing.T) {
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

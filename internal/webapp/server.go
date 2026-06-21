@@ -27,6 +27,10 @@ type Cabinet interface {
 	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider string) (*payments.RenewResult, error)
 	CreateGiftRequest(ctx context.Context, telegramID int64, months int) error
 	CreateInviteRequest(ctx context.Context, telegramID int64, username string) error
+	RegisterProfile(ctx context.Context, telegramID int64, query string) (*payments.WebRegistrationResult, error)
+	RedeemGift(ctx context.Context, telegramID int64, code string, remnawaveID int64, username string) (*payments.WebGiftRedemptionResult, error)
+	UploadRenewReceipt(ctx context.Context, telegramID int64, receipt payments.WebReceipt) error
+	CheckPlategaPayment(ctx context.Context, telegramID, requestID int64) (*payments.WebPaymentStatus, error)
 	SetNotificationPref(ctx context.Context, telegramID int64, kind string, muted bool) error
 	ClaimTrial(ctx context.Context, telegramID int64, username string) (*payments.WebTrialResult, error)
 	SupportHistoryUser(ctx context.Context, telegramID int64) (*payments.WebSupport, error)
@@ -100,6 +104,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/renew", s.handleRenew)
 	mux.HandleFunc("POST /api/gift", s.handleGift)
 	mux.HandleFunc("POST /api/invite", s.handleInvite)
+	mux.HandleFunc("POST /api/register", s.handleRegister)
+	mux.HandleFunc("POST /api/gift/redeem", s.handleGiftRedeem)
+	mux.HandleFunc("POST /api/receipt", s.handleReceipt)
+	mux.HandleFunc("POST /api/platega/check", s.handlePlategaCheck)
 	mux.HandleFunc("POST /api/notifications", s.handleNotifications)
 	mux.HandleFunc("POST /api/trial", s.handleTrial)
 	mux.HandleFunc("GET /api/support", s.handleSupport)
@@ -260,6 +268,9 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		if result.PayURL != "" {
 			resp["payment_url"] = result.PayURL
 		}
+		if result.RequestID != 0 {
+			resp["request_id"] = result.RequestID
+		}
 		if result.InvoiceURL != "" {
 			resp["invoice_url"] = result.InvoiceURL
 		}
@@ -279,6 +290,18 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 		writeJSONError(w, http.StatusBadRequest, "tariff not found")
 	case errors.Is(err, payments.ErrBadInput):
 		writeJSONError(w, http.StatusBadRequest, "invalid input")
+	case errors.Is(err, payments.ErrInvalidProfileQuery), errors.Is(err, payments.ErrGiftInvalid), errors.Is(err, payments.ErrReceiptType):
+		writeJSONError(w, http.StatusBadRequest, "invalid input")
+	case errors.Is(err, payments.ErrProfileLinkedElsewhere):
+		writeJSONError(w, http.StatusForbidden, "profile is linked to another account")
+	case errors.Is(err, payments.ErrPaymentRequestInaccessible):
+		writeJSONError(w, http.StatusNotFound, "payment request not found")
+	case errors.Is(err, payments.ErrGiftUsed):
+		writeJSONError(w, http.StatusConflict, "gift code already used")
+	case errors.Is(err, payments.ErrReceiptSessionExpired):
+		writeJSONError(w, http.StatusGone, "receipt session expired")
+	case errors.Is(err, payments.ErrReceiptTooLarge):
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "receipt is too large")
 	case errors.Is(err, payments.ErrPaymentsDisabled), errors.Is(err, payments.ErrTrialDisabled):
 		writeJSONError(w, http.StatusServiceUnavailable, "payments are disabled")
 	case errors.Is(err, payments.ErrUsernameTaken):
@@ -288,10 +311,112 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 	case errors.Is(err, payments.ErrPanelCreateFailed):
 		s.logger.Error("webapp: "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusBadGateway, "panel request failed, try again later")
+	case errors.Is(err, payments.ErrPanelUnavailable), errors.Is(err, payments.ErrProviderUnavailable):
+		s.logger.Error("webapp: "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
+		writeJSONError(w, http.StatusBadGateway, "upstream service failed, try again later")
 	default:
 		s.logger.Error("webapp: "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusInternalServerError, "internal error, try again later")
 	}
+}
+
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Query string `json:"query"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, 400, "malformed request body")
+		return
+	}
+	result, err := s.cabinet.RegisterProfile(r.Context(), userID, req.Query)
+	if err != nil {
+		s.writeCabinetError(w, "register", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": result.Username})
+}
+
+func (s *Server) handleGiftRedeem(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Code        string `json:"code"`
+		RemnawaveID int64  `json:"remnawave_id"`
+		Username    string `json:"username"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeJSONError(w, 400, "malformed request body")
+		return
+	}
+	result, err := s.cabinet.RedeemGift(r.Context(), userID, req.Code, req.RemnawaveID, req.Username)
+	if err != nil {
+		s.writeCabinetError(w, "redeem gift", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": result.Username, "subscription_url": result.SubscriptionURL, "expire_at": result.ExpireAt})
+}
+
+func (s *Server) handleReceipt(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, (50<<20)+(1<<20))
+	if err := r.ParseMultipartForm(50 << 20); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "receipt is too large")
+		} else {
+			writeJSONError(w, http.StatusBadRequest, "malformed multipart body")
+		}
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "receipt file is required")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "unreadable receipt")
+		return
+	}
+	receipt := payments.WebReceipt{Filename: header.Filename, ContentType: header.Header.Get("Content-Type"), Data: data, Note: r.FormValue("note")}
+	if err := s.cabinet.UploadRenewReceipt(r.Context(), userID, receipt); err != nil {
+		s.writeCabinetError(w, "upload receipt", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handlePlategaCheck(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		RequestID int64 `json:"request_id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, 400, "malformed request body")
+		return
+	}
+	result, err := s.cabinet.CheckPlategaPayment(r.Context(), userID, req.RequestID)
+	if err != nil {
+		s.writeCabinetError(w, "check payment", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": result.Status})
 }
 
 func (s *Server) handleGift(w http.ResponseWriter, r *http.Request) {

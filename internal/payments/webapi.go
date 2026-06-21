@@ -21,7 +21,16 @@ var (
 	// ErrScreenshotRequired: the renew request was not created because the
 	// admin requires a payment screenshot; the user was asked to attach it in
 	// the bot chat.
-	ErrScreenshotRequired = errors.New("payment screenshot required")
+	ErrScreenshotRequired         = errors.New("payment screenshot required")
+	ErrInvalidProfileQuery        = errors.New("invalid profile query")
+	ErrProfileLinkedElsewhere     = errors.New("profile linked to another telegram account")
+	ErrGiftInvalid                = errors.New("gift code invalid")
+	ErrGiftUsed                   = errors.New("gift code already used")
+	ErrReceiptSessionExpired      = errors.New("receipt session expired")
+	ErrReceiptType                = errors.New("invalid receipt type")
+	ErrReceiptTooLarge            = errors.New("receipt too large")
+	ErrPaymentRequestInaccessible = errors.New("payment request inaccessible")
+	ErrProviderUnavailable        = errors.New("payment provider unavailable")
 
 	// Free-trial errors shared by the bot flow and the mini app claim endpoint.
 	ErrTrialDisabled    = errors.New("free trial is disabled")
@@ -39,8 +48,8 @@ type WebProfile struct {
 	StatusLabel     string `json:"status_label"`
 	ExpireAt        string `json:"expire_at,omitempty"` // DD.MM.YYYY
 	DaysLeft        int    `json:"days_left"`
-	HwidLimit       int    `json:"hwid_limit"`             // 0 = unlimited
-	TrafficLimitGB  int64  `json:"traffic_limit_gb"`      // 0 = unlimited
+	HwidLimit       int    `json:"hwid_limit"`                // 0 = unlimited
+	TrafficLimitGB  int64  `json:"traffic_limit_gb"`          // 0 = unlimited
 	UsedTrafficGB   string `json:"used_traffic_gb,omitempty"` // formatted GB, e.g. "1.3"
 	SubscriptionURL string `json:"subscription_url,omitempty"`
 }
@@ -80,6 +89,25 @@ type WebNotifPrefs struct {
 type WebTrialResult struct {
 	Username        string `json:"username"`
 	SubscriptionURL string `json:"subscription_url,omitempty"`
+}
+
+type WebRegistrationResult struct {
+	Username string `json:"username"`
+}
+type WebGiftRedemptionResult struct {
+	Username        string `json:"username"`
+	SubscriptionURL string `json:"subscription_url,omitempty"`
+	ExpireAt        string `json:"expire_at,omitempty"`
+	LinkFailed      bool   `json:"-"`
+}
+type WebPaymentStatus struct {
+	Status string `json:"status"`
+}
+type WebReceipt struct {
+	Filename    string
+	ContentType string
+	Data        []byte
+	Note        string
 }
 
 // WebCabinet is the full /api/me payload for the mini app.
@@ -247,6 +275,7 @@ func (s *Service) ClaimTrial(ctx context.Context, telegramID int64, username str
 // RenewResult tells the Mini App how to complete a renewal: which payment
 // method was chosen (or a chooser to render) and any URL/link to open.
 type RenewResult struct {
+	RequestID int64 `json:"request_id,omitempty"`
 	// Status is "" (P2P request sent), "choose_provider", "platega" or
 	// "telegram_stars".
 	Status string `json:"status,omitempty"`
@@ -327,11 +356,11 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 	case ProviderPlatega:
 		// Open an online transaction and return its pay URL for the mini app to
 		// open. The screenshot requirement does not apply (payment is automatic).
-		_, payURL, err := s.startPlategaPayment(ctx, u, months, price)
+		reqID, payURL, err := s.startPlategaPayment(ctx, u, months, price)
 		if err != nil {
 			return nil, err
 		}
-		return &RenewResult{Status: ProviderPlatega, PayURL: payURL}, nil
+		return &RenewResult{Status: ProviderPlatega, RequestID: reqID, PayURL: payURL}, nil
 	case ProviderTelegramStars:
 		// Create a Stars invoice link the mini app opens with openInvoice.
 		link, err := s.startStarsInvoiceLink(ctx, u, months, price)

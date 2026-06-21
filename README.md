@@ -110,11 +110,11 @@ payment events never extend a subscription twice.
 ### 📸 Payment receipt (optional)
 
 Toggle **«📸 Чек об оплате»** in `/admin` or the Mini App to require proof of
-payment: after picking a tariff the user must send a **photo, screenshot, or
-PDF** before the request is created; the admin receives it attached with the
-usual confirm/reject buttons. The step expires after 10 minutes (`/cancel`
-aborts). Renewals started from the Mini App switch to the bot chat for this
-step.
+payment: after picking a tariff the user must attach a receipt before the
+request is created; the admin receives it with the usual confirm/reject buttons.
+The bot chat and Mini App both support this step. JPEG/PNG photos are limited to
+10 MB; PDF, WebP, and HEIC documents to 50 MB. The step expires after 10 minutes
+(`/cancel` aborts in chat).
 
 ## ⌨️ Commands
 
@@ -243,8 +243,10 @@ command. `install.sh` can wire this up interactively.
 When `WEBAPP_URL` is set, the bot serves a Mini App version of the cabinet and
 registers it as the chat **menu button** (plus an «🖥 Открыть мини-приложение»
 button in `/me`). It shows linked profiles, status & expiry, the subscription
-link with one-tap copy, requisites, gift/invite summaries, and lets the user
-pick a tariff and send a renewal request to the admin. A 🇷🇺/🇬🇧 **language
+link with one-tap copy, requisites, gift/invite summaries, profile registration,
+gift-code redemption, receipt upload, and Platega payment status checks. Users
+can pick a tariff and finish the complete renewal flow without leaving the Mini
+App. A 🇷🇺/🇬🇧 **language
 selector** (top right) defaults to the user's Telegram language (falling back to
 `BOT_LANG`) and remembers an explicit choice.
 

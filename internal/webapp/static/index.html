@@ -190,8 +190,11 @@ const EN = {
   '{months} мес. — {price}': '{months} mo. — {price}',
   '💳 Оплатить / продлить': '💳 Pay / renew',
   'Отправка…': 'Sending…',
-  '📸 Ждём чек в чате с ботом': '📸 Waiting for the receipt in the bot chat',
-  'Осталось прикрепить чек: перейдите в чат с ботом и отправьте фото, скриншот или PDF-файл чека об оплате — после этого заявка уйдёт администратору.': 'One step left: open the chat with the bot and send a photo, screenshot or PDF of the payment receipt — then your request will go to the administrator.',
+  '📸 Прикрепите чек': '📸 Attach receipt',
+  'Фото JPEG/PNG до 10 МБ; PDF, WebP или HEIC до 50 МБ.': 'JPEG/PNG up to 10 MB; PDF, WebP or HEIC up to 50 MB.',
+  'Комментарий (необязательно)': 'Note (optional)',
+  '📤 Отправить чек': '📤 Upload receipt',
+  '✅ Чек отправлен': '✅ Receipt uploaded',
   '✅ Заявка отправлена': '✅ Request sent',
   'Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.': 'Your request has been sent to the administrator. Once paid and confirmed, your subscription will be extended.',
   '🎁 Подарить подписку': '🎁 Gift a subscription',
@@ -213,8 +216,19 @@ const EN = {
   '🚫 Отозванные': '🚫 Revoked',
   '📦 Мои подарки': '📦 My gifts',
   'Аккаунт не привязан': 'Account not linked',
-  'Ваш Telegram пока не привязан к профилю подписки. Привяжите аккаунт в чате с ботом командой /register — и здесь появятся статус, дата окончания и ссылка.': 'Your Telegram is not linked to a subscription profile yet. Link your account in the bot chat with the /register command — then status, expiry date and link will appear here.',
-  '🔗 Привязать в чате': '🔗 Link in chat',
+  'Введите имя профиля или ссылку на подписку.': 'Enter a profile username or subscription URL.',
+  'Имя профиля или ссылка': 'Profile username or URL',
+  '🔗 Привязать профиль': '🔗 Link profile',
+  '✅ Профиль привязан': '✅ Profile linked',
+  '🎁 Активировать подарочный код': '🎁 Redeem gift code',
+  'Подарочный код': 'Gift code',
+  'Выберите профиль': 'Choose profile',
+  '🎁 Активировать': '🎁 Redeem',
+  '✅ Подарок активирован': '✅ Gift redeemed',
+  '🔄 Проверить оплату': '🔄 Check payment',
+  'Оплата ещё не подтверждена.': 'Payment is still pending.',
+  '✅ Оплата подтверждена, подписка продлена.': '✅ Payment confirmed; subscription extended.',
+  'Платёж отклонён.': 'Payment was rejected.',
   '⚙️ Администрирование': '⚙️ Administration',
   'Тарифы, реквизиты, подарочные коды и заявки на оплату.': 'Tariffs, payment details, gift codes and payment requests.',
   '⚙️ Открыть админ-панель': '⚙️ Open admin menu',
@@ -252,9 +266,6 @@ const EN = {
   '👥 Приглашения': '👥 Invitations',
   'Всего': 'Total',
   '{n} на рассмотрении': '{n} pending',
-  'Действия в чате': 'Chat actions',
-  'Привязка профиля и активация подарочных кодов оформляются в диалоге с ботом.': 'Linking a profile and redeeming gift codes are done in the chat with the bot.',
-  '💬 Вернуться в чат': '💬 Back to chat',
   '📋 Тарифы': '📋 Tariffs',
   '🗑 Удалить': '🗑 Delete',
   'Удалить тариф на {months} мес.?': 'Delete the {months} mo. tariff?',
@@ -466,13 +477,11 @@ function row(parent, k, v) {
 }
 
 async function api(path, opts = {}) {
+  const headers = { 'Authorization': 'tma ' + tg.initData, ...(opts.headers || {}) };
+  if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
   const res = await fetch(path, {
     ...opts,
-    headers: {
-      'Authorization': 'tma ' + tg.initData,
-      'Content-Type': 'application/json',
-      ...(opts.headers || {}),
-    },
+    headers,
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || t('Ошибка {n}', { n: res.status }));
@@ -574,6 +583,34 @@ function renderRenew(p, data) {
   // choiceBox holds the payment-method buttons when several providers are enabled.
   const choiceBox = el('div', 'tariffs');
   choiceBox.hidden = true;
+  const receiptBox = el('div', 'card');
+  receiptBox.hidden = true;
+  receiptBox.appendChild(el('div', 'hint', t('Фото JPEG/PNG до 10 МБ; PDF, WebP или HEIC до 50 МБ.')));
+  const receiptFile = Object.assign(el('input'), { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/heic,.pdf,.heic' });
+  const receiptNote = Object.assign(el('input'), { type: 'text', placeholder: t('Комментарий (необязательно)') });
+  const receiptSend = el('button', null, t('📤 Отправить чек'));
+  receiptSend.onclick = async () => {
+    if (!receiptFile.files.length) return tg.showAlert(t('📸 Прикрепите чек'));
+    const form = new FormData(); form.append('file', receiptFile.files[0]); form.append('note', receiptNote.value.trim());
+    receiptSend.disabled = true;
+    try { await api('/api/receipt', { method: 'POST', body: form }); receiptSend.textContent = t('✅ Чек отправлен'); receiptFile.disabled = true; receiptNote.disabled = true; }
+    catch (e) { receiptSend.disabled = false; tg.showAlert(e.message); }
+  };
+  receiptBox.appendChild(receiptFile); receiptBox.appendChild(receiptNote); receiptBox.appendChild(receiptSend);
+  const checkKey = 'platega_request_' + p.remnawave_id;
+  const check = el('button', 'secondary', t('🔄 Проверить оплату'));
+  const checkPayment = async () => {
+    const requestID = Number(localStorage.getItem(checkKey)); if (!requestID) return;
+    check.disabled = true;
+    try {
+      const res = await api('/api/platega/check', { method: 'POST', body: JSON.stringify({ request_id: requestID }) });
+      if (res.status === 'confirmed') { localStorage.removeItem(checkKey); check.textContent = t('✅ Оплата подтверждена, подписка продлена.'); cabinetData = await api('/api/me'); }
+      else if (res.status === 'rejected') { localStorage.removeItem(checkKey); check.textContent = t('Платёж отклонён.'); }
+      else { check.disabled = false; tg.showAlert(t('Оплата ещё не подтверждена.')); }
+    } catch (e) { check.disabled = false; tg.showAlert(e.message); }
+  };
+  check.onclick = checkPayment;
+  check.hidden = !localStorage.getItem(checkKey);
   const resetPay = () => { pay.disabled = false; pay.textContent = t('💳 Оплатить / продлить'); };
   const doRenew = async (provider) => {
     choiceBox.hidden = true;
@@ -593,10 +630,11 @@ function renderRenew(p, data) {
         });
         choiceBox.hidden = false;
       } else if (res.status === 'awaiting_screenshot') {
-        pay.textContent = t('📸 Ждём чек в чате с ботом');
-        tg.showAlert(t('Осталось прикрепить чек: перейдите в чат с ботом и отправьте фото, скриншот или PDF-файл чека об оплате — после этого заявка уйдёт администратору.'));
+        pay.textContent = t('📸 Прикрепите чек');
+        receiptBox.hidden = false;
       } else if (res.status === 'platega' && res.payment_url) {
         pay.textContent = t('💳 Открываем оплату…');
+        if (res.request_id) { localStorage.setItem(checkKey, String(res.request_id)); check.hidden = false; }
         tg.openLink(res.payment_url);
         tg.showAlert(t('Откроется страница оплаты. После оплаты подписка продлится автоматически.'));
         resetPay();
@@ -622,6 +660,8 @@ function renderRenew(p, data) {
   pay.onclick = () => doRenew('');
   wrap.appendChild(pay);
   wrap.appendChild(choiceBox);
+  wrap.appendChild(receiptBox);
+  wrap.appendChild(check);
   return wrap;
 }
 
@@ -761,12 +801,29 @@ function renderMyGifts(data) {
 function renderUnlinked() {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, t('Аккаунт не привязан')));
-  card.appendChild(el('div', 'hint',
-    t('Ваш Telegram пока не привязан к профилю подписки. Привяжите аккаунт в чате с ботом командой /register — и здесь появятся статус, дата окончания и ссылка.')));
-  const b = el('button', null, t('🔗 Привязать в чате'));
-  b.onclick = () => tg.close();
-  card.appendChild(b);
+  card.appendChild(el('div', 'hint', t('Введите имя профиля или ссылку на подписку.')));
   return card;
+}
+
+function renderRegistration() {
+  const card = el('div', 'card'); card.appendChild(el('h2', null, t('🔗 Привязать профиль')));
+  const input = Object.assign(el('input'), { type: 'text', placeholder: t('Имя профиля или ссылка') }); card.appendChild(input);
+  const btn = el('button', null, t('🔗 Привязать профиль'));
+  btn.onclick = async () => { btn.disabled = true; try { await api('/api/register', { method: 'POST', body: JSON.stringify({ query: input.value.trim() }) }); cabinetData = await api('/api/me'); tg.showAlert(t('✅ Профиль привязан')); showHome(); } catch(e) { btn.disabled = false; tg.showAlert(e.message); } };
+  card.appendChild(btn); return card;
+}
+
+function renderGiftRedemption() {
+  const data = cabinetData || {}; const profiles = data.profiles || [];
+  const card = el('div', 'card'); card.appendChild(el('h2', null, t('🎁 Активировать подарочный код')));
+  const code = Object.assign(el('input'), { type: 'text', placeholder: t('Подарочный код') }); card.appendChild(code);
+  let target;
+  if (profiles.length) { target = el('select'); profiles.forEach(p => { const o = el('option', null, p.username); o.value = p.remnawave_id; target.appendChild(o); }); }
+  else { target = Object.assign(el('input'), { type: 'text', placeholder: t('Имя пользователя') }); }
+  card.appendChild(target);
+  const btn = el('button', null, t('🎁 Активировать'));
+  btn.onclick = async () => { const body = { code: code.value.trim() }; if (profiles.length) body.remnawave_id = Number(target.value); else body.username = target.value.trim(); btn.disabled = true; try { await api('/api/gift/redeem', { method: 'POST', body: JSON.stringify(body) }); cabinetData = await api('/api/me'); tg.showAlert(t('✅ Подарок активирован')); showHome(); } catch(e) { btn.disabled = false; tg.showAlert(e.message); } };
+  card.appendChild(btn); return card;
 }
 
 // cabinetData caches the latest /api/me payload so the hub and its sub-views
@@ -865,6 +922,7 @@ function showHome() {
 
   if (!data.linked) {
     appEl.appendChild(renderUnlinked());
+    appEl.appendChild(renderRegistration());
     if (data.trial_available) appEl.appendChild(renderTrialClaim());
   } else {
     appEl.appendChild(menuCard(
@@ -888,14 +946,8 @@ function showHome() {
     [[t('Открыть чат'), showSupport]]));
 
   if (data.notifications) appEl.appendChild(renderNotifPrefs(data));
-
-  const actions = el('div', 'card');
-  actions.appendChild(el('h2', null, t('Действия в чате')));
-  actions.appendChild(el('div', 'hint', t('Привязка профиля и активация подарочных кодов оформляются в диалоге с ботом.')));
-  const back = el('button', 'secondary', t('💬 Вернуться в чат'));
-  back.onclick = () => tg.close();
-  actions.appendChild(back);
-  appEl.appendChild(actions);
+  if (data.linked) appEl.appendChild(renderRegistration());
+  appEl.appendChild(renderGiftRedemption());
 
   statusEl.hidden = true;
   appEl.hidden = false;

@@ -44,15 +44,17 @@ type sentInvoice struct {
 	MsgID   int64
 }
 type fakeBot struct {
-	sent           []sentMsg
-	photos         []sentPhoto
-	docs           []sentPhoto // same shape: chat, file_id, caption, keyboard
-	answers        []string
-	edits          []editCall
-	invoices       []sentInvoice
-	invoiceLinks   []sentInvoice
-	precheckoutAck []bool
-	msgIDSeq       int64
+	sent            []sentMsg
+	photos          []sentPhoto
+	docs            []sentPhoto // same shape: chat, file_id, caption, keyboard
+	answers         []string
+	edits           []editCall
+	invoices        []sentInvoice
+	invoiceLinks    []sentInvoice
+	precheckoutAck  []bool
+	msgIDSeq        int64
+	photoUploads    int
+	documentUploads int
 	// sendErrs makes every send method fail for specific chat IDs.
 	sendErrs map[int64]error
 	// invoiceErr makes SendInvoice / CreateInvoiceLink fail when set.
@@ -89,6 +91,26 @@ func (f *fakeBot) SendDocument(_ context.Context, chatID int64, fileID, caption 
 	f.msgIDSeq++
 	f.docs = append(f.docs, sentPhoto{ChatID: chatID, FileID: fileID, Caption: caption, Keyboard: kb, MsgID: f.msgIDSeq})
 	return f.msgIDSeq, nil
+}
+func (f *fakeBot) SendPhotoUpload(_ context.Context, chatID int64, _ string, _ []byte, caption string, kb *tg.InlineKeyboardMarkup) (int64, string, error) {
+	if err := f.sendErrs[chatID]; err != nil {
+		return 0, "", err
+	}
+	f.msgIDSeq++
+	f.photoUploads++
+	fileID := "uploaded-photo-id"
+	f.photos = append(f.photos, sentPhoto{ChatID: chatID, FileID: fileID, Caption: caption, Keyboard: kb, MsgID: f.msgIDSeq})
+	return f.msgIDSeq, fileID, nil
+}
+func (f *fakeBot) SendDocumentUpload(_ context.Context, chatID int64, _ string, _ []byte, caption string, kb *tg.InlineKeyboardMarkup) (int64, string, error) {
+	if err := f.sendErrs[chatID]; err != nil {
+		return 0, "", err
+	}
+	f.msgIDSeq++
+	f.documentUploads++
+	fileID := "uploaded-document-id"
+	f.docs = append(f.docs, sentPhoto{ChatID: chatID, FileID: fileID, Caption: caption, Keyboard: kb, MsgID: f.msgIDSeq})
+	return f.msgIDSeq, fileID, nil
 }
 func (f *fakeBot) AnswerCallbackQuery(_ context.Context, _ string, text string) error {
 	f.answers = append(f.answers, text)
