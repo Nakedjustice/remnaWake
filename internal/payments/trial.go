@@ -45,6 +45,14 @@ func (s *Service) clearTrial(chatID int64) {
 	delete(s.trials, chatID)
 }
 
+// TrialOffered reports whether the free trial should be advertised to users:
+// the payment flow is on, the trial is enabled, and user creation is wired.
+// Mirrors the guard in beginTrialFlow so an offered button always works.
+func (s *Service) TrialOffered() bool {
+	enabled, _ := s.trialConfig()
+	return s.isEnabled() && enabled && s.creator != nil
+}
+
 // StartTrialFlow handles /trial. Returns true if the message was consumed (which
 // only happens when the trial is enabled).
 func (s *Service) StartTrialFlow(ctx context.Context, m *tg.Message) bool {

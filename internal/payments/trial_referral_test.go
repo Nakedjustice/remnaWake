@@ -40,6 +40,33 @@ func TestTrialDisabledDoesNotConsume(t *testing.T) {
 	}
 }
 
+func TestTrialOffered(t *testing.T) {
+	// Disabled by default: nothing has enabled the trial yet.
+	svc, _, _, _, _ := trialFixture(t, &fakeFinder{})
+	if svc.TrialOffered() {
+		t.Fatal("trial must not be offered before it is enabled")
+	}
+
+	// Enabled with a wired creator and an admin configured.
+	svc.InitTrial(true, 7)
+	if !svc.TrialOffered() {
+		t.Fatal("trial should be offered when enabled with a creator")
+	}
+
+	// No creator wired: the button would dead-end, so it must not be offered.
+	st, err := store.New(filepath.Join(t.TempDir(), "nocreator.db"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	noCreator := New(st, &fakeBot{}, &fakeExtender{}, nil, &fakeUpdater{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false, logger)
+	noCreator.InitTrial(true, 7)
+	if noCreator.TrialOffered() {
+		t.Fatal("trial must not be offered when no creator is wired")
+	}
+}
+
 func TestTrialCreatesProfileForNewUser(t *testing.T) {
 	svc, st, _, creator, registrar := trialFixture(t, &fakeFinder{})
 	svc.InitTrial(true, 7)
