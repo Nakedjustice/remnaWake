@@ -218,6 +218,21 @@ const EN = {
   '⚙️ Администрирование': '⚙️ Administration',
   'Тарифы, реквизиты, подарочные коды и заявки на оплату.': 'Tariffs, payment details, gift codes and payment requests.',
   '⚙️ Открыть админ-панель': '⚙️ Open admin menu',
+  '📊 Статистика': '📊 Statistics',
+  'Пользователи панели': 'Panel users',
+  'Активные': 'Active',
+  'Истекают в ближайшие 7 дней': 'Expiring within 7 days',
+  'Истекшие': 'Expired',
+  'С привязанным Telegram': 'Linked to Telegram',
+  'Оплаты за 30 дней': 'Payments in 30 days',
+  'Подтверждено': 'Confirmed',
+  'Выручка': 'Revenue',
+  'Ожидают подтверждения': 'Awaiting confirmation',
+  'Подарочные коды': 'Gift codes',
+  'Ожидают оплаты': 'Awaiting payment',
+  'Выданы': 'Issued',
+  'Активированы': 'Redeemed',
+  'Ожидают одобрения': 'Awaiting approval',
   '📡 Моя подписка': '📡 My subscription',
   'UUID, срок действия, лимит устройств и трафик.': 'UUID, expiry, device limit and traffic.',
   '📡 Открыть подписку': '📡 Open subscription',
@@ -1790,6 +1805,7 @@ function renderAdminHome() {
     t('🛠 Управление'),
     t('Настройки, пользователи, подарочные коды и рассылка.'),
     [
+      [t('📊 Статистика'), showAdminStats],
       [t('⚙️ Настройки'), showAdminSettings],
       [t('👤 Управление пользователями'), showUserAdmin],
       [t('🎁 Активные подарочные коды'), showAdminGiftCodes],
@@ -1804,6 +1820,46 @@ function renderAdminHome() {
 // Admin sub-views: each renders the back bar plus the relevant existing
 // section cards, reading from the cached adminData so language switches and
 // in-place mutations re-render correctly.
+async function showAdminStats() {
+  currentRender = showAdminStats;
+  let stats;
+  try {
+    stats = await api('/api/admin/stats');
+  } catch (e) { tg.showAlert(e.message); return; }
+
+  const statsCard = (title, rows) => {
+    const card = el('div', 'card');
+    card.appendChild(el('h2', null, title));
+    rows.forEach(([label, value]) => row(card, label, String(value)));
+    return card;
+  };
+
+  appEl.textContent = '';
+  appEl.appendChild(adminSubTop());
+  appEl.appendChild(statsCard(t('Пользователи панели'), [
+    [t('Всего'), stats.users_total],
+    [t('Активные'), stats.users_active],
+    [t('Истекают в ближайшие 7 дней'), stats.users_expiring_soon],
+    [t('Истекшие'), stats.users_expired],
+    [t('С привязанным Telegram'), stats.users_linked],
+  ]));
+  appEl.appendChild(statsCard(t('Оплаты за 30 дней'), [
+    [t('Подтверждено'), stats.payments_confirmed_30d],
+    [t('Выручка'), stats.revenue_label],
+    [t('Ожидают подтверждения'), stats.payments_pending],
+  ]));
+  appEl.appendChild(statsCard(t('Подарочные коды'), [
+    [t('Ожидают оплаты'), stats.gifts_pending],
+    [t('Выданы'), stats.gifts_issued],
+    [t('Активированы'), stats.gifts_activated],
+  ]));
+  appEl.appendChild(statsCard(t('👥 Приглашения'), [
+    [t('Ожидают одобрения'), stats.invites_pending],
+  ]));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
 function showAdminPaymentRequests() {
   currentRender = showAdminPaymentRequests;
   appEl.textContent = '';

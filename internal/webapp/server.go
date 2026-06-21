@@ -39,6 +39,7 @@ type Cabinet interface {
 // payments.ErrNotAdmin otherwise.
 type Admin interface {
 	AdminPanelData(ctx context.Context, telegramID int64) (*payments.WebAdminPanel, error)
+	AdminStatsData(ctx context.Context, telegramID int64) (*payments.WebAdminStats, error)
 	AdminSetTariff(ctx context.Context, telegramID int64, months, price int) error
 	AdminDeleteTariff(ctx context.Context, telegramID int64, months int) error
 	AdminSetRequisites(ctx context.Context, telegramID int64, text string) error
@@ -105,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/support/send", s.handleSupportSend)
 	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
+	mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
 	mux.HandleFunc("GET /api/admin/support", s.handleAdminSupport)
 	mux.HandleFunc("POST /api/admin/support/thread", s.handleAdminSupportThread)
 	mux.HandleFunc("POST /api/admin/support/send", s.handleAdminSupportSend)
@@ -408,6 +410,19 @@ func (s *Server) handleAdminPanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, panel)
+}
+
+func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	stats, err := s.admin.AdminStatsData(r.Context(), userID)
+	if err != nil {
+		s.writeAdminError(w, "statistics", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
 }
 
 func (s *Server) handleAdminSetTariff(w http.ResponseWriter, r *http.Request) {
