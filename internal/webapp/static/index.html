@@ -208,6 +208,13 @@
   .item .st { color: var(--hint); font-size: 13px; }
   .item button { width: auto; margin: 0; padding: 8px 13px; font-size: 13px; flex-shrink: 0; }
   .item .btns { display: flex; gap: 6px; flex-shrink: 0; }
+  /* Expiry editor stacks vertically so the custom-days input stays readable on
+     slim displays: custom days + apply on top, fixed-amount buttons below. */
+  .item.exp-days { flex-direction: column; align-items: stretch; gap: 8px; }
+  .exp-row { display: flex; gap: 6px; }
+  .exp-custom { align-items: center; }
+  .exp-custom input { margin-top: 0; flex: 1 1 auto; min-width: 0; }
+  .exp-fixed button { flex: 1 1 0; }
   .utable { width: 100%; border-collapse: collapse; margin-top: 8px; }
   .utable th, .utable td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--border); font-size: 14px; }
   .utable th { color: var(--hint); font-weight: 700; }
@@ -222,11 +229,66 @@
   details { border-top: 1px solid var(--border); }
   details:first-of-type { border-top: 0; }
   summary { cursor: pointer; padding: 10px 0; font-size: 15px; font-weight: 700; }
+
+  /* ---- Admin workspace ---- */
+  .admin-shell { padding-bottom: 8px; }
+  .admin-heading { margin: 2px 2px 20px; }
+  .admin-heading .profile-name { font-size: 22px; }
+  .admin-section { margin: 0 0 20px; }
+  .admin-section-label { margin: 0 6px 8px; color: var(--hint); font-size: 11px; font-weight: 800;
+    letter-spacing: .11em; text-transform: uppercase; }
+  .admin-nav { overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .admin-nav-row { display: flex; width: 100%; min-height: 58px; align-items: center; gap: 12px; margin: 0;
+    padding: 14px 16px; border: 0; border-radius: 0; border-top: 1px solid var(--border);
+    background: transparent; color: var(--text); text-align: left; }
+  .admin-nav-row:first-child { border-top: 0; }
+  .admin-nav-row:active { background: var(--surface-2); }
+  .admin-nav-icon { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 10px;
+    background: var(--accent-soft); color: var(--accent); font-size: 16px; }
+  .admin-nav-label { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; }
+  .admin-count { min-width: 24px; padding: 3px 8px; border-radius: 999px; background: var(--accent-soft);
+    color: var(--accent); text-align: center; font-size: 12px; font-weight: 800; }
+  .admin-chevron { color: var(--hint); font-size: 22px; font-weight: 400; line-height: 1; }
+  .admin-page-title { font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
+  .admin-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-bottom: 12px; }
+  .admin-card-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+  .admin-card-meta { color: var(--hint); font-size: 12.5px; line-height: 1.45; }
+  .admin-request { display: flex; align-items: center; gap: 12px; }
+  .admin-request-copy { flex: 1; min-width: 0; }
+  .admin-request-actions { display: flex; gap: 8px; flex: none; }
+  .admin-icon-btn { display: grid; width: 42px; height: 42px; margin: 0; padding: 0; place-items: center;
+    border-radius: 13px; font-size: 16px; }
+  .admin-icon-btn.reject { background: var(--surface-2); color: var(--tone-expired); border: 1px solid var(--border); }
+  .admin-empty { padding: 28px 18px; border: 1px dashed var(--border); border-radius: 18px;
+    color: var(--hint); text-align: center; font-size: 14px; }
+  .admin-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .admin-form-grid input { min-width: 0; }
+  .admin-list-row { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid var(--border); }
+  .admin-list-row:first-of-type { border-top: 0; }
+  .admin-list-copy { flex: 1; min-width: 0; }
+  .admin-list-title { overflow: hidden; font-size: 14px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+  .admin-list-meta { margin-top: 3px; color: var(--hint); font-size: 12px; }
+  .admin-list-row button { width: auto; margin: 0; padding: 8px 13px; font-size: 13px; flex-shrink: 0; }
+  .admin-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: rgba(52,199,89,.13);
+    color: var(--tone-active); font-size: 11px; font-weight: 800; }
+  .admin-status.inactive { background: rgba(255,69,58,.13); color: var(--tone-expired); }
+  .admin-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .admin-stat { min-height: 92px; padding: 15px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .admin-stat-value { margin-top: 7px; font-size: 23px; font-weight: 800; letter-spacing: -.03em; }
+  .admin-stat-label { color: var(--hint); font-size: 11px; font-weight: 700; line-height: 1.35; }
+  .admin-card .row input, .admin-card .item input, .admin-card .item select { min-width: 0; }
+  .admin-card > button:last-child { border-radius: 999px; }
+  .admin-card textarea { min-height: 120px; }
+  .admin-support-avatar { display: grid; width: 40px; height: 40px; flex: none; place-items: center;
+    border-radius: 13px; background: var(--accent-soft); color: var(--accent); font-weight: 800; }
   @media (max-width: 360px) {
     body { padding-inline: 12px; }
     .validity { padding-inline: 15px; }
     .validity-date { font-size: 19px; }
     .profile-actions button { padding-inline: 8px; font-size: 13px; }
+    .admin-request { align-items: flex-start; flex-wrap: wrap; }
+    .admin-request-actions { width: 100%; justify-content: flex-end; }
+    .admin-stat-grid { gap: 8px; }
   }
 </style>
 </head>
@@ -457,6 +519,21 @@ const EN = {
   '— не выбран —': '— none —',
   'Ошибка загрузки сквадов': 'Failed to load squads',
   '⚙️ Админ-панель': '⚙️ Admin panel',
+  'Заявки': 'Requests',
+  'Заявки на оплату': 'Payment requests',
+  'Заявки на подарки': 'Gift requests',
+  'Заявки на приглашения': 'Invite requests',
+  'Тарифы и реквизиты': 'Tariffs and payment details',
+  'Управление': 'Management',
+  'Статистика': 'Statistics',
+  'Настройки': 'Settings',
+  'Управление пользователями': 'Manage users',
+  'Активные подарочные коды': 'Active gift codes',
+  'Рассылка': 'Broadcast',
+  'Чат поддержки': 'Support inbox',
+  'Чек': 'Receipt',
+  'Подтвердить': 'Approve',
+  'Отклонить': 'Reject',
   '← Назад в кабинет': '← Back to user menu',
   '📨 Меню заявок': '📨 Request menu',
   'Заявки на оплату, подарки и приглашения.': 'Payment, gift and invite requests.',
@@ -1502,11 +1579,10 @@ async function showAdminSupport() {
   currentRender = showAdminSupport;
   stopSupportPoll();
   appEl.textContent = '';
-  appEl.appendChild(adminSubTop());
-  const card = el('div', 'card');
-  card.appendChild(el('h2', null, t('💬 Чат поддержки')));
+  appEl.appendChild(adminPageTop(t('Чат поддержки')));
+  const card = el('div', 'admin-card');
   card.appendChild(el('div', 'hint', t('Открытые обращения пользователей.')));
-  const list = el('div', 'btn-grid');
+  const list = el('div');
   card.appendChild(list);
   appEl.appendChild(card);
   statusEl.hidden = true;
@@ -1524,15 +1600,18 @@ async function refreshAdminSupportList(list) {
     return;
   }
   convs.forEach(c => {
-    const btn = el('button', 'secondary');
-    btn.style.flex = '1 1 100%';
-    const wrap = el('div', 'conv');
-    const left = el('div');
-    left.appendChild(el('div', null, c.username || t('Без имени')));
-    if (c.last_text) left.appendChild(el('div', 'hint', c.last_text));
-    wrap.appendChild(left);
-    if (c.unread) wrap.appendChild(el('span', 'badge', String(c.unread)));
-    btn.appendChild(wrap);
+    const btn = el('button', 'admin-list-row');
+    btn.style.width = '100%';
+    btn.style.margin = '0';
+    btn.style.background = 'transparent';
+    const name = c.username || t('Без имени');
+    btn.appendChild(el('span', 'admin-support-avatar', name.slice(0, 2).toUpperCase()));
+    const left = el('div', 'admin-list-copy');
+    left.appendChild(el('div', 'admin-list-title', name));
+    if (c.last_text) left.appendChild(el('div', 'admin-list-meta', c.last_text));
+    btn.appendChild(left);
+    if (c.unread) btn.appendChild(el('span', 'admin-count', String(c.unread)));
+    btn.appendChild(el('span', 'admin-chevron', '›'));
     btn.onclick = () => showAdminSupportThread(c.user_id, c.username);
     list.appendChild(btn);
   });
@@ -1543,9 +1622,9 @@ async function showAdminSupportThread(userId, username) {
   currentRender = () => showAdminSupportThread(userId, username);
   stopSupportPoll();
   appEl.textContent = '';
-  appEl.appendChild(backBar(username || t('Без имени'), showAdminSupport));
+  appEl.appendChild(adminPageTop(username || t('Без имени'), showAdminSupport));
 
-  const chatCard = el('div', 'card');
+  const chatCard = el('div', 'admin-card');
   const box = el('div', 'chat');
   chatCard.appendChild(box);
   const text = Object.assign(el('textarea'), { placeholder: t('Введите сообщение…') });
@@ -1607,12 +1686,15 @@ async function cabinetAction(path, payload) {
 }
 
 function renderAdminTariffs(data) {
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('📋 Тарифы')));
   if ((data.tariffs || []).length) {
     data.tariffs.forEach(tf => {
-      const item = el('div', 'item');
-      item.appendChild(el('div', 'info', t('{months} мес. — {price}', { months: tf.months, price: tf.price_label })));
+      const item = el('div', 'admin-list-row');
+      const copy = el('div', 'admin-list-copy');
+      copy.appendChild(el('div', 'admin-list-title', t('{months} мес.', { months: tf.months })));
+      copy.appendChild(el('div', 'admin-list-meta', tf.price_label));
+      item.appendChild(copy);
       const del = el('button', 'secondary', t('🗑 Удалить'));
       del.onclick = () => adminAction('/api/admin/tariff/delete', { months: tf.months },
         t('Удалить тариф на {months} мес.?', { months: tf.months }));
@@ -1623,7 +1705,7 @@ function renderAdminTariffs(data) {
     card.appendChild(el('div', 'hint', t('Тарифы не заданы.')));
   }
   card.appendChild(el('div', 'hint', t('Добавить или обновить тариф:')));
-  const pair = el('div', 'pair');
+  const pair = el('div', 'admin-form-grid');
   const months = Object.assign(el('input'), { type: 'number', min: '1', placeholder: t('Месяцев') });
   const price = Object.assign(el('input'), { type: 'number', min: '1', placeholder: t('Цена') });
   pair.appendChild(months);
@@ -1640,7 +1722,7 @@ function renderAdminTariffs(data) {
 }
 
 function renderAdminRequisites(data) {
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('💳 Реквизиты')));
   const text = Object.assign(el('textarea'), { value: data.requisites || '', placeholder: t('Текст реквизитов') });
   card.appendChild(text);
@@ -1654,15 +1736,21 @@ function renderAdminRequisites(data) {
 }
 
 function renderAdminScreenshotToggle(data) {
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('📸 Чек об оплате')));
-  card.appendChild(el('div', 'hint', data.require_screenshot
+  const item = el('div', 'toggle-item');
+  const copy = el('div', 'ti-text');
+  copy.appendChild(el('div', 'ti-label', t('📸 Чек об оплате')));
+  copy.appendChild(el('div', 'ti-desc', data.require_screenshot
     ? t('Включено: перед отправкой заявки пользователь обязан прикрепить чек (фото, скриншот или PDF-файл), админы получают заявку вместе с чеком в Telegram.')
     : t('Выключено: заявки на оплату отправляются без чека.')));
-  const toggle = el('button', data.require_screenshot ? 'secondary' : null,
-    data.require_screenshot ? t('🚫 Выключить требование чека') : t('✅ Включить требование чека'));
+  item.appendChild(copy);
+  const toggle = el('button', 'switch' + (data.require_screenshot ? ' on' : ''));
+  toggle.appendChild(el('span', 'knob'));
+  toggle.setAttribute('aria-label', data.require_screenshot ? t('🚫 Выключить требование чека') : t('✅ Включить требование чека'));
   toggle.onclick = () => adminAction('/api/admin/screenshot-toggle', { enabled: !data.require_screenshot });
-  card.appendChild(toggle);
+  item.appendChild(toggle);
+  card.appendChild(item);
   return card;
 }
 
@@ -1671,15 +1759,22 @@ function renderAdminPaymentProvider(data) {
   // Only meaningful when an automatic provider exists beyond the default P2P.
   if (!available.some(p => p !== 'p2p')) return null;
   const enabled = data.enabled_providers || [];
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('💳 Способы оплаты')));
   card.appendChild(el('div', 'hint',
     t('Включите один или несколько способов. Если включено больше одного — пользователь выбирает при оплате.')));
   available.forEach(id => {
     const on = enabled.includes(id);
-    const btn = el('button', on ? null : 'secondary', (on ? '✅ ' : '⬜ ') + providerAdminLabel(id));
+    const item = el('div', 'toggle-item');
+    const copy = el('div', 'ti-text');
+    copy.appendChild(el('div', 'ti-label', providerAdminLabel(id)));
+    item.appendChild(copy);
+    const btn = el('button', 'switch' + (on ? ' on' : ''));
+    btn.appendChild(el('span', 'knob'));
+    btn.setAttribute('aria-label', providerAdminLabel(id));
     btn.onclick = () => adminAction('/api/admin/payment-provider', { provider: id, enabled: !on });
-    card.appendChild(btn);
+    item.appendChild(btn);
+    card.appendChild(item);
   });
   return card;
 }
@@ -1694,7 +1789,7 @@ function providerAdminLabel(id) {
 }
 
 function renderAdminBroadcast() {
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('📢 Рассылка')));
   card.appendChild(el('div', 'hint', t('Сообщение получат все пользователи с привязанным Telegram.')));
   const text = Object.assign(el('textarea'), { placeholder: t('Текст сообщения') });
@@ -1721,7 +1816,7 @@ function renderAdminBroadcast() {
 }
 
 function renderAdminGifts(data) {
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('🎁 Активные подарочные коды')));
   const buyers = data.gift_buyers || [];
   if (!buyers.length) {
@@ -1770,29 +1865,29 @@ function renderAdminGifts(data) {
 }
 
 function renderAdminRequests(data) {
-  const card = el('div', 'card');
-  card.appendChild(el('h2', null, t('💰 Заявки на оплату')));
+  const card = el('div');
   if (!(data.requests || []).length) {
-    card.appendChild(el('div', 'hint', t('Ожидающих заявок нет.')));
+    card.appendChild(el('div', 'admin-empty', t('Ожидающих заявок нет.')));
     return card;
   }
   data.requests.forEach(r => {
-    const item = el('div', 'item');
-    const info = el('div', 'info');
+    const item = el('div', 'admin-card admin-request');
+    const info = el('div', 'admin-request-copy');
     let line = `${r.username} — ${t('{months} мес.', { months: r.months })}`;
     if (r.price_label) line += ` (${r.price_label})`;
-    if (r.has_screenshot) line += ' 📸';
-    info.appendChild(el('div', null, line));
+    info.appendChild(el('div', 'admin-card-title', line));
     let st = t('заявка от {date}', { date: r.created_at });
     if (r.expire_at) st += t(', подписка до {date}', { date: r.expire_at });
-    if (r.has_screenshot) st += t(' · чек отправлен в чат админам');
-    info.appendChild(el('div', 'st', st));
+    info.appendChild(el('div', 'admin-card-meta', st));
+    if (r.has_screenshot) info.appendChild(el('span', 'admin-status', '📸 ' + t('Чек')));
     item.appendChild(info);
-    const btns = el('div', 'btns');
-    const ok = el('button', null, '✅');
+    const btns = el('div', 'admin-request-actions');
+    const ok = el('button', 'admin-icon-btn', '✓');
+    ok.setAttribute('aria-label', t('Подтвердить'));
     ok.onclick = () => adminAction('/api/admin/request/confirm', { id: r.id },
       t('Подтвердить оплату «{username}» на {months} мес.?', { username: r.username, months: r.months }));
-    const rej = el('button', 'secondary', '❌');
+    const rej = el('button', 'admin-icon-btn reject', '×');
+    rej.setAttribute('aria-label', t('Отклонить'));
     rej.onclick = () => adminAction('/api/admin/request/reject', { id: r.id },
       t('Отклонить заявку «{username}»?', { username: r.username }));
     btns.appendChild(ok);
@@ -1804,25 +1899,26 @@ function renderAdminRequests(data) {
 }
 
 function renderAdminGiftRequests(data) {
-  const card = el('div', 'card');
-  card.appendChild(el('h2', null, t('🎁 Заявки на подарки')));
+  const card = el('div');
   if (!(data.gift_requests || []).length) {
-    card.appendChild(el('div', 'hint', t('Ожидающих заявок нет.')));
+    card.appendChild(el('div', 'admin-empty', t('Ожидающих заявок нет.')));
     return card;
   }
   data.gift_requests.forEach(r => {
-    const item = el('div', 'item');
-    const info = el('div', 'info');
+    const item = el('div', 'admin-card admin-request');
+    const info = el('div', 'admin-request-copy');
     let line = `${r.buyer} — ${t('{months} мес.', { months: r.months })}`;
     if (r.price_label) line += ` (${r.price_label})`;
-    info.appendChild(el('div', null, line));
-    info.appendChild(el('div', 'st', t('код {code}, заявка от {date}', { code: r.code, date: r.created_at })));
+    info.appendChild(el('div', 'admin-card-title', line));
+    info.appendChild(el('div', 'admin-card-meta', t('код {code}, заявка от {date}', { code: r.code, date: r.created_at })));
     item.appendChild(info);
-    const btns = el('div', 'btns');
-    const ok = el('button', null, '✅');
+    const btns = el('div', 'admin-request-actions');
+    const ok = el('button', 'admin-icon-btn', '✓');
+    ok.setAttribute('aria-label', t('Подтвердить'));
     ok.onclick = () => adminAction('/api/admin/gift-request/confirm', { id: r.id },
       t('Подтвердить оплату подарка от «{buyer}» на {months} мес.?', { buyer: r.buyer, months: r.months }));
-    const rej = el('button', 'secondary', '❌');
+    const rej = el('button', 'admin-icon-btn reject', '×');
+    rej.setAttribute('aria-label', t('Отклонить'));
     rej.onclick = () => adminAction('/api/admin/gift-request/reject', { id: r.id },
       t('Отклонить заявку на подарок от «{buyer}»?', { buyer: r.buyer }));
     btns.appendChild(ok);
@@ -1834,25 +1930,26 @@ function renderAdminGiftRequests(data) {
 }
 
 function renderAdminInviteRequests(data) {
-  const card = el('div', 'card');
-  card.appendChild(el('h2', null, t('👤 Заявки на приглашения')));
+  const card = el('div');
   if (!(data.invite_requests || []).length) {
-    card.appendChild(el('div', 'hint', t('Ожидающих заявок нет.')));
+    card.appendChild(el('div', 'admin-empty', t('Ожидающих заявок нет.')));
     return card;
   }
   data.invite_requests.forEach(r => {
-    const item = el('div', 'item');
-    const info = el('div', 'info');
+    const item = el('div', 'admin-card admin-request');
+    const info = el('div', 'admin-request-copy');
     let line = `${r.new_username} — ${t('{months} мес.', { months: r.months })}`;
     if (r.price_label) line += ` (${r.price_label})`;
-    info.appendChild(el('div', null, line));
-    info.appendChild(el('div', 'st', t('от {inviter}, заявка от {date}', { inviter: r.inviter, date: r.created_at })));
+    info.appendChild(el('div', 'admin-card-title', line));
+    info.appendChild(el('div', 'admin-card-meta', t('от {inviter}, заявка от {date}', { inviter: r.inviter, date: r.created_at })));
     item.appendChild(info);
-    const btns = el('div', 'btns');
-    const ok = el('button', null, '✅');
+    const btns = el('div', 'admin-request-actions');
+    const ok = el('button', 'admin-icon-btn', '✓');
+    ok.setAttribute('aria-label', t('Подтвердить'));
     ok.onclick = () => adminAction('/api/admin/invite-request/confirm', { id: r.id },
       t('Создать пользователя «{username}» по заявке от «{inviter}»?', { username: r.new_username, inviter: r.inviter }));
-    const rej = el('button', 'secondary', '❌');
+    const rej = el('button', 'admin-icon-btn reject', '×');
+    rej.setAttribute('aria-label', t('Отклонить'));
     rej.onclick = () => adminAction('/api/admin/invite-request/reject', { id: r.id },
       t('Отклонить заявку на пользователя «{username}»?', { username: r.new_username }));
     btns.appendChild(ok);
@@ -1864,7 +1961,7 @@ function renderAdminInviteRequests(data) {
 }
 
 function renderAdminSquad(data) {
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('🛡 Сквад по умолчанию')));
   card.appendChild(el('div', 'hint', data.default_squad_name
     ? t('Новые пользователи добавляются в сквад «{name}».', { name: data.default_squad_name })
@@ -1907,7 +2004,7 @@ function renderAdminSquad(data) {
 }
 
 function renderAdminTrafficReset(data) {
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('🔄 Сброс трафика (новые)')));
   card.appendChild(el('div', 'hint', t('Стратегия сброса трафика, применяемая к вновь создаваемым пользователям.')));
   const strategies = ['NO_RESET', 'DAY', 'WEEK', 'MONTH'];
@@ -1925,7 +2022,7 @@ function renderAdminTrafficReset(data) {
 }
 
 function renderAdminTrial(data) {
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('🎁 Пробный период')));
   card.appendChild(el('div', 'hint', data.trial_enabled
     ? t('Включён: новые пользователи могут активировать пробный профиль.')
@@ -1938,14 +2035,19 @@ function renderAdminTrial(data) {
   const save = el('button', null, t('💾 Сохранить длительность'));
   save.onclick = () => adminAction('/api/admin/trial', { enabled: data.trial_enabled, days: parseInt(days.value, 10) || 0 });
   card.appendChild(save);
-  const toggle = el('button', data.trial_enabled ? 'secondary' : null, data.trial_enabled ? t('🚫 Выключить') : t('✅ Включить'));
+  const toggle = el('button', 'switch' + (data.trial_enabled ? ' on' : ''));
+  toggle.appendChild(el('span', 'knob'));
+  toggle.setAttribute('aria-label', data.trial_enabled ? t('🚫 Выключить') : t('✅ Включить'));
   toggle.onclick = () => adminAction('/api/admin/trial', { enabled: !data.trial_enabled, days: data.trial_days || 1 });
-  card.appendChild(toggle);
+  const toggleRow = el('div', 'toggle-item');
+  toggleRow.appendChild(el('div', 'ti-label', t('🎁 Пробный период')));
+  toggleRow.appendChild(toggle);
+  card.appendChild(toggleRow);
   return card;
 }
 
 function renderAdminReferral(data) {
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('🎉 Реферальная программа')));
   card.appendChild(el('div', 'hint', data.referral_enabled
     ? t('Включена: одобрённое приглашение начисляет бонусные дни.')
@@ -1963,13 +2065,18 @@ function renderAdminReferral(data) {
     invitee_days: parseInt(invitee.value, 10) || 0,
   });
   card.appendChild(save);
-  const toggle = el('button', data.referral_enabled ? 'secondary' : null, data.referral_enabled ? t('🚫 Выключить') : t('✅ Включить'));
+  const toggle = el('button', 'switch' + (data.referral_enabled ? ' on' : ''));
+  toggle.appendChild(el('span', 'knob'));
+  toggle.setAttribute('aria-label', data.referral_enabled ? t('🚫 Выключить') : t('✅ Включить'));
   toggle.onclick = () => adminAction('/api/admin/referral', {
     enabled: !data.referral_enabled,
     inviter_days: data.referral_inviter_days || 0,
     invitee_days: data.referral_invitee_days || 0,
   });
-  card.appendChild(toggle);
+  const toggleRow = el('div', 'toggle-item');
+  toggleRow.appendChild(el('div', 'ti-label', t('🎉 Реферальная программа')));
+  toggleRow.appendChild(toggle);
+  card.appendChild(toggleRow);
   return card;
 }
 
@@ -1983,42 +2090,37 @@ async function showUserAdmin() {
   currentRender = showUserAdmin;
 
   appEl.textContent = '';
-  appEl.appendChild(backBar(t('👤 Управление пользователями'), renderAdminHome));
+  appEl.appendChild(adminPageTop(t('Управление пользователями')));
 
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   const search = Object.assign(el('input'), { placeholder: t('Поиск по имени…') });
   card.appendChild(search);
-
-  const table = el('table', 'utable');
-  const thead = el('thead');
-  const htr = el('tr');
-  [t('Имя'), t('Статус'), t('Подписка до')].forEach(h => htr.appendChild(el('th', null, h)));
-  thead.appendChild(htr);
-  table.appendChild(thead);
-  const tbody = el('tbody');
-  table.appendChild(tbody);
-  card.appendChild(table);
+  const list = el('div');
+  card.appendChild(list);
   appEl.appendChild(card);
 
   const renderRows = () => {
     const q = search.value.trim().toLowerCase();
     const matched = q ? users.filter(u => (u.username || '').toLowerCase().includes(q)) : users;
-    tbody.textContent = '';
+    list.textContent = '';
     if (!matched.length) {
-      const tr = el('tr');
-      const td = el('td', null, t('Пользователи не найдены.'));
-      td.colSpan = 3;
-      tr.appendChild(td);
-      tbody.appendChild(tr);
+      list.appendChild(el('div', 'admin-empty', t('Пользователи не найдены.')));
       return;
     }
     matched.forEach(u => {
-      const tr = el('tr');
-      tr.appendChild(el('td', null, u.username));
-      tr.appendChild(el('td', null, u.status));
-      tr.appendChild(el('td', null, u.expire_at));
-      tr.onclick = () => openUser(u.username);
-      tbody.appendChild(tr);
+      const button = el('button', 'admin-list-row');
+      button.style.width = '100%';
+      button.style.margin = '0';
+      button.style.background = 'transparent';
+      button.style.textAlign = 'left';
+      const copy = el('div', 'admin-list-copy');
+      copy.appendChild(el('div', 'admin-list-title', u.username));
+      copy.appendChild(el('div', 'admin-list-meta', `${t('Подписка до')} ${u.expire_at}`));
+      button.appendChild(copy);
+      button.appendChild(el('span', 'admin-status' + (u.status === 'ACTIVE' ? '' : ' inactive'), u.status));
+      button.appendChild(el('span', 'admin-chevron', '›'));
+      button.onclick = () => openUser(u.username);
+      list.appendChild(button);
     });
   };
   search.oninput = renderRows;
@@ -2036,9 +2138,9 @@ async function openUser(username) {
   } catch (e) { tg.showAlert(e.message); return; }
   currentRender = () => openUser(username);
   appEl.textContent = '';
-  appEl.appendChild(backBar(t('👤 Управление пользователем'), showUserAdmin));
+  appEl.appendChild(adminPageTop(user.username, showUserAdmin));
 
-  const card = el('div', 'card');
+  const card = el('div', 'admin-card');
   renderUserCard(card, user);
   appEl.appendChild(card);
 
@@ -2065,24 +2167,34 @@ function renderUserCard(container, user) {
   info.appendChild(el('div', 'info', t('Подписка до: ') + user.expire_at));
   container.appendChild(info);
 
-  // Expiry +/- days.
-  const exp = el('div', 'item');
-  [['+30д', 30], ['+90д', 90], ['−30д', -30]].forEach(([label, days]) => {
-    const b = el('button', 'secondary', t(label));
-    b.onclick = () => update({ expire_days: days });
-    exp.appendChild(b);
-  });
+  // Expiry +/- days. Stacked into two rows so the custom-days input stays
+  // readable on slim displays: custom days + apply on top, fixed amounts below.
+  const exp = el('div', 'item exp-days');
+
+  // Row 1: custom days input + apply button.
+  const expCustom = el('div', 'exp-row exp-custom');
   // A text input (not type=number) so negative days work even on Telegram's
   // numeric soft keyboards, which often omit the minus key.
   const expInput = Object.assign(el('input'), { type: 'text', inputMode: 'numeric', placeholder: t('± дней (напр. -15)') });
-  exp.appendChild(expInput);
+  expCustom.appendChild(expInput);
   const expSet = el('button', null, t('Применить дни'));
   expSet.onclick = () => {
     const n = parseInt(expInput.value.trim(), 10);
     if (isNaN(n)) { tg.showAlert(t('Введите число дней (можно отрицательное).')); return; }
     update({ expire_days: n });
   };
-  exp.appendChild(expSet);
+  expCustom.appendChild(expSet);
+  exp.appendChild(expCustom);
+
+  // Row 2: fixed-amount buttons.
+  const expFixed = el('div', 'exp-row exp-fixed');
+  [['+30д', 30], ['+90д', 90], ['−30д', -30]].forEach(([label, days]) => {
+    const b = el('button', 'secondary', t(label));
+    b.onclick = () => update({ expire_days: days });
+    expFixed.appendChild(b);
+  });
+  exp.appendChild(expFixed);
+
   container.appendChild(exp);
 
   // HWID limit.
@@ -2151,45 +2263,68 @@ function adminSubTop() {
   return backBar('', renderAdminHome);
 }
 
-// renderAdminHome is the admin hub: a request menu (each item opens its own
-// sub-view), the inline tariffs/payment editors, and a management menu.
+function adminPageTop(title, onBack) {
+  const wrap = backBar('', onBack || renderAdminHome);
+  wrap.className = 'admin-heading';
+  wrap.appendChild(el('div', 'admin-page-title', title));
+  return wrap;
+}
+
+function adminNavSection(title, items) {
+  const section = el('section', 'admin-section');
+  section.appendChild(el('div', 'admin-section-label', title));
+  const list = el('div', 'admin-nav');
+  items.forEach(item => {
+    const button = el('button', 'admin-nav-row');
+    button.appendChild(el('span', 'admin-nav-icon', item.icon));
+    button.appendChild(el('span', 'admin-nav-label', item.label));
+    if (item.count) button.appendChild(el('span', 'admin-count', String(item.count)));
+    button.appendChild(el('span', 'admin-chevron', '›'));
+    button.onclick = item.action;
+    list.appendChild(button);
+  });
+  section.appendChild(list);
+  return section;
+}
+
+// renderAdminHome is the compact, grouped admin navigation hub.
 function renderAdminHome() {
   currentRender = renderAdminHome;
   stopSupportPoll();
   const data = adminData || {};
   appEl.textContent = '';
 
-  appEl.appendChild(backBar(t('⚙️ Админ-панель'), showCabinet));
+  const shell = el('div', 'admin-shell');
+  shell.appendChild(adminPageTop(t('⚙️ Админ-панель'), showCabinet));
+  shell.appendChild(adminNavSection(t('Заявки'), [
+    { icon: '₽', label: t('Заявки на оплату'), count: (data.requests || []).length, action: showAdminPaymentRequests },
+    { icon: '◇', label: t('Заявки на подарки'), count: (data.gift_requests || []).length, action: showAdminGiftRequests },
+    { icon: '+', label: t('Заявки на приглашения'), count: (data.invite_requests || []).length, action: showAdminInviteRequests },
+  ]));
+  shell.appendChild(adminNavSection(t('Тарифы и оплата'), [
+    { icon: '₽', label: t('Тарифы и реквизиты'), action: showAdminBilling },
+  ]));
+  shell.appendChild(adminNavSection(t('Управление'), [
+    { icon: '↗', label: t('Статистика'), action: showAdminStats },
+    { icon: '≡', label: t('Настройки'), action: showAdminSettings },
+    { icon: '◎', label: t('Управление пользователями'), action: showUserAdmin },
+    { icon: '◇', label: t('Активные подарочные коды'), action: showAdminGiftCodes },
+    { icon: '◉', label: t('Рассылка'), action: showAdminBroadcast },
+    { icon: '□', label: t('Чат поддержки'), action: showAdminSupport },
+  ]));
+  appEl.appendChild(shell);
 
-  // Request menu — buttons carry the pending count when there are any.
-  const count = (arr) => (arr && arr.length) ? ` (${arr.length})` : '';
-  appEl.appendChild(menuCard(
-    t('📨 Меню заявок'),
-    t('Заявки на оплату, подарки и приглашения.'),
-    [
-      [t('💰 Заявки на оплату') + count(data.requests), showAdminPaymentRequests],
-      [t('🎁 Заявки на подарки') + count(data.gift_requests), showAdminGiftRequests],
-      [t('👤 Заявки на приглашения') + count(data.invite_requests), showAdminInviteRequests],
-    ]));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
 
-  // Tariffs and payment — editable inline.
-  appEl.appendChild(el('h2', 'section-title', t('Тарифы и оплата')));
+function showAdminBilling() {
+  currentRender = showAdminBilling;
+  const data = adminData || {};
+  appEl.textContent = '';
+  appEl.appendChild(adminPageTop(t('Тарифы и оплата')));
   appEl.appendChild(renderAdminTariffs(data));
   appEl.appendChild(renderAdminRequisites(data));
-
-  // Management menu.
-  appEl.appendChild(menuCard(
-    t('🛠 Управление'),
-    t('Настройки, пользователи, подарочные коды и рассылка.'),
-    [
-      [t('📊 Статистика'), showAdminStats],
-      [t('⚙️ Настройки'), showAdminSettings],
-      [t('👤 Управление пользователями'), showUserAdmin],
-      [t('🎁 Активные подарочные коды'), showAdminGiftCodes],
-      [t('📢 Рассылка'), showAdminBroadcast],
-      [t('💬 Чат поддержки'), showAdminSupport],
-    ]));
-
   statusEl.hidden = true;
   appEl.hidden = false;
 }
@@ -2205,14 +2340,21 @@ async function showAdminStats() {
   } catch (e) { tg.showAlert(e.message); return; }
 
   const statsCard = (title, rows) => {
-    const card = el('div', 'card');
-    card.appendChild(el('h2', null, title));
-    rows.forEach(([label, value]) => row(card, label, String(value)));
-    return card;
+    const section = el('section', 'admin-section');
+    section.appendChild(el('div', 'admin-section-label', title));
+    const grid = el('div', 'admin-stat-grid');
+    rows.forEach(([label, value]) => {
+      const tile = el('div', 'admin-stat');
+      tile.appendChild(el('div', 'admin-stat-label', label));
+      tile.appendChild(el('div', 'admin-stat-value', String(value)));
+      grid.appendChild(tile);
+    });
+    section.appendChild(grid);
+    return section;
   };
 
   appEl.textContent = '';
-  appEl.appendChild(adminSubTop());
+  appEl.appendChild(adminPageTop(t('Статистика')));
   appEl.appendChild(statsCard(t('Пользователи панели'), [
     [t('Всего'), stats.users_total],
     [t('Активные'), stats.users_active],
@@ -2240,7 +2382,7 @@ async function showAdminStats() {
 function showAdminPaymentRequests() {
   currentRender = showAdminPaymentRequests;
   appEl.textContent = '';
-  appEl.appendChild(adminSubTop());
+  appEl.appendChild(adminPageTop(t('Заявки на оплату')));
   appEl.appendChild(renderAdminRequests(adminData || {}));
   statusEl.hidden = true;
   appEl.hidden = false;
@@ -2249,7 +2391,7 @@ function showAdminPaymentRequests() {
 function showAdminGiftRequests() {
   currentRender = showAdminGiftRequests;
   appEl.textContent = '';
-  appEl.appendChild(adminSubTop());
+  appEl.appendChild(adminPageTop(t('Заявки на подарки')));
   appEl.appendChild(renderAdminGiftRequests(adminData || {}));
   statusEl.hidden = true;
   appEl.hidden = false;
@@ -2258,7 +2400,7 @@ function showAdminGiftRequests() {
 function showAdminInviteRequests() {
   currentRender = showAdminInviteRequests;
   appEl.textContent = '';
-  appEl.appendChild(adminSubTop());
+  appEl.appendChild(adminPageTop(t('Заявки на приглашения')));
   appEl.appendChild(renderAdminInviteRequests(adminData || {}));
   statusEl.hidden = true;
   appEl.hidden = false;
@@ -2268,7 +2410,7 @@ function showAdminSettings() {
   currentRender = showAdminSettings;
   const data = adminData || {};
   appEl.textContent = '';
-  appEl.appendChild(adminSubTop());
+  appEl.appendChild(adminPageTop(t('Настройки')));
   appEl.appendChild(renderAdminScreenshotToggle(data));
   const provider = renderAdminPaymentProvider(data);
   if (provider) appEl.appendChild(provider);
@@ -2283,7 +2425,7 @@ function showAdminSettings() {
 function showAdminGiftCodes() {
   currentRender = showAdminGiftCodes;
   appEl.textContent = '';
-  appEl.appendChild(adminSubTop());
+  appEl.appendChild(adminPageTop(t('Активные подарочные коды')));
   appEl.appendChild(renderAdminGifts(adminData || {}));
   statusEl.hidden = true;
   appEl.hidden = false;
@@ -2292,7 +2434,7 @@ function showAdminGiftCodes() {
 function showAdminBroadcast() {
   currentRender = showAdminBroadcast;
   appEl.textContent = '';
-  appEl.appendChild(adminSubTop());
+  appEl.appendChild(adminPageTop(t('Рассылка')));
   appEl.appendChild(renderAdminBroadcast());
   statusEl.hidden = true;
   appEl.hidden = false;

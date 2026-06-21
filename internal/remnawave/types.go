@@ -25,11 +25,20 @@ type User struct {
 	SubscriptionURL      string          `json:"subscriptionUrl"`
 	HwidDeviceLimit      *int            `json:"hwidDeviceLimit"`
 	TrafficLimitBytes    int64           `json:"trafficLimitBytes"`
-	UsedTrafficBytes     int64           `json:"usedTrafficBytes"`
 	TrafficLimitStrategy string          `json:"trafficLimitStrategy"`
 	ActiveInternalSquads []InternalSquad `json:"activeInternalSquads"`
-	CreatedAt            time.Time       `json:"createdAt"`
-	UpdatedAt            time.Time       `json:"updatedAt"`
+	// UserTraffic carries the nested usage block. The Remnawave user endpoints
+	// return used traffic under the "userTraffic" object, not at the top level.
+	UserTraffic UserTraffic `json:"userTraffic"`
+	CreatedAt   time.Time   `json:"createdAt"`
+	UpdatedAt   time.Time   `json:"updatedAt"`
+}
+
+// UserTraffic is the nested traffic-usage block returned under the "userTraffic"
+// key by the Remnawave user endpoints (by-username / by-telegram-id / etc.).
+type UserTraffic struct {
+	UsedTrafficBytes         int64 `json:"usedTrafficBytes"`
+	LifetimeUsedTrafficBytes int64 `json:"lifetimeUsedTrafficBytes"`
 }
 
 // UserPatch carries the manageable fields for PATCH /api/users. Every field is
