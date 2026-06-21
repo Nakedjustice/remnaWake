@@ -6,142 +6,209 @@
 <title>Личный кабинет</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
+  /* Onest — bundled locally (Telegram Mini Apps can't rely on Google Fonts). */
+  @font-face { font-family:'Onest'; font-style:normal; font-weight:400 800; font-display:swap;
+    src:url('fonts/onest-cyrillic-ext.woff2') format('woff2');
+    unicode-range:U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F; }
+  @font-face { font-family:'Onest'; font-style:normal; font-weight:400 800; font-display:swap;
+    src:url('fonts/onest-cyrillic.woff2') format('woff2');
+    unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
+  @font-face { font-family:'Onest'; font-style:normal; font-weight:400 800; font-display:swap;
+    src:url('fonts/onest-latin-ext.woff2') format('woff2');
+    unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+  @font-face { font-family:'Onest'; font-style:normal; font-weight:400 800; font-display:swap;
+    src:url('fonts/onest-latin.woff2') format('woff2');
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
   :root {
-    --bg: var(--tg-theme-bg-color, #ffffff);
-    --secondary-bg: var(--tg-theme-secondary-bg-color, #f1f1f4);
-    --text: var(--tg-theme-text-color, #000000);
-    --hint: var(--tg-theme-hint-color, #707579);
-    --link: var(--tg-theme-link-color, #2481cc);
-    --button: var(--tg-theme-button-color, #2481cc);
-    --button-text: var(--tg-theme-button-text-color, #ffffff);
+    /* Brand accent + status tones stay constant across themes (per the design). */
+    --accent: #7C5CFF;
+    --accent-soft: rgba(124, 92, 255, 0.15);
+    --accent-bd: rgba(124, 92, 255, 0.45);
+    --accent-text: #ffffff;
+    --tone-active: #34C759;
+    --tone-expiring: #FF9F0A;
+    --tone-expired: #FF453A;
+    /* Surfaces/text adapt to the Telegram theme; design dark values are fallbacks. */
+    --bg: var(--tg-theme-bg-color, #0d0f13);
+    --surface: var(--tg-theme-secondary-bg-color, #15171d);
+    --surface-2: var(--tg-theme-bg-color, #1a1d24);
+    --text: var(--tg-theme-text-color, #f3f4f7);
+    --hint: var(--tg-theme-hint-color, #9b9ba3);
+    --link: var(--tg-theme-link-color, var(--accent));
+    /* Neutral, semi-transparent border/track readable on light *and* dark. */
+    --border: rgba(128, 128, 128, 0.22);
+    --track: rgba(128, 128, 128, 0.28);
+    /* Per-status tone, set on the profile card; defaults to accent. */
+    --tone: var(--accent);
+    --tone-soft: var(--accent-soft);
   }
   * { box-sizing: border-box; }
+  html, body { background: var(--bg); }
   body {
     margin: 0;
-    padding: 12px 12px 24px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--secondary-bg);
+    padding: 14px 14px calc(28px + env(safe-area-inset-bottom));
+    font-family: 'Onest', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     color: var(--text);
+    -webkit-font-smoothing: antialiased;
   }
-  #header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  h1 { font-size: 20px; margin: 8px 4px 16px; }
-  #lang { width: auto; margin: 0; padding: 6px 8px; font-size: 13px; flex-shrink: 0; border-radius: 10px; }
-  .card {
-    background: var(--bg);
-    border-radius: 14px;
-    padding: 14px 16px;
-    margin-bottom: 12px;
+
+  /* ---- Header / top bar ---- */
+  #topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 2px 2px 18px; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hint); }
+  h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; margin: 4px 0 0; }
+  .seg { display: inline-flex; background: var(--track); border-radius: 999px; padding: 3px; gap: 2px; flex-shrink: 0; }
+  .seg-btn {
+    width: auto; margin: 0; border: 0; cursor: pointer;
+    padding: 6px 13px; border-radius: 999px; font-size: 13px; font-weight: 700;
+    background: transparent; color: var(--hint); transition: all .15s; font-family: inherit;
   }
-  .card h2 { font-size: 16px; margin: 0 0 10px; }
-  .row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 15px; }
+  .seg-btn.active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
+
+  /* ---- Cards ---- */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 16px; margin-bottom: 12px; }
+  .card h2 { font-size: 16px; font-weight: 800; margin: 0 0 12px; letter-spacing: -0.01em; }
+  .hint { color: var(--hint); font-size: 13px; line-height: 1.5; margin-top: 8px; }
+  .section-title { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--hint); margin: 18px 6px 8px; }
+
+  .row { display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; font-size: 15px; }
   .row .k { color: var(--hint); flex-shrink: 0; }
-  .row .v { text-align: right; word-break: break-word; }
-  .badge { font-weight: 600; }
-  .sub-link {
-    display: block;
-    font-size: 13px;
-    color: var(--link);
-    word-break: break-all;
-    margin: 6px 0 2px;
-    text-decoration: none;
-  }
+  .row .v { text-align: right; word-break: break-word; font-weight: 600; }
+  .badge { font-weight: 700; }
+
+  /* ---- Buttons ---- */
   button {
-    display: block;
-    width: 100%;
-    border: 0;
-    border-radius: 12px;
-    padding: 12px;
-    margin-top: 10px;
-    font-size: 15px;
-    font-weight: 600;
-    background: var(--button);
-    color: var(--button-text);
-    cursor: pointer;
+    display: block; width: 100%; border: 0; border-radius: 14px;
+    padding: 13px 14px; margin-top: 10px; font-size: 15px; font-weight: 700;
+    background: var(--accent); color: var(--accent-text); cursor: pointer;
+    font-family: inherit; transition: filter .15s, opacity .15s;
   }
-  button.secondary {
-    background: var(--secondary-bg);
-    color: var(--text);
+  button:active { filter: brightness(0.92); }
+  button.secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+  button:disabled { opacity: .55; cursor: default; }
+
+  .btn-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .btn-grid button { flex: 1 1 calc(50% - 4px); width: auto; margin-top: 0; }
+
+  /* ---- Pills (top-of-screen quick actions) ---- */
+  .pill-row { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin-bottom: 14px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px; width: auto; margin: 0;
+    padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
   }
-  button:disabled { opacity: .55; }
+  .pill.accent { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-bd); }
+  .pill svg { width: 15px; height: 15px; }
+
+  /* ---- Profile ring ---- */
+  .profile-head { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 6px 0 4px; }
+  .ring { position: relative; width: 168px; height: 168px; border-radius: 50%;
+    background: conic-gradient(var(--tone) var(--ring-deg, 0deg), var(--track) 0deg); padding: 9px; }
+  .ring .ring-inner { width: 100%; height: 100%; border-radius: 50%; background: var(--surface);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  .ring .days-num { font-size: 40px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+  .ring .days-word { font-size: 12px; font-weight: 600; color: var(--hint); }
+  .ring .expired-mark { font-size: 17px; font-weight: 800; color: var(--tone); }
+  .avatar { width: 64px; height: 64px; border-radius: 50%; background: var(--accent-soft);
+    border: 1.5px solid var(--accent-bd); display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 800; color: var(--accent); position: relative; }
+  .avatar .dot { position: absolute; right: 1px; bottom: 1px; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--tone); border: 2.5px solid var(--surface); }
+  .profile-name { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+  .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
+    background: var(--tone-soft); color: var(--tone); font-size: 12.5px; font-weight: 700; }
+  .status-pill .pdot { width: 7px; height: 7px; border-radius: 50%; background: var(--tone); }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+  .stat { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 11px 13px; }
+  .stat .lbl { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--hint); }
+  .stat .val { font-size: 16px; font-weight: 800; margin-top: 3px; word-break: break-word; }
+  .stat.wide { grid-column: 1 / -1; }
+
+  .sub-link {
+    display: block; font-size: 13px; color: var(--link); word-break: break-all;
+    margin: 14px 0 2px; text-decoration: none; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 12px; padding: 11px 12px;
+  }
+
+  /* ---- Tariff tiles ---- */
   .tariffs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
   .tariffs button {
-    flex: 1 1 calc(50% - 4px);
-    width: auto;
-    margin-top: 0;
-    padding: 10px 6px;
+    flex: 1 1 calc(50% - 4px); width: auto; margin-top: 0; padding: 14px 10px;
+    background: var(--surface-2); color: var(--text); border: 1.5px solid var(--border);
+    border-radius: 16px; text-align: left; font-weight: 700;
   }
-  .tariffs button.selected { outline: 3px solid var(--link); }
-  .btn-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-  .btn-grid button { flex: 1 1 calc(50% - 4px); width: auto; margin-top: 0; padding: 14px 6px; }
-  .section-title { font-size: 16px; margin: 16px 4px 8px; }
-  .hint { color: var(--hint); font-size: 13px; margin-top: 8px; }
-  pre.requisites {
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-family: inherit;
-    font-size: 14px;
-    background: var(--secondary-bg);
-    border-radius: 10px;
-    padding: 10px;
-    margin: 8px 0 0;
-  }
+  .tariffs button.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+
+  /* ---- Toggle switches ---- */
+  .toggle-item { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 12px 0; border-top: 1px solid var(--border); }
+  .toggle-item:first-of-type { border-top: 0; }
+  .toggle-item .ti-text { min-width: 0; }
+  .toggle-item .ti-label { font-size: 15px; font-weight: 700; }
+  .toggle-item .ti-desc { font-size: 12.5px; color: var(--hint); margin-top: 3px; line-height: 1.45; }
+  .switch { width: 46px; height: 28px; border-radius: 999px; padding: 3px; display: flex; align-items: center;
+    cursor: pointer; transition: all .2s; flex: none; justify-content: flex-start; background: var(--track); border: 0; margin: 0; }
+  .switch.on { justify-content: flex-end; background: var(--accent); }
+  .switch .knob { width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
+
+  /* ---- Back bar ---- */
+  .backbar { display: flex; align-items: center; gap: 6px; margin: 0 0 14px; }
+  .back-chip { display: inline-flex; align-items: center; gap: 4px; width: auto; margin: 0; padding: 8px 14px 8px 11px;
+    border-radius: 999px; font-size: 14px; font-weight: 700; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+  .back-chip svg { width: 16px; height: 16px; }
+
+  /* ---- Requisites ---- */
+  pre.requisites { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 14px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin: 8px 0 0; line-height: 1.5; }
+
+  /* ---- Support chat ---- */
   .chat { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; padding: 4px 2px; }
-  .bubble { max-width: 82%; padding: 8px 11px; border-radius: 14px; font-size: 14px; word-break: break-word; white-space: pre-wrap; }
-  .bubble.from-user { align-self: flex-end; background: var(--link); color: #fff; }
-  .bubble.from-admin { align-self: flex-start; background: var(--secondary-bg); color: var(--text); }
+  .bubble { max-width: 82%; padding: 9px 12px; border-radius: 16px; font-size: 14px; word-break: break-word; white-space: pre-wrap; line-height: 1.45; }
+  .bubble.from-user { align-self: flex-end; background: var(--accent); color: var(--accent-text); }
+  .bubble.from-admin { align-self: flex-start; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
   .bubble .meta { display: block; font-size: 11px; opacity: .7; margin-top: 4px; }
   .conv { width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .conv .badge { background: var(--link); color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
-  #status { text-align: center; color: var(--hint); padding: 32px 8px; font-size: 15px; }
+  .conv .badge { background: var(--accent); color: var(--accent-text); border-radius: 999px; padding: 1px 9px; font-size: 12px; }
+
+  #status { text-align: center; color: var(--hint); padding: 40px 8px; font-size: 15px; }
+
   input, textarea, select {
-    width: 100%;
-    border: 1px solid var(--secondary-bg);
-    border-radius: 10px;
-    padding: 10px;
-    margin-top: 8px;
-    font-size: 15px;
-    font-family: inherit;
-    background: var(--secondary-bg);
-    color: var(--text);
+    width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+    margin-top: 8px; font-size: 15px; font-family: inherit; background: var(--surface-2); color: var(--text);
   }
-  textarea { min-height: 90px; resize: vertical; }
-  .item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    border-top: 1px solid var(--secondary-bg);
-    padding: 8px 0;
-    font-size: 14px;
-  }
+  textarea { min-height: 96px; resize: vertical; }
+
+  .item { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    border-top: 1px solid var(--border); padding: 10px 0; font-size: 14px; }
   .item:first-of-type { border-top: 0; }
   .item .info { word-break: break-word; }
   .item .st { color: var(--hint); font-size: 13px; }
-  .item button { width: auto; margin: 0; padding: 7px 12px; font-size: 13px; flex-shrink: 0; }
+  .item button { width: auto; margin: 0; padding: 8px 13px; font-size: 13px; flex-shrink: 0; }
   .item .btns { display: flex; gap: 6px; flex-shrink: 0; }
   .utable { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  .utable th, .utable td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--secondary-bg); font-size: 14px; }
-  .utable th { color: var(--hint); font-weight: 600; }
+  .utable th, .utable td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .utable th { color: var(--hint); font-weight: 700; }
   .utable tbody tr { cursor: pointer; }
   .pair { display: flex; gap: 8px; }
-  .gift { border-top: 1px solid var(--secondary-bg); padding: 8px 0; font-size: 14px; }
+  .gift { border-top: 1px solid var(--border); padding: 10px 0; font-size: 14px; }
   .gift:first-of-type { border-top: 0; }
   .gift .code { font-family: ui-monospace, monospace; }
   .gift .st { color: var(--hint); font-size: 13px; }
-  .gift-buyer { border-top: 1px solid var(--secondary-bg); padding: 4px 0; }
-  .gift-buyer > summary { cursor: pointer; padding: 8px 0; font-weight: 500; }
-  details { border-top: 1px solid var(--secondary-bg); }
+  .gift-buyer { border-top: 1px solid var(--border); padding: 4px 0; }
+  .gift-buyer > summary { cursor: pointer; padding: 10px 0; font-weight: 700; }
+  details { border-top: 1px solid var(--border); }
   details:first-of-type { border-top: 0; }
-  summary { cursor: pointer; padding: 8px 0; font-size: 15px; font-weight: 600; }
+  summary { cursor: pointer; padding: 10px 0; font-size: 15px; font-weight: 700; }
 </style>
 </head>
 <body>
-<div id="header">
-  <h1 id="title">👤 Личный кабинет</h1>
-  <select id="lang" aria-label="Language">
-    <option value="ru">Русский</option>
-    <option value="en">English</option>
-  </select>
+<div id="topbar">
+  <div class="brand">
+    <div class="eyebrow">Telegram Mini App · Remnawave</div>
+    <h1 id="title">Мой профиль</h1>
+  </div>
+  <div id="lang-seg" class="seg" role="tablist" aria-label="Language"></div>
 </div>
 <div id="status">Загрузка…</div>
 <div id="app" hidden></div>
@@ -150,11 +217,12 @@
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
+try { tg.setHeaderColor && tg.setHeaderColor('secondary_bg'); } catch (e) {}
 
 const statusEl = document.getElementById('status');
 const appEl = document.getElementById('app');
 const titleEl = document.getElementById('title');
-const langSel = document.getElementById('lang');
+const langSegEl = document.getElementById('lang-seg');
 
 // --- Client-side i18n. Mirrors the gettext-style server package: the Russian
 // source string doubles as the lookup key, EN holds the English translation,
@@ -164,13 +232,16 @@ const langSel = document.getElementById('lang');
 const LANG_KEY = 'remnawake_lang';
 const EN = {
   'Личный кабинет': 'My account',
-  '👤 Личный кабинет': '👤 My account',
+  'Мой профиль': 'My Profile',
   'Загрузка…': 'Loading…',
   'Откройте это приложение из Telegram.': 'Open this app from Telegram.',
   'Ошибка {n}': 'Error {n}',
   'Статус': 'Status',
   'Действует до': 'Valid until',
   'осталось {n} {word}': '{n} {word} left',
+  'Устройства': 'Devices',
+  'Трафик': 'Traffic',
+  'Подписка истекла': 'Subscription expired',
   // Profile statuses (mirror the server's subStatusLabel).
   '✅ Активна': '✅ Active',
   '⛔ Истекла': '⛔ Expired',
@@ -183,12 +254,16 @@ const EN = {
   '❌ Отклонён': '❌ Rejected',
   '🚫 Отозван': '🚫 Revoked',
   '📋 Скопировать ссылку': '📋 Copy link',
+  'Скопировать ссылку на подписку': 'Copy subscription link',
   '✅ Скопировано': '✅ Copied',
+  'Скопировано!': 'Copied!',
   'Не удалось скопировать, выделите ссылку вручную.': 'Could not copy, please select the link manually.',
   'Продление — выберите период:': 'Renewal — choose a period:',
+  'Выберите период подписки': 'Select a subscription period',
   '{months} мес.': '{months} mo.',
   '{months} мес. — {price}': '{months} mo. — {price}',
   '💳 Оплатить / продлить': '💳 Pay / renew',
+  'Оплатить и продлить': 'Pay & renew',
   'Отправка…': 'Sending…',
   '📸 Прикрепите чек': '📸 Attach receipt',
   'Фото JPEG/PNG до 10 МБ; PDF, WebP или HEIC до 50 МБ.': 'JPEG/PNG up to 10 MB; PDF, WebP or HEIC up to 50 MB.',
@@ -232,6 +307,8 @@ const EN = {
   '⚙️ Администрирование': '⚙️ Administration',
   'Тарифы, реквизиты, подарочные коды и заявки на оплату.': 'Tariffs, payment details, gift codes and payment requests.',
   '⚙️ Открыть админ-панель': '⚙️ Open admin menu',
+  'Админ': 'Admin',
+  'Поддержка': 'Support',
   '📊 Статистика': '📊 Statistics',
   'Пользователи панели': 'Panel users',
   'Активные': 'Active',
@@ -252,6 +329,10 @@ const EN = {
   '📡 Открыть подписку': '📡 Open subscription',
   '🎟 Приглашения': '🎟 Invitation',
   'Подарите подписку или пригласите пользователя.': 'Gift a subscription or invite a user.',
+  'Продлить': 'Renew',
+  'Подарок': 'Gift',
+  'Друзья': 'Invite',
+  'Настройки': 'Settings',
   '🎁 Подарить': '🎁 Gift sub',
   '👥 Пригласить': '👥 Invite user',
   '👥 Мои приглашения': '👥 My invites',
@@ -353,7 +434,6 @@ const EN = {
   'Открыть': 'Open',
   'Поиск по имени…': 'Search by name…',
   'Имя': 'Name',
-  'Статус': 'Status',
   'Подписка до': 'Subscription until',
   'Пользователи не найдены.': 'No users found.',
   '← Назад': '← Back',
@@ -377,6 +457,10 @@ const EN = {
   // Notification preferences (user cabinet)
   '🔔 Уведомления': '🔔 Notifications',
   'Управляйте напоминаниями о подписке.': 'Manage your subscription reminders.',
+  'Напоминания об окончании': 'Expiry reminders',
+  'Предупреждает за 7, 3 и 1 день до окончания подписки.': 'Warns you 7, 3 and 1 days before your subscription ends.',
+  'Напоминания после окончания': 'Win-back reminders',
+  'Напомнит вернуться после окончания подписки.': 'Reminds you to come back after it has expired.',
   '🔔 Напоминания об окончании: вкл': '🔔 Expiry reminders: on',
   '🔕 Напоминания об окончании: выкл': '🔕 Expiry reminders: off',
   '🔔 Напоминания после окончания: вкл': '🔔 Win-back reminders: on',
@@ -414,7 +498,6 @@ const EN = {
   'Завершить чат с поддержкой? История будет удалена.': 'End the support chat? The history will be deleted.',
   'Сообщение не может быть пустым.': 'The message cannot be empty.',
   'Вы': 'You',
-  'Поддержка': 'Support',
   '💬 Чат поддержки': '💬 Support chat',
   'Открытые обращения пользователей.': 'Open user conversations.',
   'Нет открытых обращений.': 'No open conversations.',
@@ -448,24 +531,52 @@ function t(key, params) {
 function applyStaticText() {
   document.documentElement.lang = LANG;
   document.title = t('Личный кабинет');
-  titleEl.textContent = t('👤 Личный кабинет');
+  titleEl.textContent = t('Мой профиль');
 }
 
 // currentRender re-runs the active view after a language switch.
 let currentRender = showCabinet;
-langSel.value = LANG;
-langSel.onchange = () => {
-  LANG = langSel.value === 'en' ? 'en' : 'ru';
-  localStorage.setItem(LANG_KEY, LANG);
-  applyStaticText();
-  currentRender();
-};
+
+// renderLangSeg builds the EN/RU segmented control; switching re-runs the view.
+function renderLangSeg() {
+  langSegEl.textContent = '';
+  [['en', 'EN'], ['ru', 'RU']].forEach(([code, label]) => {
+    const b = el('button', 'seg-btn' + (LANG === code ? ' active' : ''), label);
+    b.onclick = () => {
+      if (LANG === code) return;
+      LANG = code;
+      localStorage.setItem(LANG_KEY, LANG);
+      applyStaticText();
+      renderLangSeg();
+      currentRender();
+    };
+    langSegEl.appendChild(b);
+  });
+}
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   if (text !== undefined) e.textContent = text;
   return e;
+}
+
+// svg builds an inline icon from a path string (stroke-based, currentColor).
+function svg(paths) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const s = document.createElementNS(ns, 'svg');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.setAttribute('fill', 'none');
+  s.setAttribute('stroke', 'currentColor');
+  s.setAttribute('stroke-width', '2');
+  s.setAttribute('stroke-linecap', 'round');
+  s.setAttribute('stroke-linejoin', 'round');
+  (Array.isArray(paths) ? paths : [paths]).forEach(d => {
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', d);
+    s.appendChild(p);
+  });
+  return s;
 }
 
 function row(parent, k, v) {
@@ -524,48 +635,125 @@ function giftStatusLabel(g) {
   return g.status;
 }
 
+// toneFor picks the status colour: green for a healthy active subscription,
+// amber when it is active but expiring within 7 days, red otherwise.
+function toneFor(p) {
+  if (p.status === 'ACTIVE') {
+    if (p.days_left > 0 && p.days_left <= 7) return 'var(--tone-expiring)';
+    if (p.status === 'ACTIVE' && (!p.expire_at || p.days_left > 0)) return 'var(--tone-active)';
+  }
+  if (p.status === 'LIMITED') return 'var(--tone-expiring)';
+  return 'var(--tone-expired)';
+}
+
+// initialsOf derives up to two uppercase letters/digits for the avatar.
+function initialsOf(name) {
+  const cleaned = (name || '').replace(/[^\p{L}\p{N}]/gu, '');
+  return (cleaned.slice(0, 2) || '?').toUpperCase();
+}
+
+// shortUUID trims a UUID to the design's `a8f3…e21b` form.
+function shortUUID(u) {
+  if (!u) return '—';
+  const c = u.replace(/-/g, '');
+  return c.length > 12 ? c.slice(0, 4) + '…' + c.slice(-4) : u;
+}
+
+// renderProfile builds the ring-style profile card: avatar, name, status pill,
+// a days-left ring, a stat grid (UUID / devices / traffic) and a copy-link
+// button, followed by the inline renewal tiles.
 function renderProfile(p, data) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, '📡 ' + p.username));
-  const st = row(card, t('Статус'), statusLabel(p.status));
-  st.querySelector('.v').classList.add('badge');
-  if (p.expire_at) {
-    let v = p.expire_at;
-    if (p.days_left > 0) v += ` (${t('осталось {n} {word}', { n: p.days_left, word: daysWord(p.days_left) })})`;
-    row(card, t('Действует до'), v);
+  const tone = toneFor(p);
+  card.style.setProperty('--tone', tone);
+  card.style.setProperty('--tone-soft', 'color-mix(in srgb, ' + tone + ' 16%, transparent)');
+
+  const head = el('div', 'profile-head');
+  const avatar = el('div', 'avatar', initialsOf(p.username));
+  avatar.appendChild(el('span', 'dot'));
+  head.appendChild(avatar);
+  head.appendChild(el('div', 'profile-name', p.username));
+  const pill = el('span', 'status-pill');
+  pill.appendChild(el('span', 'pdot'));
+  pill.appendChild(el('span', null, statusLabel(p.status)));
+  head.appendChild(pill);
+
+  // Days ring — fraction of a 90-day window, empty when expired.
+  const expired = !(p.days_left > 0);
+  const deg = expired ? 0 : Math.min(p.days_left, 90) / 90 * 360;
+  const ring = el('div', 'ring');
+  ring.style.setProperty('--ring-deg', deg.toFixed(0) + 'deg');
+  const inner = el('div', 'ring-inner');
+  if (expired) {
+    inner.appendChild(el('div', 'expired-mark', '✕'));
+    inner.appendChild(el('div', 'days-word', t('Подписка истекла')));
+  } else {
+    inner.appendChild(el('div', 'days-num', String(p.days_left)));
+    inner.appendChild(el('div', 'days-word', daysWord(p.days_left)));
   }
-  if (p.uuid) row(card, t('UUID'), p.uuid);
-  row(card, t('Лимит устройств'), p.hwid_limit > 0 ? String(p.hwid_limit) : '∞');
-  row(card, t('Использовано трафика'), (p.used_traffic_gb || '0') + ' GB');
-  row(card, t('Лимит трафика'), p.traffic_limit_gb > 0 ? p.traffic_limit_gb + ' GB' : '∞');
+  ring.appendChild(inner);
+  head.appendChild(ring);
+  card.appendChild(head);
+
+  // Stat grid.
+  const grid = el('div', 'stat-grid');
+  const stat = (lbl, val, wide) => {
+    const s = el('div', 'stat' + (wide ? ' wide' : ''));
+    s.appendChild(el('div', 'lbl', lbl));
+    s.appendChild(el('div', 'val', val));
+    grid.appendChild(s);
+  };
+  if (p.expire_at) stat(t('Действует до'), p.expire_at);
+  stat(t('Устройства'), p.hwid_limit > 0 ? String(p.hwid_limit) : '∞');
+  stat(t('Использовано трафика'), (p.used_traffic_gb || '0') + ' GB');
+  stat(t('Лимит трафика'), p.traffic_limit_gb > 0 ? p.traffic_limit_gb + ' GB' : '∞');
+  if (p.uuid) stat(t('UUID'), shortUUID(p.uuid), true);
+  card.appendChild(grid);
+
   if (p.subscription_url) {
     const a = el('a', 'sub-link', p.subscription_url);
     a.href = p.subscription_url;
     a.target = '_blank';
     card.appendChild(a);
-    const copy = el('button', 'secondary', t('📋 Скопировать ссылку'));
+    const copy = el('button', 'secondary', t('Скопировать ссылку на подписку'));
     copy.onclick = async () => {
       try {
         await navigator.clipboard.writeText(p.subscription_url);
-        copy.textContent = t('✅ Скопировано');
-        setTimeout(() => copy.textContent = t('📋 Скопировать ссылку'), 1500);
+        copy.textContent = t('Скопировано!');
+        setTimeout(() => copy.textContent = t('Скопировать ссылку на подписку'), 1500);
       } catch { tg.showAlert(t('Не удалось скопировать, выделите ссылку вручную.')); }
     };
     card.appendChild(copy);
   }
-  card.appendChild(renderRenew(p, data));
   return card;
 }
 
-function renderRenew(p, data) {
-  const wrap = el('div');
+// renderRenew builds the period tiles + pay button. profiles is the full linked
+// list so the user can pick which profile to extend when more than one exists.
+function renderRenew(profiles, data) {
+  const wrap = el('div', 'card');
+  wrap.appendChild(el('h2', null, t('Выберите период подписки')));
+
+  // Profile selector (only when several are linked).
+  let target = profiles[0];
+  if (profiles.length > 1) {
+    const sel = el('select');
+    profiles.forEach((p, i) => {
+      const opt = Object.assign(el('option', null, p.username), { value: String(i) });
+      sel.appendChild(opt);
+    });
+    sel.onchange = () => { target = profiles[parseInt(sel.value, 10)] || profiles[0]; };
+    wrap.appendChild(sel);
+  }
+
   let months = 0;
   const tariffs = data.tariffs || [];
   if (tariffs.length) {
-    wrap.appendChild(el('div', 'hint', t('Продление — выберите период:')));
     const grid = el('div', 'tariffs');
     tariffs.forEach(tf => {
-      const b = el('button', 'secondary', t('{months} мес. — {price}', { months: tf.months, price: tf.price_label }));
+      const b = el('button', 'secondary');
+      b.appendChild(el('div', null, t('{months} мес.', { months: tf.months })));
+      b.appendChild(el('div', 'hint', tf.price_label));
       b.onclick = () => {
         months = tf.months;
         grid.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
@@ -578,9 +766,9 @@ function renderRenew(p, data) {
   } else {
     months = 1;
   }
-  const pay = el('button', null, t('💳 Оплатить / продлить'));
+
+  const pay = el('button', null, t('Оплатить и продлить'));
   pay.disabled = tariffs.length > 0;
-  // choiceBox holds the payment-method buttons when several providers are enabled.
   const choiceBox = el('div', 'tariffs');
   choiceBox.hidden = true;
   const receiptBox = el('div', 'card');
@@ -618,7 +806,7 @@ function renderRenew(p, data) {
     pay.disabled = true;
     pay.textContent = t('Отправка…');
     try {
-      const body = { remnawave_id: p.remnawave_id, months };
+      const body = { remnawave_id: target.remnawave_id, months };
       if (provider) body.provider = provider;
       const res = await api('/api/renew', { method: 'POST', body: JSON.stringify(body) });
       if (res.status === 'choose_provider') {
@@ -685,10 +873,9 @@ function renderGiftBuy(data) {
   const tariffs = (data.tariffs || []).length ? data.tariffs : [{ months: 1, price: 0 }];
   const grid = el('div', 'tariffs');
   tariffs.forEach(tf => {
-    const label = tf.price > 0
-      ? t('{months} мес. — {price}', { months: tf.months, price: tf.price_label })
-      : t('{months} мес.', { months: tf.months });
-    const b = el('button', 'secondary', label);
+    const b = el('button', 'secondary');
+    b.appendChild(el('div', null, t('{months} мес.', { months: tf.months })));
+    if (tf.price > 0) b.appendChild(el('div', 'hint', tf.price_label));
     b.onclick = () => {
       months = tf.months;
       grid.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
@@ -830,47 +1017,84 @@ function renderGiftRedemption() {
 // can render from the same data without re-fetching on every navigation.
 let cabinetData = null;
 
+// pillRow builds the top-of-profile quick actions (Admin / Support).
+function pillRow(data) {
+  const wrap = el('div', 'pill-row');
+  if (data.is_admin) {
+    const a = el('button', 'pill accent');
+    a.appendChild(svg(['M12 2l8 4v6c0 4.5-3.2 7.7-8 9-4.8-1.3-8-4.5-8-9V6l8-4z', 'M9 12l2 2 4-4']));
+    a.appendChild(el('span', null, t('Админ')));
+    a.onclick = showAdmin;
+    wrap.appendChild(a);
+  }
+  const s = el('button', 'pill');
+  s.appendChild(svg('M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'));
+  s.appendChild(el('span', null, t('Поддержка')));
+  s.onclick = showSupport;
+  wrap.appendChild(s);
+  return wrap;
+}
+
+// actionGrid builds the 2-column action buttons under the profile.
+function actionGrid(buttons) {
+  const grid = el('div', 'btn-grid');
+  buttons.forEach(([label, onClick, secondary]) => {
+    const b = el('button', secondary ? 'secondary' : null, label);
+    b.onclick = onClick;
+    grid.appendChild(b);
+  });
+  return grid;
+}
+
 // menuCard builds one hub section: a title, a hint and one or more buttons that
 // navigate to a sub-view.
 function menuCard(title, hint, buttons) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, title));
   if (hint) card.appendChild(el('div', 'hint', hint));
-  const grid = el('div', 'btn-grid');
-  buttons.forEach(([label, onClick]) => {
-    const b = el('button', null, label);
-    b.onclick = onClick;
-    grid.appendChild(b);
-  });
-  card.appendChild(grid);
+  card.appendChild(actionGrid(buttons));
   return card;
 }
 
-// subPageTop is the header card shown atop every sub-view: a title plus a back
-// button that returns to the hub.
-function subPageTop(title) {
-  const top = el('div', 'card');
-  top.appendChild(el('h2', null, title));
-  const back = el('button', 'secondary', t('← Назад'));
-  back.onclick = showHome;
-  top.appendChild(back);
-  return top;
+// backBar is the header card shown atop every sub-view: a back chip that
+// returns to the given view, then the screen title.
+function backBar(title, onBack) {
+  const wrap = el('div');
+  const bar = el('div', 'backbar');
+  const chip = el('button', 'back-chip');
+  chip.appendChild(svg('M15 18l-6-6 6-6'));
+  chip.onclick = onBack || showHome;
+  bar.appendChild(chip);
+  if (title) bar.appendChild(el('div', 'profile-name', title));
+  wrap.appendChild(bar);
+  return wrap;
 }
 
-// renderNotifPrefs builds the per-user notification toggles card. The two mute
-// flags are independent, mirroring the bot's 🔔 Уведомления card.
+// subPageTop returns to the cabinet home.
+function subPageTop(title) {
+  return backBar(title, showHome);
+}
+
+// renderNotifPrefs builds the per-user notification toggles using switches. The
+// two mute flags are independent, mirroring the bot's 🔔 Уведомления card.
 function renderNotifPrefs(data) {
   const n = data.notifications || {};
   const card = el('div', 'card');
   card.appendChild(el('h2', null, t('🔔 Уведомления')));
-  card.appendChild(el('div', 'hint', t('Управляйте напоминаниями о подписке.')));
-  const mkToggle = (kind, mutedLabel, onLabel, muted) => {
-    const btn = el('button', muted ? 'secondary' : null, muted ? mutedLabel : onLabel);
-    btn.onclick = () => cabinetAction('/api/notifications', { kind, muted: !muted });
-    card.appendChild(btn);
+  const mkToggle = (kind, label, desc, on) => {
+    const item = el('div', 'toggle-item');
+    const txt = el('div', 'ti-text');
+    txt.appendChild(el('div', 'ti-label', label));
+    if (desc) txt.appendChild(el('div', 'ti-desc', desc));
+    item.appendChild(txt);
+    const sw = el('button', 'switch' + (on ? ' on' : ''));
+    sw.appendChild(el('span', 'knob'));
+    sw.onclick = () => cabinetAction('/api/notifications', { kind, muted: on });
+    item.appendChild(sw);
+    card.appendChild(item);
   };
-  mkToggle('expiry', t('🔕 Напоминания об окончании: выкл'), t('🔔 Напоминания об окончании: вкл'), !!n.expiry_muted);
-  mkToggle('winback', t('🔕 Напоминания после окончания: выкл'), t('🔔 Напоминания после окончания: вкл'), !!n.winback_muted);
+  mkToggle('expiry', t('Напоминания об окончании'), t('Предупреждает за 7, 3 и 1 день до окончания подписки.'), !n.expiry_muted);
+  mkToggle('winback', t('Напоминания после окончания'), t('Напомнит вернуться после окончания подписки.'), !n.winback_muted);
   return card;
 }
 
@@ -905,30 +1129,21 @@ function renderTrialClaim() {
   return card;
 }
 
-// showHome renders the "My account" hub: an Administration section (admins
-// only), a My subscription section and an Invitation section.
+// showHome renders the profile screen: quick-action pills (Admin/Support), the
+// ring profile card and the action grid (Renew / Gift / Invite / Settings),
+// plus the unlinked/trial states for new users.
 function showHome() {
   currentRender = showHome;
   stopSupportPoll();
   const data = cabinetData || {};
   appEl.textContent = '';
 
-  if (data.is_admin) {
-    appEl.appendChild(menuCard(
-      t('⚙️ Администрирование'),
-      t('Тарифы, реквизиты, подарочные коды и заявки на оплату.'),
-      [[t('⚙️ Открыть админ-панель'), showAdmin]]));
-  }
+  appEl.appendChild(pillRow(data));
 
   if (!data.linked) {
     appEl.appendChild(renderUnlinked());
     appEl.appendChild(renderRegistration());
     if (data.trial_available) appEl.appendChild(renderTrialClaim());
-  } else {
-    appEl.appendChild(menuCard(
-      t('📡 Моя подписка'),
-      t('UUID, срок действия, лимит устройств и трафик.'),
-      [[t('📡 Открыть подписку'), showSubscription]]));
     appEl.appendChild(menuCard(
       t('🎟 Приглашения'),
       t('Подарите подписку или пригласите пользователя.'),
@@ -953,20 +1168,20 @@ function showHome() {
   appEl.hidden = false;
 }
 
-// showSubscription lists the linked profiles with full detail (uuid, expiry,
-// device/traffic limits) plus the renew/payment flow and payment requisites.
-function showSubscription() {
-  currentRender = showSubscription;
+// showRenew opens the renewal screen: profile selector (if many), period tiles
+// and the pay/renew flow.
+function showRenew() {
+  currentRender = showRenew;
   const data = cabinetData || {};
   appEl.textContent = '';
-  appEl.appendChild(subPageTop(t('📡 Моя подписка')));
+  appEl.appendChild(subPageTop(t('Продлить')));
   const profiles = data.profiles || [];
   if (!profiles.length) {
     const card = el('div', 'card');
     card.appendChild(el('div', 'hint', t('Подписки не найдены.')));
     appEl.appendChild(card);
   } else {
-    profiles.forEach(p => appEl.appendChild(renderProfile(p, data)));
+    appEl.appendChild(renderRenew(profiles, data));
   }
   if (data.requisites) {
     const card = el('div', 'card');
@@ -974,6 +1189,17 @@ function showSubscription() {
     card.appendChild(Object.assign(el('pre', 'requisites'), { textContent: data.requisites }));
     appEl.appendChild(card);
   }
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+// showSettings opens the notification-preferences screen.
+function showSettings() {
+  currentRender = showSettings;
+  const data = cabinetData || {};
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('Настройки')));
+  if (data.notifications) appEl.appendChild(renderNotifPrefs(data));
   statusEl.hidden = true;
   appEl.hidden = false;
 }
@@ -1194,12 +1420,7 @@ async function showAdminSupportThread(userId, username) {
   currentRender = () => showAdminSupportThread(userId, username);
   stopSupportPoll();
   appEl.textContent = '';
-  const top = el('div', 'card');
-  top.appendChild(el('h2', null, username || t('Без имени')));
-  const back = el('button', 'secondary', t('← К списку'));
-  back.onclick = showAdminSupport;
-  top.appendChild(back);
-  appEl.appendChild(top);
+  appEl.appendChild(backBar(username || t('Без имени'), showAdminSupport));
 
   const chatCard = el('div', 'card');
   const box = el('div', 'chat');
@@ -1639,12 +1860,7 @@ async function showUserAdmin() {
   currentRender = showUserAdmin;
 
   appEl.textContent = '';
-  const top = el('div', 'card');
-  top.appendChild(el('h2', null, t('👤 Управление пользователями')));
-  const back = el('button', 'secondary', t('← Назад'));
-  back.onclick = renderAdminHome;
-  top.appendChild(back);
-  appEl.appendChild(top);
+  appEl.appendChild(backBar(t('👤 Управление пользователями'), renderAdminHome));
 
   const card = el('div', 'card');
   const search = Object.assign(el('input'), { placeholder: t('Поиск по имени…') });
@@ -1697,12 +1913,7 @@ async function openUser(username) {
   } catch (e) { tg.showAlert(e.message); return; }
   currentRender = () => openUser(username);
   appEl.textContent = '';
-  const top = el('div', 'card');
-  top.appendChild(el('h2', null, t('👤 Управление пользователем')));
-  const back = el('button', 'secondary', t('← К списку'));
-  back.onclick = showUserAdmin;
-  top.appendChild(back);
-  appEl.appendChild(top);
+  appEl.appendChild(backBar(t('👤 Управление пользователем'), showUserAdmin));
 
   const card = el('div', 'card');
   renderUserCard(card, user);
@@ -1812,13 +2023,9 @@ function numberField(label, value, onSave) {
 }
 
 // adminSubTop is the back bar shown atop every admin sub-view; the sub-view's
-// own cards carry their headings, so this only holds the back button.
+// own cards carry their headings, so this only holds the back chip.
 function adminSubTop() {
-  const top = el('div', 'card');
-  const back = el('button', 'secondary', t('← Назад'));
-  back.onclick = renderAdminHome;
-  top.appendChild(back);
-  return top;
+  return backBar('', renderAdminHome);
 }
 
 // renderAdminHome is the admin hub: a request menu (each item opens its own
@@ -1829,12 +2036,7 @@ function renderAdminHome() {
   const data = adminData || {};
   appEl.textContent = '';
 
-  const top = el('div', 'card');
-  top.appendChild(el('h2', null, t('⚙️ Админ-панель')));
-  const back = el('button', 'secondary', t('← Назад в кабинет'));
-  back.onclick = showCabinet;
-  top.appendChild(back);
-  appEl.appendChild(top);
+  appEl.appendChild(backBar(t('⚙️ Админ-панель'), showCabinet));
 
   // Request menu — buttons carry the pending count when there are any.
   const count = (arr) => (arr && arr.length) ? ` (${arr.length})` : '';
@@ -1974,6 +2176,7 @@ function showAdminBroadcast() {
 }
 
 (async () => {
+  renderLangSeg();
   applyStaticText();
   statusEl.textContent = t('Загрузка…');
   if (!tg.initData) {
@@ -1986,8 +2189,8 @@ function showAdminBroadcast() {
     // bot's configured language (BOT_LANG) exposed in the payload.
     if (!localStorage.getItem(LANG_KEY)) {
       LANG = resolveLang(data.lang);
-      langSel.value = LANG;
       applyStaticText();
+      renderLangSeg();
     }
     cabinetData = data;
     showHome();
