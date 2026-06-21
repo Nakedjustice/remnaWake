@@ -208,6 +208,13 @@
   .item .st { color: var(--hint); font-size: 13px; }
   .item button { width: auto; margin: 0; padding: 8px 13px; font-size: 13px; flex-shrink: 0; }
   .item .btns { display: flex; gap: 6px; flex-shrink: 0; }
+  /* Expiry editor stacks vertically so the custom-days input stays readable on
+     slim displays: custom days + apply on top, fixed-amount buttons below. */
+  .item.exp-days { flex-direction: column; align-items: stretch; gap: 8px; }
+  .exp-row { display: flex; gap: 6px; }
+  .exp-custom { align-items: center; }
+  .exp-custom input { margin-top: 0; flex: 1 1 auto; min-width: 0; }
+  .exp-fixed button { flex: 1 1 0; }
   .utable { width: 100%; border-collapse: collapse; margin-top: 8px; }
   .utable th, .utable td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--border); font-size: 14px; }
   .utable th { color: var(--hint); font-weight: 700; }
@@ -2160,24 +2167,34 @@ function renderUserCard(container, user) {
   info.appendChild(el('div', 'info', t('Подписка до: ') + user.expire_at));
   container.appendChild(info);
 
-  // Expiry +/- days.
-  const exp = el('div', 'item');
-  [['+30д', 30], ['+90д', 90], ['−30д', -30]].forEach(([label, days]) => {
-    const b = el('button', 'secondary', t(label));
-    b.onclick = () => update({ expire_days: days });
-    exp.appendChild(b);
-  });
+  // Expiry +/- days. Stacked into two rows so the custom-days input stays
+  // readable on slim displays: custom days + apply on top, fixed amounts below.
+  const exp = el('div', 'item exp-days');
+
+  // Row 1: custom days input + apply button.
+  const expCustom = el('div', 'exp-row exp-custom');
   // A text input (not type=number) so negative days work even on Telegram's
   // numeric soft keyboards, which often omit the minus key.
   const expInput = Object.assign(el('input'), { type: 'text', inputMode: 'numeric', placeholder: t('± дней (напр. -15)') });
-  exp.appendChild(expInput);
+  expCustom.appendChild(expInput);
   const expSet = el('button', null, t('Применить дни'));
   expSet.onclick = () => {
     const n = parseInt(expInput.value.trim(), 10);
     if (isNaN(n)) { tg.showAlert(t('Введите число дней (можно отрицательное).')); return; }
     update({ expire_days: n });
   };
-  exp.appendChild(expSet);
+  expCustom.appendChild(expSet);
+  exp.appendChild(expCustom);
+
+  // Row 2: fixed-amount buttons.
+  const expFixed = el('div', 'exp-row exp-fixed');
+  [['+30д', 30], ['+90д', 90], ['−30д', -30]].forEach(([label, days]) => {
+    const b = el('button', 'secondary', t(label));
+    b.onclick = () => update({ expire_days: days });
+    expFixed.appendChild(b);
+  });
+  exp.appendChild(expFixed);
+
   container.appendChild(exp);
 
   // HWID limit.
