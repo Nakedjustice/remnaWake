@@ -598,7 +598,7 @@ func TestStaticAdminStatisticsView(t *testing.T) {
 		"📊 Статистика",
 		"Panel users",
 		"payments_confirmed_30d",
-		"row(card, label, String(value))",
+		"admin-stat-value",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("frontend is missing %q", want)
