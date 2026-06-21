@@ -470,12 +470,22 @@ Then replace `Nakedjustice/remnaWake` (and the branch `main`) in `get.sh`,
 `README.md` and `README.ru.md`, and the `module` path in `go.mod`. Your `.env`
 is gitignored and never pushed.
 
-The `.github/workflows/docker-publish.yml` workflow publishes a pre-built image
-to **your** GHCR (`ghcr.io/<you>/<repo>`, lowercased) on every push to `main`.
-Update the `image:` line in `docker-compose.yml` to match, and make the package
-public under your repo's **Packages** settings so users can pull without auth.
-Until then, users can build from source with the `docker-compose.build.yml`
-override above.
+The `.github/workflows/docker-publish.yml` workflow publishes two independent
+GHCR packages (names are lowercased):
+
+- `main` → `ghcr.io/<you>/<repo>:latest` for stable deployments;
+- `dev` → `ghcr.io/<you>/<repo>-dev:latest` for pre-merge testing.
+
+Pull the development package and point the `image:` line in a test deployment's
+`docker-compose.yml` at it before merging `dev` into `main`:
+
+```bash
+docker pull ghcr.io/<you>/<repo>-dev:latest
+```
+
+Make both packages public under your repo's **Packages** settings if they must be
+pulled without authentication. Until then, users can build from source with the
+`docker-compose.build.yml` override above.
 
 Verify the installer is reachable:
 
