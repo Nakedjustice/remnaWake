@@ -171,8 +171,10 @@ func TestSendWelcomeLocalizedEN(t *testing.T) {
 	t.Cleanup(func() { i18n.SetLang(i18n.RU) })
 
 	var body map[string]any
+	var rawBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
+		rawBody = string(raw)
 		_ = json.Unmarshal(raw, &body)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"chat":{"id":1,"type":"private"}}}`))
@@ -181,13 +183,29 @@ func TestSendWelcomeLocalizedEN(t *testing.T) {
 
 	b := NewBot("token", "", time.Second)
 	b.apiBase = srv.URL
-	if err := b.SendWelcome(context.Background(), 1); err != nil {
+	if err := b.SendWelcome(context.Background(), 1, true); err != nil {
 		t.Fatalf("SendWelcome: %v", err)
 	}
 	text, _ := body["text"].(string)
 	if !strings.Contains(text, "Link account") || !strings.Contains(text, "I paid") {
 		t.Fatalf("welcome not translated (dictionary key mismatch?): %q", text)
 	}
+	// With the trial enabled both the trial and register buttons are offered.
+	if !strings.Contains(rawBody, "menu:trial") || !strings.Contains(rawBody, "menu:register") {
+		t.Fatalf("welcome keyboard missing trial/register buttons: %q", rawBody)
+	}
+
+	// With the trial disabled only the register button is shown.
+	if err := b.SendWelcome(context.Background(), 1, false); err != nil {
+		t.Fatalf("SendWelcome: %v", err)
+	}
+	if strings.Contains(rawBody, "menu:trial") {
+		t.Fatalf("welcome keyboard should omit trial button when disabled: %q", rawBody)
+	}
+	if !strings.Contains(rawBody, "menu:register") {
+		t.Fatalf("welcome keyboard missing register button: %q", rawBody)
+	}
+
 	if IsCabinetButton("👤 Личный кабинет") != true || IsCabinetButton("👤 My account") != true {
 		t.Fatal("IsCabinetButton must match both the RU source and the localized label")
 	}

@@ -327,16 +327,23 @@ func (b *Bot) SendWithKeyboard(ctx context.Context, chatID int64, text string, k
 	return err
 }
 
-func (b *Bot) SendWelcome(ctx context.Context, chatID int64) error {
+func (b *Bot) SendWelcome(ctx context.Context, chatID int64, showTrial bool) error {
 	text := i18n.T(i18n.WelcomeRU)
 
-	keyboard := &InlineKeyboardMarkup{
-		InlineKeyboard: [][]InlineKeyboardButton{
-			{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
-		},
+	var rows [][]InlineKeyboardButton
+	// The free-trial button leads, since it targets brand-new users who have
+	// nothing else to do yet (mirrors the menu ordering).
+	if showTrial {
+		rows = append(rows, []InlineKeyboardButton{
+			{Text: i18n.T("🎁 Попробовать бесплатно"), CallbackData: "menu:trial"},
+		})
 	}
+	rows = append(rows, []InlineKeyboardButton{
+		{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"},
+	})
 
-	_, err := b.SendPlainWithKeyboard(ctx, chatID, text, keyboard)
+	_, err := b.SendPlainWithKeyboard(ctx, chatID, text,
+		&InlineKeyboardMarkup{InlineKeyboard: rows})
 	return err
 }
 

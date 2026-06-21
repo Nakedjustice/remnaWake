@@ -256,7 +256,7 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 						continue
 					}
 					logger.Info("received /start command", "chat_id", u.Message.Chat.ID)
-					if err := bot.SendWelcome(ctx, u.Message.Chat.ID); err != nil {
+					if err := bot.SendWelcome(ctx, u.Message.Chat.ID, pay.TrialOffered()); err != nil {
 						logger.Error("send welcome message failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
 					}
 					if err := bot.SendPlainWithReplyKeyboard(ctx, u.Message.Chat.ID,
