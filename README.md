@@ -238,6 +238,10 @@ pick a tariff and send a renewal request to the admin. A 🇷🇺/🇬🇧 **lan
 selector** (top right) defaults to the user's Telegram language (falling back to
 `BOT_LANG`) and remembers an explicit choice.
 
+Admins also get a **Statistics** page matching `/stats`: panel user totals and
+statuses, 30-day confirmed payments and revenue, gift-code counts, and pending
+invites.
+
 **Requirements** — served by the bot on `WEBAPP_LISTEN` (default `:8080`).
 Telegram only opens Mini Apps over **HTTPS**, so put a reverse proxy
 (nginx / Caddy / Traefik) in front and point `WEBAPP_URL` at the public HTTPS

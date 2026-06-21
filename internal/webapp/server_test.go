@@ -50,6 +50,7 @@ type adminCall struct {
 
 type fakeAdmin struct {
 	panel *payments.WebAdminPanel
+	stats *payments.WebAdminStats
 	err   error
 	calls []adminCall
 }
@@ -57,6 +58,10 @@ type fakeAdmin struct {
 func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.WebAdminPanel, error) {
 	f.calls = append(f.calls, adminCall{Name: "panel", A: tgID})
 	return f.panel, f.err
+}
+func (f *fakeAdmin) AdminStatsData(_ context.Context, tgID int64) (*payments.WebAdminStats, error) {
+	f.calls = append(f.calls, adminCall{Name: "stats", A: tgID})
+	return f.stats, f.err
 }
 func (f *fakeAdmin) AdminSetTariff(_ context.Context, tgID int64, months, price int) error {
 	f.calls = append(f.calls, adminCall{Name: "settariff", A: int64(months), B: int64(price)})
@@ -408,6 +413,51 @@ func TestHandleAdminOK(t *testing.T) {
 	}
 	if got.Requisites != "card 1234" || len(got.Tariffs) != 1 || len(got.Requests) != 1 {
 		t.Fatalf("unexpected payload: %+v", got)
+	}
+}
+
+func TestHandleAdminStats(t *testing.T) {
+	adm := &fakeAdmin{stats: &payments.WebAdminStats{
+		UsersTotal: 25, UsersActive: 20, PaymentsConfirmed30d: 7, RevenueLabel: "3500₽",
+	}}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	req := httptest.NewRequest("GET", "/api/admin/stats", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var got payments.WebAdminStats
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.UsersTotal != 25 || got.UsersActive != 20 || got.PaymentsConfirmed30d != 7 || got.RevenueLabel != "3500₽" {
+		t.Fatalf("unexpected payload: %+v", got)
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "stats" || adm.calls[0].A != 42 {
+		t.Fatalf("unexpected service calls: %+v", adm.calls)
+	}
+}
+
+func TestStaticAdminStatisticsView(t *testing.T) {
+	b, err := staticFS.ReadFile("static/index.html")
+	if err != nil {
+		t.Fatalf("read embedded frontend: %v", err)
+	}
+	src := string(b)
+	for _, want := range []string{
+		"/api/admin/stats",
+		"showAdminStats",
+		"📊 Статистика",
+		"Panel users",
+		"payments_confirmed_30d",
+		"row(card, label, String(value))",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("frontend is missing %q", want)
+		}
 	}
 }
 
