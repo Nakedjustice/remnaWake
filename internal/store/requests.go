@@ -132,6 +132,11 @@ func (s *Store) SetPaymentRequestProviderTxn(ctx context.Context, id int64, txnI
 	return err
 }
 
+func (s *Store) SetPaymentRequestScreenshot(ctx context.Context, id int64, fileID string, asDocument bool) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE payment_requests SET screenshot_file_id = ?, screenshot_is_document = ? WHERE id = ? AND status = 'pending'`, fileID, asDocument, id)
+	return err
+}
+
 // ListPaymentRequestsByStatus returns all requests with the given status in
 // creation order.
 func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) ([]PaymentRequest, error) {

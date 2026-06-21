@@ -20,6 +20,8 @@ type BotSender interface {
 	SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error)
 	SendPhoto(ctx context.Context, chatID int64, fileID, caption string, kb *tg.InlineKeyboardMarkup) (int64, error)
 	SendDocument(ctx context.Context, chatID int64, fileID, caption string, kb *tg.InlineKeyboardMarkup) (int64, error)
+	SendPhotoUpload(ctx context.Context, chatID int64, filename string, data []byte, caption string, kb *tg.InlineKeyboardMarkup) (int64, string, error)
+	SendDocumentUpload(ctx context.Context, chatID int64, filename string, data []byte, caption string, kb *tg.InlineKeyboardMarkup) (int64, string, error)
 	AnswerCallbackQuery(ctx context.Context, id, text string) error
 	EditMessageReplyMarkup(ctx context.Context, chatID, messageID int64, kb *tg.InlineKeyboardMarkup) error
 	EditMessageText(ctx context.Context, chatID, messageID int64, text string, kb *tg.InlineKeyboardMarkup) error

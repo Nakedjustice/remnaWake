@@ -2,6 +2,7 @@ package payments
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -68,6 +69,58 @@ type receiptAttachment struct {
 	fileID     string
 	asDocument bool   // document file_ids only work with sendDocument, photo ones with sendPhoto
 	note       string // user's caption on the receipt, forwarded to the admins
+	filename   string
+	data       []byte
+}
+
+const (
+	maxReceiptPhotoSize    = 10 << 20
+	maxReceiptDocumentSize = 50 << 20
+)
+
+// UploadRenewReceipt completes the authenticated user's current receipt
+// session. Bytes are passed straight to Telegram and are never persisted.
+func (s *Service) UploadRenewReceipt(ctx context.Context, telegramID int64, receipt WebReceipt) error {
+	st, expired := s.lookupPayPhoto(telegramID)
+	if st == nil {
+		if expired {
+			return ErrReceiptSessionExpired
+		}
+		return ErrReceiptSessionExpired
+	}
+	name := strings.ToLower(filepath.Ext(strings.TrimSpace(receipt.Filename)))
+	mime := strings.ToLower(strings.TrimSpace(strings.Split(receipt.ContentType, ";")[0]))
+	isPhoto := mime == "image/jpeg" || mime == "image/png" || name == ".jpg" || name == ".jpeg" || name == ".png"
+	isDocument := mime == "application/pdf" || mime == "image/webp" || mime == "image/heic" || mime == "image/heif" || name == ".pdf" || name == ".webp" || name == ".heic" || name == ".heif"
+	if !isPhoto && !isDocument {
+		return ErrReceiptType
+	}
+	limit := maxReceiptDocumentSize
+	if isPhoto {
+		limit = maxReceiptPhotoSize
+	}
+	if len(receipt.Data) == 0 {
+		return ErrReceiptType
+	}
+	if len(receipt.Data) > limit {
+		return ErrReceiptTooLarge
+	}
+	u, err := s.store.GetNotifiedUser(ctx, st.userID)
+	if err != nil {
+		return fmt.Errorf("load receipt profile: %w", err)
+	}
+	if u == nil {
+		s.clearPayPhoto(telegramID)
+		return ErrProfileUnknown
+	}
+	_, err = s.createPaymentRequest(ctx, u, st.months, st.price, &receiptAttachment{
+		asDocument: isDocument && !isPhoto, note: strings.TrimSpace(receipt.Note), filename: receipt.Filename, data: receipt.Data,
+	})
+	if err != nil {
+		return fmt.Errorf("%w: deliver receipt: %v", ErrProviderUnavailable, err)
+	}
+	s.clearPayPhoto(telegramID)
+	return nil
 }
 
 // cancelPayPhotoByCaption honors /cancel typed as a media caption — the only

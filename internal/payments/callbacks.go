@@ -359,6 +359,10 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 	for _, adminID := range s.adminIDs {
 		var msgID int64
 		switch {
+		case att != nil && len(att.data) > 0 && fileID == "" && isDoc:
+			msgID, fileID, err = s.bot.SendDocumentUpload(ctx, adminID, att.filename, att.data, text, kb)
+		case att != nil && len(att.data) > 0 && fileID == "":
+			msgID, fileID, err = s.bot.SendPhotoUpload(ctx, adminID, att.filename, att.data, text, kb)
 		case fileID != "" && isDoc:
 			msgID, err = s.bot.SendDocument(ctx, adminID, fileID, text, kb)
 		case fileID != "":
@@ -369,6 +373,11 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 		if err != nil {
 			s.logger.Error("notify admin failed", "admin_id", adminID, "err", err.Error())
 			continue
+		}
+		if att != nil && len(att.data) > 0 && fileID != "" && len(refs) == 0 {
+			if serr := s.store.SetPaymentRequestScreenshot(ctx, reqID, fileID, isDoc); serr != nil {
+				s.logger.Error("store uploaded receipt file id failed", "request_id", reqID, "err", serr.Error())
+			}
 		}
 		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
 	}

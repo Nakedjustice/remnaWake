@@ -2,6 +2,7 @@ package payments
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -210,122 +211,52 @@ func (s *Service) handleRedeemUsernameInput(ctx context.Context, m *tg.Message) 
 // claim happens first so a concurrent redemption can never double-spend; if
 // the panel call fails afterwards, the code is rolled back to issued.
 func (s *Service) redeemExtend(ctx context.Context, chatID int64, st *redeemState, sub Subscriber) {
-	ok, err := s.store.RedeemGiftCode(ctx, st.code, chatID, sub.Username, s.now())
+	result, err := s.redeemGiftExtend(ctx, chatID, st, sub)
 	if err != nil {
-		s.logger.Error("redeem: claim failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
-		return
-	}
-	if !ok {
-		s.clearRedeem(chatID)
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот код уже был активирован."))
-		return
-	}
-
-	base := sub.ExpireAt
-	if now := s.now(); base.Before(now) {
-		base = now
-	}
-	newExpireAt := base.AddDate(0, st.months, 0)
-
-	if s.dryRun {
-		s.logger.Info("dry-run: would extend via gift", "uuid", sub.UUID, "months", st.months,
-			"new_expire", newExpireAt.Format("2006-01-02"))
-		s.clearRedeem(chatID)
-		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
-			i18n.T("✅ (dry-run) Подарок активирован! Подписка «%s» продлена на %d мес. до %s."),
-			sub.Username, st.months, newExpireAt.Format("02.01.2006")))
-		s.notifyGiftRedeemed(ctx, st.giftID, chatID, sub.Username)
-		return
-	}
-
-	if err := s.extender.ExtendSubscriptionByUUID(ctx, sub.UUID, newExpireAt); err != nil {
-		s.logger.Error("redeem: extend failed", "uuid", sub.UUID, "err", err.Error())
-		if _, rerr := s.store.ReissueGiftCode(ctx, st.giftID); rerr != nil {
-			s.logger.Error("redeem: rollback to issued failed", "gift_id", st.giftID, "err", rerr.Error())
+		if errors.Is(err, ErrGiftUsed) {
+			s.clearRedeem(chatID)
+			_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот код уже был активирован."))
+			return
 		}
+		s.logger.Error("redeem: extend failed", "uuid", sub.UUID, "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка активации подарка. Попробуйте позже."))
 		return
 	}
-
 	s.clearRedeem(chatID)
-	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
-		i18n.T("✅ Подарок активирован! Подписка «%s» продлена на %d мес. до %s."),
-		sub.Username, st.months, newExpireAt.Format("02.01.2006")))
-	s.notifyGiftRedeemed(ctx, st.giftID, chatID, sub.Username)
+	key := "✅ Подарок активирован! Подписка «%s» продлена на %d мес. до %s."
+	if s.dryRun {
+		key = "✅ (dry-run) Подарок активирован! Подписка «%s» продлена на %d мес. до %s."
+	}
+	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T(key), sub.Username, st.months, result.ExpireAt))
 }
 
 // redeemCreate claims the code, then creates a fresh panel profile bound to
 // the redeemer's Telegram ID and delivers the subscription link.
 func (s *Service) redeemCreate(ctx context.Context, chatID int64, st *redeemState, username string) {
-	if s.creator == nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
-		return
-	}
-
-	ok, err := s.store.RedeemGiftCode(ctx, st.code, chatID, username, s.now())
+	result, err := s.redeemGiftCreate(ctx, chatID, st, username)
 	if err != nil {
-		s.logger.Error("redeem: claim failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
-		return
-	}
-	if !ok {
-		s.clearRedeem(chatID)
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот код уже был активирован."))
-		return
-	}
-
-	expireAt := s.now().AddDate(0, st.months, 0)
-
-	if s.dryRun {
-		s.logger.Info("dry-run: would create user via gift", "username", username,
-			"telegram_id", chatID, "expire_at", expireAt.Format("2006-01-02"))
-		s.clearRedeem(chatID)
-		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
-			i18n.T("✅ (dry-run) Подарок активирован! Профиль «%s» создан, подписка до %s."),
-			username, expireAt.Format("02.01.2006")))
-		s.notifyGiftRedeemed(ctx, st.giftID, chatID, username)
-		return
-	}
-
-	squadUUID, err := s.resolveDefaultSquadUUID(ctx)
-	if err != nil {
-		s.logger.Error("redeem: resolve default squad failed", "username", username, "err", err.Error())
-		if _, rerr := s.store.ReissueGiftCode(ctx, st.giftID); rerr != nil {
-			s.logger.Error("redeem: rollback to issued failed", "gift_id", st.giftID, "err", rerr.Error())
+		if errors.Is(err, ErrGiftUsed) {
+			s.clearRedeem(chatID)
+			_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот код уже был активирован."))
+			return
 		}
+		s.logger.Error("redeem: create failed", "username", username, "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка активации подарка. Попробуйте позже."))
 		return
 	}
-
-	created, err := s.creator.CreateUser(ctx, username, expireAt, []string{squadUUID}, s.getDefaultTrafficReset())
-	if err != nil {
-		s.logger.Error("redeem: create user failed", "username", username, "err", err.Error())
-		if _, rerr := s.store.ReissueGiftCode(ctx, st.giftID); rerr != nil {
-			s.logger.Error("redeem: rollback to issued failed", "gift_id", st.giftID, "err", rerr.Error())
-		}
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка активации подарка. Попробуйте позже."))
-		return
-	}
-
-	// The profile exists and is paid for; a failed Telegram binding is
-	// recoverable via /register, so it must not fail the redemption.
-	if s.registrar != nil {
-		if err := s.registrar.SetTelegramID(ctx, created.UUID, chatID); err != nil {
-			s.logger.Error("redeem: set telegram id failed", "uuid", created.UUID, "err", err.Error())
-			_ = s.bot.SendPlain(ctx, chatID,
-				i18n.T("Профиль создан, но привязать Telegram не удалось. Используйте /register для привязки."))
-		}
-	}
-
 	s.clearRedeem(chatID)
-	msg := fmt.Sprintf(i18n.T("✅ Подарок активирован! Профиль «%s» создан, подписка до %s."),
-		created.Username, expireAt.Format("02.01.2006"))
-	if created.SubscriptionURL != "" {
-		msg += i18n.T("\n\nВаша ссылка на подписку:\n") + created.SubscriptionURL
+	key := "✅ Подарок активирован! Профиль «%s» создан, подписка до %s."
+	if s.dryRun {
+		key = "✅ (dry-run) Подарок активирован! Профиль «%s» создан, подписка до %s."
+	}
+	msg := fmt.Sprintf(i18n.T(key), result.Username, result.ExpireAt)
+	if result.LinkFailed {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Профиль создан, но привязать Telegram не удалось. Используйте /register для привязки."))
+	}
+	if result.SubscriptionURL != "" {
+		msg += i18n.T("\n\nВаша ссылка на подписку:\n") + result.SubscriptionURL
 	}
 	_ = s.bot.SendPlain(ctx, chatID, msg)
-	s.notifyGiftRedeemed(ctx, st.giftID, chatID, created.Username)
 }
 
 // notifyGiftRedeemed tells the buyer their gift was activated. Skipped when
@@ -343,4 +274,108 @@ func (s *Service) notifyGiftRedeemed(ctx context.Context, giftID, redeemerTGID i
 	}
 	_ = s.bot.SendPlain(ctx, g.BuyerTelegramID,
 		fmt.Sprintf(i18n.T("🎁 Ваш подарочный код %s активирован: подписка «%s»."), g.Code, username))
+}
+
+// RedeemGift activates an issued gift for an owned profile. When the user has
+// no linked profiles it creates and links a new one, matching the bot flow.
+func (s *Service) RedeemGift(ctx context.Context, telegramID int64, rawCode string, remnawaveID int64, username string) (*WebGiftRedemptionResult, error) {
+	code := strings.ToUpper(strings.TrimSpace(rawCode))
+	if !isValidGiftCodeFormat(code) {
+		return nil, ErrGiftInvalid
+	}
+	g, err := s.store.GetGiftCodeByCode(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("load gift: %w", err)
+	}
+	if g == nil || (g.Status != "issued" && g.Status != "redeemed") {
+		return nil, ErrGiftInvalid
+	}
+	if g.Status == "redeemed" {
+		return nil, ErrGiftUsed
+	}
+	subs, err := s.finder.FindByTelegramID(ctx, telegramID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: find profiles: %v", ErrPanelUnavailable, err)
+	}
+	st := &redeemState{giftID: g.ID, code: g.Code, months: g.Months, createdAt: s.now()}
+	if len(subs) == 0 {
+		username = strings.TrimSpace(username)
+		if !isValidUsername(username) {
+			return nil, ErrInvalidProfileQuery
+		}
+		existing, err := s.finder.FindByUsername(ctx, username)
+		if err != nil {
+			return nil, fmt.Errorf("%w: check username: %v", ErrPanelUnavailable, err)
+		}
+		if existing != nil {
+			return nil, ErrUsernameTaken
+		}
+		return s.redeemGiftCreate(ctx, telegramID, st, username)
+	}
+	for _, sub := range subs {
+		if sub.RemnawaveID == remnawaveID {
+			return s.redeemGiftExtend(ctx, telegramID, st, sub)
+		}
+	}
+	return nil, ErrProfileUnknown
+}
+
+func (s *Service) redeemGiftExtend(ctx context.Context, telegramID int64, st *redeemState, sub Subscriber) (*WebGiftRedemptionResult, error) {
+	ok, err := s.store.RedeemGiftCode(ctx, st.code, telegramID, sub.Username, s.now())
+	if err != nil {
+		return nil, fmt.Errorf("claim gift: %w", err)
+	}
+	if !ok {
+		return nil, ErrGiftUsed
+	}
+	base := sub.ExpireAt
+	if base.Before(s.now()) {
+		base = s.now()
+	}
+	newExpireAt := base.AddDate(0, st.months, 0)
+	if !s.dryRun {
+		if err := s.extender.ExtendSubscriptionByUUID(ctx, sub.UUID, newExpireAt); err != nil {
+			_, _ = s.store.ReissueGiftCode(ctx, st.giftID)
+			return nil, fmt.Errorf("%w: extend gift profile: %v", ErrPanelUnavailable, err)
+		}
+	}
+	s.notifyGiftRedeemed(ctx, st.giftID, telegramID, sub.Username)
+	return &WebGiftRedemptionResult{Username: sub.Username, SubscriptionURL: sub.SubscriptionURL, ExpireAt: newExpireAt.Format("02.01.2006")}, nil
+}
+
+func (s *Service) redeemGiftCreate(ctx context.Context, telegramID int64, st *redeemState, username string) (*WebGiftRedemptionResult, error) {
+	if s.creator == nil {
+		return nil, ErrPanelCreateFailed
+	}
+	ok, err := s.store.RedeemGiftCode(ctx, st.code, telegramID, username, s.now())
+	if err != nil {
+		return nil, fmt.Errorf("claim gift: %w", err)
+	}
+	if !ok {
+		return nil, ErrGiftUsed
+	}
+	expireAt := s.now().AddDate(0, st.months, 0)
+	if s.dryRun {
+		s.notifyGiftRedeemed(ctx, st.giftID, telegramID, username)
+		return &WebGiftRedemptionResult{Username: username, ExpireAt: expireAt.Format("02.01.2006")}, nil
+	}
+	squadUUID, err := s.resolveDefaultSquadUUID(ctx)
+	if err != nil {
+		_, _ = s.store.ReissueGiftCode(ctx, st.giftID)
+		return nil, fmt.Errorf("resolve squad: %w", err)
+	}
+	created, err := s.creator.CreateUser(ctx, username, expireAt, []string{squadUUID}, s.getDefaultTrafficReset())
+	if err != nil {
+		_, _ = s.store.ReissueGiftCode(ctx, st.giftID)
+		return nil, fmt.Errorf("%w: %v", ErrPanelCreateFailed, err)
+	}
+	linkFailed := false
+	if s.registrar != nil {
+		if err := s.registrar.SetTelegramID(ctx, created.UUID, telegramID); err != nil {
+			s.logger.Error("redeem web: set telegram id failed", "uuid", created.UUID, "err", err.Error())
+			linkFailed = true
+		}
+	}
+	s.notifyGiftRedeemed(ctx, st.giftID, telegramID, created.Username)
+	return &WebGiftRedemptionResult{Username: created.Username, SubscriptionURL: created.SubscriptionURL, ExpireAt: expireAt.Format("02.01.2006"), LinkFailed: linkFailed}, nil
 }

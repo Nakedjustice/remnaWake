@@ -44,7 +44,7 @@ func (s *Service) startPlategaPayment(ctx context.Context, u *store.NotifiedUser
 	})
 	if err != nil {
 		s.logger.Error("platega: create payment request failed", "err", err.Error())
-		return 0, "", err
+		return 0, "", fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
 	}
 
 	desc := fmt.Sprintf(i18n.T("Продление подписки «%s» на %d мес."), u.Username, months)
@@ -123,7 +123,7 @@ func (s *Service) finalizePlategaByTxn(ctx context.Context, txnID string) error 
 
 	status, err := gw.GetTransaction(ctx, txnID)
 	if err != nil {
-		return fmt.Errorf("platega verify %s: %w", txnID, err)
+		return fmt.Errorf("%w: verify %s: %v", ErrProviderUnavailable, txnID, err)
 	}
 	if !strings.EqualFold(status, plategaStatusConfirmed) {
 		s.logger.Info("platega: transaction not confirmed", "txn", txnID, "status", status)
@@ -169,6 +169,28 @@ func (s *Service) HandlePlategaWebhook(ctx context.Context, body []byte) error {
 		return nil
 	}
 	return s.finalizePlategaByTxn(ctx, id)
+}
+
+// CheckPlategaPayment verifies only a request owned by the authenticated user.
+// Missing and foreign requests intentionally share one error to prevent probing.
+func (s *Service) CheckPlategaPayment(ctx context.Context, telegramID, requestID int64) (*WebPaymentStatus, error) {
+	req, err := s.store.GetPaymentRequest(ctx, requestID)
+	if err != nil {
+		return nil, fmt.Errorf("load payment request: %w", err)
+	}
+	if req == nil || req.TelegramID != telegramID || req.Provider != ProviderPlatega || req.ProviderTxnID == "" {
+		return nil, ErrPaymentRequestInaccessible
+	}
+	if req.Status == "pending" {
+		if err := s.finalizePlategaByTxn(ctx, req.ProviderTxnID); err != nil {
+			return nil, err
+		}
+		req, err = s.store.GetPaymentRequest(ctx, requestID)
+		if err != nil {
+			return nil, fmt.Errorf("reload payment request: %w", err)
+		}
+	}
+	return &WebPaymentStatus{Status: req.Status}, nil
 }
 
 // handlePlategaCheck handles the «Проверить оплату» button: it verifies the
