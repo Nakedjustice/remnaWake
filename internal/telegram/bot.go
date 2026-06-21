@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -377,6 +378,76 @@ func (b *Bot) SendDocument(ctx context.Context, chatID int64, fileID, caption st
 		payload.ReplyMarkup = keyboard
 	}
 	return b.sendWithRetry(ctx, "sendDocument", payload)
+}
+
+func (b *Bot) SendPhotoUpload(ctx context.Context, chatID int64, filename string, data []byte, caption string, keyboard *InlineKeyboardMarkup) (int64, string, error) {
+	msg, err := b.sendMultipart(ctx, "sendPhoto", "photo", chatID, filename, data, caption, keyboard)
+	if err != nil {
+		return 0, "", err
+	}
+	if len(msg.Photo) == 0 {
+		return 0, "", fmt.Errorf("telegram sendPhoto returned no photo")
+	}
+	return msg.MessageID, msg.Photo[len(msg.Photo)-1].FileID, nil
+}
+
+func (b *Bot) SendDocumentUpload(ctx context.Context, chatID int64, filename string, data []byte, caption string, keyboard *InlineKeyboardMarkup) (int64, string, error) {
+	msg, err := b.sendMultipart(ctx, "sendDocument", "document", chatID, filename, data, caption, keyboard)
+	if err != nil {
+		return 0, "", err
+	}
+	if msg.Document == nil || msg.Document.FileID == "" {
+		return 0, "", fmt.Errorf("telegram sendDocument returned no document")
+	}
+	return msg.MessageID, msg.Document.FileID, nil
+}
+
+func (b *Bot) sendMultipart(ctx context.Context, method, field string, chatID int64, filename string, data []byte, caption string, keyboard *InlineKeyboardMarkup) (Message, error) {
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	_ = w.WriteField("chat_id", strconv.FormatInt(chatID, 10))
+	if caption != "" {
+		_ = w.WriteField("caption", caption)
+	}
+	if keyboard != nil {
+		raw, err := json.Marshal(keyboard)
+		if err != nil {
+			return Message{}, err
+		}
+		_ = w.WriteField("reply_markup", string(raw))
+	}
+	part, err := w.CreateFormFile(field, filename)
+	if err != nil {
+		return Message{}, err
+	}
+	if _, err := part.Write(data); err != nil {
+		return Message{}, err
+	}
+	if err := w.Close(); err != nil {
+		return Message{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/"+method, &body)
+	if err != nil {
+		return Message{}, err
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return Message{}, fmt.Errorf("telegram upload: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return Message{}, fmt.Errorf("telegram upload failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+	var ar sendMessageResponse
+	if err := json.Unmarshal(raw, &ar); err != nil {
+		return Message{}, fmt.Errorf("telegram upload decode: %w", err)
+	}
+	if !ar.OK {
+		return Message{}, fmt.Errorf("telegram upload not ok: %s", ar.Description)
+	}
+	return ar.Result, nil
 }
 
 // SendInvoice sends a Telegram Stars invoice (currency "XTR") into a chat and

@@ -1,10 +1,13 @@
 package webapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -27,6 +30,80 @@ type fakeCabinet struct {
 	trialErr    error
 	trialResult *payments.WebTrialResult
 	trialNames  []string
+	parityErr   error
+	receipt     payments.WebReceipt
+}
+
+func TestWebParityJSONRoutes(t *testing.T) {
+	for _, tc := range []struct{ path, body, want string }{
+		{"/api/register", `{"query":"alice"}`, `"username":"alice"`},
+		{"/api/gift/redeem", `{"code":"RW-X","remnawave_id":7,"username":"alice"}`, `"ok":true`},
+		{"/api/platega/check", `{"request_id":9}`, `"status":"pending"`},
+	} {
+		srv := newTestServer(&fakeCabinet{})
+		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Authorization", validAuth(t))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), tc.want) {
+			t.Fatalf("%s: code=%d body=%s", tc.path, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestWebParityErrorMappings(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want int
+	}{
+		{payments.ErrInvalidProfileQuery, 400}, {payments.ErrProfileLinkedElsewhere, 403},
+		{payments.ErrGiftUsed, 409}, {payments.ErrReceiptSessionExpired, 410},
+		{payments.ErrReceiptTooLarge, 413}, {payments.ErrPaymentRequestInaccessible, 404},
+	} {
+		srv := newTestServer(&fakeCabinet{parityErr: tc.err})
+		req := httptest.NewRequest(http.MethodPost, "/api/register", strings.NewReader(`{"query":"alice"}`))
+		req.Header.Set("Authorization", validAuth(t))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Fatalf("err=%v code=%d want=%d body=%s", tc.err, w.Code, tc.want, w.Body.String())
+		}
+	}
+}
+
+func TestReceiptMultipartRoute(t *testing.T) {
+	cab := &fakeCabinet{}
+	srv := newTestServer(cab)
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("note", "paid")
+	part, _ := mw.CreateFormFile("file", "receipt.pdf")
+	_, _ = part.Write([]byte("pdf-data"))
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/receipt", &body)
+	req.Header.Set("Authorization", validAuth(t))
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 || cab.receipt.Filename != "receipt.pdf" || cab.receipt.Note != "paid" || string(cab.receipt.Data) != "pdf-data" {
+		t.Fatalf("code=%d receipt=%+v", w.Code, cab.receipt)
+	}
+}
+
+func TestEmbeddedFrontendContainsNativeParityFlows(t *testing.T) {
+	srv := newTestServer(&fakeCabinet{})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{"/api/register", "/api/gift/redeem", "/api/receipt", "/api/platega/check", "localStorage.setItem(checkKey"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("frontend missing %q", want)
+		}
+	}
+	if strings.Contains(body, "Привязка профиля и активация подарочных кодов оформляются в диалоге с ботом") {
+		t.Fatal("obsolete bot handoff remains")
+	}
 }
 
 func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabinet, error) {
@@ -46,6 +123,19 @@ func (f *fakeCabinet) CreateGiftRequest(_ context.Context, _ int64, months int) 
 func (f *fakeCabinet) CreateInviteRequest(_ context.Context, _ int64, username string) error {
 	f.invited = append(f.invited, username)
 	return f.inviteErr
+}
+func (f *fakeCabinet) RegisterProfile(_ context.Context, _ int64, query string) (*payments.WebRegistrationResult, error) {
+	return &payments.WebRegistrationResult{Username: query}, f.parityErr
+}
+func (f *fakeCabinet) RedeemGift(_ context.Context, _ int64, code string, _ int64, username string) (*payments.WebGiftRedemptionResult, error) {
+	return &payments.WebGiftRedemptionResult{Username: username}, f.parityErr
+}
+func (f *fakeCabinet) UploadRenewReceipt(_ context.Context, _ int64, receipt payments.WebReceipt) error {
+	f.receipt = receipt
+	return f.parityErr
+}
+func (f *fakeCabinet) CheckPlategaPayment(_ context.Context, _ int64, _ int64) (*payments.WebPaymentStatus, error) {
+	return &payments.WebPaymentStatus{Status: "pending"}, f.parityErr
 }
 
 func (f *fakeCabinet) SetNotificationPref(_ context.Context, _ int64, kind string, muted bool) error {

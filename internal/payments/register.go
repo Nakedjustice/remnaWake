@@ -47,6 +47,54 @@ func (s *Service) clearRegister(chatID int64) {
 	delete(s.registers, chatID)
 }
 
+// RegisterProfile resolves a profile exactly like the bot registration flow
+// and links it immediately for the authenticated Mini App user.
+func (s *Service) RegisterProfile(ctx context.Context, telegramID int64, query string) (*WebRegistrationResult, error) {
+	if s.registrar == nil {
+		return nil, ErrPaymentsDisabled
+	}
+	query = strings.TrimSpace(query)
+	var sub *Subscriber
+	var err error
+	if short, isLink := extractShortUUID(query); isLink {
+		if short == "" {
+			return nil, ErrInvalidProfileQuery
+		}
+		sub, err = s.finder.FindByShortUUID(ctx, short)
+	} else {
+		if !isValidUsername(query) {
+			return nil, ErrInvalidProfileQuery
+		}
+		sub, err = s.finder.FindByUsername(ctx, query)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: resolve profile: %v", ErrPanelUnavailable, err)
+	}
+	if sub == nil {
+		return nil, ErrProfileUnknown
+	}
+	if sub.TelegramID != 0 {
+		if sub.TelegramID == telegramID {
+			return &WebRegistrationResult{Username: sub.Username}, nil
+		}
+		return nil, ErrProfileLinkedElsewhere
+	}
+	if err := s.linkResolvedProfile(ctx, sub.UUID, telegramID); err != nil {
+		return nil, err
+	}
+	return &WebRegistrationResult{Username: sub.Username}, nil
+}
+
+func (s *Service) linkResolvedProfile(ctx context.Context, uuid string, telegramID int64) error {
+	if s.dryRun {
+		return nil
+	}
+	if err := s.registrar.SetTelegramID(ctx, uuid, telegramID); err != nil {
+		return fmt.Errorf("%w: link profile: %v", ErrPanelUnavailable, err)
+	}
+	return nil
+}
+
 // StartRegisterFlow handles /register. Returns true if the message was consumed.
 func (s *Service) StartRegisterFlow(ctx context.Context, m *tg.Message) bool {
 	if m == nil || !s.isEnabled() || s.registrar == nil {
@@ -271,7 +319,7 @@ func (s *Service) handleRegisterConfirm(ctx context.Context, cb *tg.CallbackQuer
 		return true
 	}
 
-	if err := s.registrar.SetTelegramID(ctx, uuid, tgID); err != nil {
+	if err := s.linkResolvedProfile(ctx, uuid, tgID); err != nil {
 		s.logger.Error("register: set telegram id failed", "uuid", uuid, "err", err.Error())
 		s.clearRegister(chatID)
 		_ = s.bot.EditMessageReplyMarkup(ctx, chatID, cb.Message.MessageID, nil)
