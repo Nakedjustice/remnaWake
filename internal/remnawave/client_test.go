@@ -150,7 +150,7 @@ func TestGetUserByUsername(t *testing.T) {
 			t.Fatalf("auth = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"uuid":"u-1","id":7,"username":"alice b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":555,"hwidDeviceLimit":4,"trafficLimitBytes":1073741824,"trafficLimitStrategy":"WEEK","activeInternalSquads":[{"uuid":"sq-1","name":"Default-Squad"}]}}`))
+		_, _ = w.Write([]byte(`{"response":{"uuid":"u-1","id":7,"username":"alice b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":555,"hwidDeviceLimit":4,"trafficLimitBytes":1073741824,"trafficLimitStrategy":"WEEK","activeInternalSquads":[{"uuid":"sq-1","name":"Default-Squad"}],"userTraffic":{"usedTrafficBytes":536870912,"lifetimeUsedTrafficBytes":2147483648}}}`))
 	}))
 	defer server.Close()
 
@@ -167,6 +167,10 @@ func TestGetUserByUsername(t *testing.T) {
 	}
 	if u.TrafficLimitBytes != 1073741824 || u.TrafficLimitStrategy != "WEEK" {
 		t.Fatalf("traffic limit = %d / %q", u.TrafficLimitBytes, u.TrafficLimitStrategy)
+	}
+	// Used traffic lives under the nested "userTraffic" object, not at the top level.
+	if u.UserTraffic.UsedTrafficBytes != 536870912 || u.UserTraffic.LifetimeUsedTrafficBytes != 2147483648 {
+		t.Fatalf("user traffic = %d / %d", u.UserTraffic.UsedTrafficBytes, u.UserTraffic.LifetimeUsedTrafficBytes)
 	}
 	if len(u.ActiveInternalSquads) != 1 || u.ActiveInternalSquads[0].UUID != "sq-1" {
 		t.Fatalf("activeInternalSquads = %+v", u.ActiveInternalSquads)
