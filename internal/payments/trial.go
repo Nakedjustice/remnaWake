@@ -45,12 +45,20 @@ func (s *Service) clearTrial(chatID int64) {
 	delete(s.trials, chatID)
 }
 
-// TrialOffered reports whether the free trial should be advertised to users:
+// trialAvailable reports whether the free trial can be offered and started:
 // the payment flow is on, the trial is enabled, and user creation is wired.
-// Mirrors the guard in beginTrialFlow so an offered button always works.
-func (s *Service) TrialOffered() bool {
+// It is the single guard shared by the offer check and beginTrialFlow so an
+// advertised button always leads to a working flow.
+func (s *Service) trialAvailable() bool {
 	enabled, _ := s.trialConfig()
 	return s.isEnabled() && enabled && s.creator != nil
+}
+
+// TrialOffered reports whether the free trial should be advertised to users.
+// Exposes trialAvailable so the welcome-screen button is only shown when the
+// flow behind it will actually run.
+func (s *Service) TrialOffered() bool {
+	return s.trialAvailable()
 }
 
 // StartTrialFlow handles /trial. Returns true if the message was consumed (which
@@ -75,10 +83,10 @@ func (s *Service) handleMenuTrial(ctx context.Context, cb *tg.CallbackQuery) boo
 // (not consumed) when the trial is disabled, so command routing can fall
 // through. Returns true once it has replied — including the ineligible case.
 func (s *Service) beginTrialFlow(ctx context.Context, chatID int64) bool {
-	enabled, days := s.trialConfig()
-	if !s.isEnabled() || !enabled || s.creator == nil {
+	if !s.trialAvailable() {
 		return false
 	}
+	_, days := s.trialConfig()
 	// The trial is for brand-new users only: anyone who already has a linked
 	// profile is ineligible.
 	subs, err := s.finder.FindByTelegramID(ctx, chatID)
