@@ -109,6 +109,14 @@ CREATE TABLE IF NOT EXISTS support_messages (
   read_by_admin      INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_support_user ON support_messages(user_telegram_id);
+CREATE TABLE IF NOT EXISTS referrals (
+  referred_telegram_id INTEGER PRIMARY KEY,
+  referrer_telegram_id INTEGER NOT NULL,
+  status               TEXT NOT NULL DEFAULT 'pending',
+  created_at           TEXT NOT NULL,
+  credited_at          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_telegram_id);
 `
 
 // New opens (creating if needed) the SQLite database at path and applies migrations.

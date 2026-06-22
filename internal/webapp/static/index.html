@@ -359,6 +359,11 @@ const EN = {
   '✅ Скопировано': '✅ Copied',
   'Скопировано!': 'Copied!',
   'Не удалось скопировать, выделите ссылку вручную.': 'Could not copy, please select the link manually.',
+  '🤝 Пригласить друга': '🤝 Refer a friend',
+  'Друг переходит по вашей ссылке и оформляет первую подписку — вы получаете {iN} {iW}, а он {eN} {eW}.': 'Your friend opens your link and pays for their first subscription — you get {iN} {iW}, they get {eN} {eW}.',
+  'Приглашено': 'Invited',
+  'Оформили подписку': 'Subscribed',
+  'Реферальная программа сейчас отключена.': 'The referral program is currently disabled.',
   'Продление — выберите период:': 'Renewal — choose a period:',
   'Выберите период подписки': 'Select a subscription period',
   '{months} мес.': '{months} mo.',
@@ -1326,15 +1331,17 @@ function showHome() {
     appEl.appendChild(renderUnlinked());
     appEl.appendChild(renderRegistration());
     if (data.trial_available) appEl.appendChild(renderTrialClaim());
+    const inviteButtons = [
+      [t('🎁 Подарить'), showGift],
+      [t('👥 Пригласить'), showInvite],
+      [t('📦 Мои подарки'), showMyGifts],
+      [t('👥 Мои приглашения'), showMyInvites],
+    ];
+    if (data.referral) inviteButtons.push([t('🤝 Пригласить друга'), showReferral]);
     appEl.appendChild(menuCard(
       t('🎟 Приглашения'),
       t('Подарите подписку или пригласите пользователя.'),
-      [
-        [t('🎁 Подарить'), showGift],
-        [t('👥 Пригласить'), showInvite],
-        [t('📦 Мои подарки'), showMyGifts],
-        [t('👥 Мои приглашения'), showMyInvites],
-      ]));
+      inviteButtons));
     appEl.appendChild(menuCard(
       t('💬 Поддержка'),
       t('Связаться с администратором по любым вопросам.'),
@@ -1346,6 +1353,8 @@ function showHome() {
     if (profiles.length > 1) appEl.appendChild(renderProfileSelector(profiles, profile));
     if (profile) appEl.appendChild(renderProfile(profile, data));
     appEl.appendChild(profileActions());
+    const ref = renderReferral(data);
+    if (ref) appEl.appendChild(ref);
   }
 
   statusEl.hidden = true;
@@ -1459,6 +1468,53 @@ function showMyInvites() {
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('👥 Мои приглашения')));
   appEl.appendChild(renderMyInvites(data, false));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+// renderReferral builds the referral card: how it works, the user's personal
+// link with a copy button, and their invited/converted counts. Returns null
+// when the program is disabled (no data.referral), so callers can skip it.
+function renderReferral(data) {
+  const r = (data || {}).referral;
+  if (!r) return null;
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('🤝 Пригласить друга')));
+  card.appendChild(el('div', 'hint', t('Друг переходит по вашей ссылке и оформляет первую подписку — вы получаете {iN} {iW}, а он {eN} {eW}.',
+    { iN: r.inviter_days, iW: daysWord(r.inviter_days), eN: r.invitee_days, eW: daysWord(r.invitee_days) })));
+  if (r.link) {
+    const a = el('a', 'sub-link', r.link);
+    a.href = r.link;
+    a.target = '_blank';
+    card.appendChild(a);
+    const copy = el('button', 'secondary', t('📋 Скопировать ссылку'));
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(r.link);
+        copy.textContent = t('✅ Скопировано');
+        setTimeout(() => copy.textContent = t('📋 Скопировать ссылку'), 1500);
+      } catch { tg.showAlert(t('Не удалось скопировать, выделите ссылку вручную.')); }
+    };
+    card.appendChild(copy);
+  }
+  row(card, t('Приглашено'), String(r.invited || 0));
+  row(card, t('Оформили подписку'), String(r.credited || 0));
+  return card;
+}
+
+// showReferral opens the referral screen from the invitations menu.
+function showReferral() {
+  currentRender = showReferral;
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('🤝 Пригласить друга')));
+  const card = renderReferral(cabinetData || {});
+  if (card) {
+    appEl.appendChild(card);
+  } else {
+    const empty = el('div', 'card');
+    empty.appendChild(el('div', 'hint', t('Реферальная программа сейчас отключена.')));
+    appEl.appendChild(empty);
+  }
   statusEl.hidden = true;
   appEl.hidden = false;
 }

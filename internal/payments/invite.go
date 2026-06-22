@@ -344,16 +344,28 @@ func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store
 // profile). Honors dry-run by logging only.
 func (s *Service) awardInviterReferralBonus(ctx context.Context, inviterTGID int64) int {
 	refEnabled, inviterDays, _ := s.referralConfig()
-	if !refEnabled || inviterDays <= 0 || inviterTGID == 0 {
+	if !refEnabled {
 		return 0
 	}
-	subs, err := s.finder.FindByTelegramID(ctx, inviterTGID)
+	return s.extendUserByDays(ctx, inviterTGID, inviterDays)
+}
+
+// extendUserByDays extends the given Telegram user's first profile by days,
+// honoring dry-run. Returns the number of days actually granted (0 when days
+// <= 0, tgID is 0, or the user has no linked profile). Best-effort: any lookup
+// or panel error is logged and swallowed, so referral callers never fail on it.
+// Shared by the invite, gift and referral-link bonus paths.
+func (s *Service) extendUserByDays(ctx context.Context, tgID int64, days int) int {
+	if days <= 0 || tgID == 0 {
+		return 0
+	}
+	subs, err := s.finder.FindByTelegramID(ctx, tgID)
 	if err != nil {
-		s.logger.Error("referral: find inviter failed", "err", err.Error())
+		s.logger.Error("referral: find user for bonus failed", "telegram_id", tgID, "err", err.Error())
 		return 0
 	}
 	if len(subs) == 0 {
-		s.logger.Info("referral: inviter has no profile, skipping bonus", "telegram_id", inviterTGID)
+		s.logger.Info("referral: user has no profile, skipping bonus", "telegram_id", tgID)
 		return 0
 	}
 	sub := subs[0]
@@ -361,17 +373,16 @@ func (s *Service) awardInviterReferralBonus(ctx context.Context, inviterTGID int
 	if now := s.now(); base.Before(now) {
 		base = now
 	}
-	newExpireAt := base.AddDate(0, 0, inviterDays)
+	newExpireAt := base.AddDate(0, 0, days)
 	if s.dryRun {
-		s.logger.Info("dry-run: would award referral bonus to inviter",
-			"uuid", sub.UUID, "days", inviterDays)
-		return inviterDays
+		s.logger.Info("dry-run: would award referral bonus", "uuid", sub.UUID, "days", days)
+		return days
 	}
 	if err := s.extender.ExtendSubscriptionByUUID(ctx, sub.UUID, newExpireAt); err != nil {
-		s.logger.Error("referral: extend inviter failed", "uuid", sub.UUID, "err", err.Error())
+		s.logger.Error("referral: extend user failed", "uuid", sub.UUID, "err", err.Error())
 		return 0
 	}
-	return inviterDays
+	return days
 }
 
 // referralBonusSuffix returns a line announcing the inviter's referral bonus,

@@ -255,6 +255,12 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 						pay.StartGiftRedemption(ctx, u.Message.Chat.ID, code)
 						continue
 					}
+					if id, ok := strings.CutPrefix(payload, "ref_"); ok && id != "" {
+						logger.Info("received referral deep link", "chat_id", u.Message.Chat.ID)
+						pay.StartReferral(ctx, u.Message.Chat.ID, id)
+						// Fall through to the normal welcome + reply keyboard so the
+						// referred user still sees the start screen and trial offer.
+					}
 					logger.Info("received /start command", "chat_id", u.Message.Chat.ID)
 					if err := bot.SendWelcome(ctx, u.Message.Chat.ID, pay.TrialOffered()); err != nil {
 						logger.Error("send welcome message failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)

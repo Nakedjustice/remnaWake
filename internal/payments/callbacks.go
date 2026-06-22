@@ -54,6 +54,8 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleMenuRegister(ctx, cb)
 	case cb.Data == "menu:trial":
 		return s.handleMenuTrial(ctx, cb)
+	case cb.Data == "menu:referral":
+		return s.handleMenuReferral(ctx, cb)
 	case cb.Data == "notif:menu":
 		return s.handleNotifMenu(ctx, cb)
 	case cb.Data == "notif:expiry":
