@@ -29,6 +29,18 @@ var enPayments = map[string]string{
 	// Referral bonus
 	"\n\n🎉 Вам начислено %d %s бонуса за приглашение.": "\n\n🎉 You earned a %d-%s bonus for the referral.",
 
+	// Referral program (gift + link paths)
+	"🤝 Пригласить друга": "🤝 Refer a friend",
+	"🤝 Вы перешли по приглашению. Оформите первую подписку — и вы оба получите бонусные дни!": "🤝 You followed a referral. Subscribe for the first time and you both get bonus days!",
+	"🎉 Ваш друг активировал подарок и стал новым пользователем — вам начислено %d %s бонуса за приглашение.": "🎉 Your friend redeemed a gift and became a new user — you earned a %d-%s referral bonus.",
+	"🎉 Приглашённый вами друг оформил первую подписку — вам начислено %d %s бонуса.":                          "🎉 A friend you referred made their first payment — you earned a %d-%s bonus.",
+	"🎉 Вам начислено %d %s бонуса за регистрацию по приглашению.":                                              "🎉 You earned a %d-%s bonus for signing up via a referral.",
+	"Реферальная программа сейчас отключена.":                                                                  "The referral program is currently disabled.",
+	"🤝 Приглашайте друзей\n\nКогда друг перейдёт по вашей ссылке и оформит первую подписку, вы получите %d %s, а он — %d %s.": "🤝 Invite friends\n\nWhen a friend opens your link and pays for their first subscription, you get %d %s and they get %d %s.",
+	"\n\nВаша ссылка:\n": "\n\nYour link:\n",
+	"\n\nВаш реферальный код: %d\nПопросите друга отправить боту: /start %s%d": "\n\nYour referral code: %d\nAsk your friend to send the bot: /start %s%d",
+	"\n\nПриглашено: %d · Оформили подписку: %d":                                "\n\nInvited: %d · Subscribed: %d",
+
 	// Admin trial & referral settings (bot cards)
 	"🎁 Пробный период":                                       "🎁 Free trial",
 	"🎉 Реферальная программа":                                "🎉 Referral program",
