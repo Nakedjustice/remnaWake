@@ -355,8 +355,18 @@ func (s *Service) redeemGiftCreate(ctx context.Context, telegramID int64, st *re
 		return nil, ErrGiftUsed
 	}
 	expireAt := s.now().AddDate(0, st.months, 0)
+	// A gift that brings in a brand-new user counts as a referral: the new
+	// redeemer's fresh subscription gets the invitee bonus folded in, and the
+	// gift buyer is rewarded once the profile exists (see creditGiftReferral).
+	refEnabled, inviterDays, inviteeDays := s.referralConfig()
+	if refEnabled && inviteeDays > 0 {
+		expireAt = expireAt.AddDate(0, 0, inviteeDays)
+	}
 	if s.dryRun {
 		s.notifyGiftRedeemed(ctx, st.giftID, telegramID, username)
+		if refEnabled {
+			s.creditGiftReferral(ctx, st.giftID, telegramID, inviterDays, inviteeDays)
+		}
 		return &WebGiftRedemptionResult{Username: username, ExpireAt: expireAt.Format("02.01.2006")}, nil
 	}
 	squadUUID, err := s.resolveDefaultSquadUUID(ctx)
@@ -377,5 +387,36 @@ func (s *Service) redeemGiftCreate(ctx context.Context, telegramID int64, st *re
 		}
 	}
 	s.notifyGiftRedeemed(ctx, st.giftID, telegramID, created.Username)
+	if refEnabled {
+		s.creditGiftReferral(ctx, st.giftID, telegramID, inviterDays, inviteeDays)
+	}
 	return &WebGiftRedemptionResult{Username: created.Username, SubscriptionURL: created.SubscriptionURL, ExpireAt: expireAt.Format("02.01.2006"), LinkFailed: linkFailed}, nil
+}
+
+// creditGiftReferral rewards a gift that brought in a brand-new user: the gift
+// buyer (the referrer) earns inviterDays on their own subscription, and the new
+// redeemer is told about the inviteeDays already folded into their fresh
+// subscription. Only the new-profile redemption path calls this, so it never
+// fires for an existing subscriber. Best-effort and self-gift-safe (a buyer who
+// redeems their own code earns nothing); honors dry-run via extendUserByDays.
+func (s *Service) creditGiftReferral(ctx context.Context, giftID, redeemerTGID int64, inviterDays, inviteeDays int) {
+	g, err := s.store.GetGiftCode(ctx, giftID)
+	if err != nil || g == nil {
+		if err != nil {
+			s.logger.Error("referral: load gift for bonus failed", "err", err.Error())
+		}
+		return
+	}
+	if g.BuyerTelegramID != 0 && g.BuyerTelegramID != redeemerTGID {
+		if bonus := s.extendUserByDays(ctx, g.BuyerTelegramID, inviterDays); bonus > 0 {
+			_ = s.bot.SendPlain(ctx, g.BuyerTelegramID, fmt.Sprintf(
+				i18n.T("🎉 Ваш друг активировал подарок и стал новым пользователем — вам начислено %d %s бонуса за приглашение."),
+				bonus, i18n.PluralDays(bonus)))
+		}
+	}
+	if inviteeDays > 0 {
+		_ = s.bot.SendPlain(ctx, redeemerTGID, fmt.Sprintf(
+			i18n.T("🎉 Вам начислено %d %s бонуса за регистрацию по приглашению."),
+			inviteeDays, i18n.PluralDays(inviteeDays)))
+	}
 }

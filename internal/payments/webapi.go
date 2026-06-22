@@ -78,6 +78,16 @@ type WebInvites struct {
 	Pending int `json:"pending"`
 }
 
+// WebReferral carries the user's personal referral link, the configured bonus
+// amounts and their referral counts. Present only when the program is enabled.
+type WebReferral struct {
+	Link        string `json:"link,omitempty"`
+	InviterDays int    `json:"inviter_days"`
+	InviteeDays int    `json:"invitee_days"`
+	Invited     int    `json:"invited"`
+	Credited    int    `json:"credited"`
+}
+
 // WebNotifPrefs carries the user's notification mute toggles for the mini app.
 type WebNotifPrefs struct {
 	ExpiryMuted  bool `json:"expiry_muted"`
@@ -120,6 +130,9 @@ type WebCabinet struct {
 	Requisites string       `json:"requisites,omitempty"`
 	Gifts      []WebGift    `json:"gifts,omitempty"`
 	Invites    *WebInvites  `json:"invites,omitempty"`
+	// Referral carries the personal referral link + stats, when the program is
+	// enabled. Reachable from the mini app and the bot.
+	Referral *WebReferral `json:"referral,omitempty"`
 	// Notifications carries the per-user mute toggles (always present).
 	Notifications *WebNotifPrefs `json:"notifications,omitempty"`
 	// TrialAvailable is true when the free trial is enabled and this user has no
@@ -220,6 +233,21 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 			}
 		}
 		out.Invites = inv
+	}
+
+	// Referral link + stats, when the program is enabled.
+	if refEnabled, inviterDays, inviteeDays := s.referralConfig(); refEnabled {
+		invited, credited, err := s.store.ReferralStats(ctx, telegramID)
+		if err != nil {
+			s.logger.Error("webapp: referral stats failed", "err", err.Error())
+		}
+		out.Referral = &WebReferral{
+			Link:        s.referralDeepLink(telegramID),
+			InviterDays: inviterDays,
+			InviteeDays: inviteeDays,
+			Invited:     invited,
+			Credited:    credited,
+		}
 	}
 
 	// Per-user notification mute toggles (always present so the card can render).

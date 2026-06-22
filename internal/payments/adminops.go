@@ -51,6 +51,22 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 	}
 	newExpireAt := base.AddDate(0, req.Months, 0)
 
+	// Referral link payout: if this payer was referred and not yet credited,
+	// fold the invitee bonus into this same extension so it lands in one panel
+	// call; the referrer is credited after the request is marked confirmed.
+	refEnabled, inviterDays, inviteeDays := s.referralConfig()
+	var pendingReferral *store.Referral
+	if refEnabled && req.TelegramID != 0 {
+		if ref, err := s.store.GetReferral(ctx, req.TelegramID); err != nil {
+			s.logger.Error("referral: lookup on confirm failed", "err", err.Error())
+		} else if ref != nil && ref.Status == "pending" {
+			pendingReferral = ref
+			if inviteeDays > 0 {
+				newExpireAt = newExpireAt.AddDate(0, 0, inviteeDays)
+			}
+		}
+	}
+
 	if s.dryRun {
 		s.logger.Info("dry-run: would extend", "uuid", req.UUID, "months", req.Months, "new_expire", newExpireAt.Format("2006-01-02"))
 	} else if err := s.extender.ExtendSubscriptionByUUID(ctx, req.UUID, newExpireAt); err != nil {
@@ -66,6 +82,9 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 		return req, newExpireAt, fmt.Errorf("%w: %v", ErrConfirmedNotMarked, err)
 	}
 	s.clearPayButtons(ctx, reqID)
+	if pendingReferral != nil {
+		s.settleReferral(ctx, pendingReferral, inviterDays, inviteeDays)
+	}
 	return req, newExpireAt, nil
 }
 

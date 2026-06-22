@@ -25,18 +25,22 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 		_ = s.bot.SendPlain(ctx, chatID, text)
 		return true
 	}
+	referralOn, _, _ := s.referralConfig()
+	referralRow := []tg.InlineKeyboardButton{{Text: i18n.T("🤝 Пригласить друга"), CallbackData: "menu:referral"}}
 	var kb *tg.InlineKeyboardMarkup
 	if url := s.getWebAppURL(); url != "" {
 		// Cabinet, tariffs, gifts and invites live in the mini app, so their
 		// inline buttons would duplicate it — keep only profile linking, which
 		// stays a chat flow.
-		kb = &tg.InlineKeyboardMarkup{
-			InlineKeyboard: [][]tg.InlineKeyboardButton{
-				{{Text: i18n.T("🖥 Открыть мини-приложение"), WebApp: &tg.WebAppInfo{URL: url}}},
-				{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
-				{{Text: i18n.T("💬 Поддержка"), CallbackData: "menu:support"}},
-			},
+		rows := [][]tg.InlineKeyboardButton{
+			{{Text: i18n.T("🖥 Открыть мини-приложение"), WebApp: &tg.WebAppInfo{URL: url}}},
+			{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
 		}
+		if referralOn {
+			rows = append(rows, referralRow)
+		}
+		rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("💬 Поддержка"), CallbackData: "menu:support"}})
+		kb = &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
 	} else {
 		var rows [][]tg.InlineKeyboardButton
 		// The free-trial button leads the menu when enabled, since it targets new
@@ -52,6 +56,11 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 			[]tg.InlineKeyboardButton{{Text: i18n.T("🎁 Подарить подписку"), CallbackData: "menu:gift"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("📦 Мои подарки"), CallbackData: "menu:mygifts"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("👤 Пригласить пользователя"), CallbackData: "menu:invite"}},
+		)
+		if referralOn {
+			rows = append(rows, referralRow)
+		}
+		rows = append(rows,
 			[]tg.InlineKeyboardButton{{Text: i18n.T("🔗 Привязать аккаунт"), CallbackData: "menu:register"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("💬 Поддержка"), CallbackData: "menu:support"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("🔔 Уведомления"), CallbackData: "notif:menu"}},
