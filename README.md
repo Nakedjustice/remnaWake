@@ -23,9 +23,10 @@ extends the subscription by the chosen number of months.
 - ➕ **Invites** (`/invite`) — subscribers request a new panel account; admin
   approves and the new subscription URL is sent back.
 - 🎁 **Free trial** (`/trial` or the Mini App, optional) — a brand-new user
-  creates a trial profile lasting `TRIAL_DAYS` days, once per Telegram ID
-  (`TRIAL_ENABLED`). Admins can also toggle it and change the length at runtime
-  from the bot admin menu or the Mini App admin panel.
+  creates a shaped trial profile once per Telegram ID, with configurable
+  duration, total traffic, HWID/device limit, and an optional dedicated squad
+  (`TRIAL_ENABLED`). Admins can change all trial settings at runtime from the
+  bot admin menu or the Mini App admin panel.
 - 🎉 **Referral bonus** (optional) — an approved invite grants bonus days to the
   inviter and/or the invitee (`REFERRAL_ENABLED`). Runtime-configurable from the
   bot admin menu and the Mini App admin panel.
@@ -387,6 +388,9 @@ docker compose restart caddy    # in your caddy directory
 | `TELEGRAM_STARS_RATE`  | no¹      | —                | Price units per Star; Stars charged = `ceil(price / rate)`. ¹Required when `TELEGRAM_STARS_ENABLED=true` |
 | `TRIAL_ENABLED`        | no       | `false`          | Enable the one-time free trial for new users (no linked profile)            |
 | `TRIAL_DAYS`           | no²      | `3`              | Trial length in days. ²Required (positive) when `TRIAL_ENABLED=true`        |
+| `TRIAL_TRAFFIC_LIMIT_GB` | no     | `10`             | Total trial traffic allowance in GB; `0` means unlimited                    |
+| `TRIAL_HWID_DEVICE_LIMIT` | no    | `1`              | Trial device limit; `0` means unlimited                                     |
+| `TRIAL_SQUAD_UUID`       | no     | empty            | Dedicated trial squad UUID; empty inherits the default squad                |
 | `REFERRAL_ENABLED`     | no       | `false`          | Reward approved invites with bonus days for inviter and/or invitee          |
 | `REFERRAL_INVITER_BONUS_DAYS` | no | `30`            | Bonus days added to the inviter's own subscription per approved invite      |
 | `REFERRAL_INVITEE_BONUS_DAYS` | no | `0`             | Extra days granted to the invited user on top of the 1-month invite term    |

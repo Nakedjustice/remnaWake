@@ -575,6 +575,14 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.handleTrialToggle(ctx, chatID)
 	case cb.Data == "adm:trial:days":
 		s.startTrialDaysInput(ctx, chatID)
+	case cb.Data == "adm:trial:traffic":
+		s.startTrialLimitInput(ctx, chatID, adminInputTrialTraffic, i18n.T("Введите лимит трафика пробного периода в GB (целое ≥ 0, 0 — без ограничения):"))
+	case cb.Data == "adm:trial:hwid":
+		s.startTrialLimitInput(ctx, chatID, adminInputTrialHwid, i18n.T("Введите лимит устройств пробного периода (целое ≥ 0, 0 — без ограничения):"))
+	case cb.Data == "adm:trial:squad":
+		s.sendTrialSquadList(ctx, chatID)
+	case strings.HasPrefix(cb.Data, "adm:trial:sq:"):
+		s.handleTrialSquadPick(ctx, chatID, cb.Data)
 	case cb.Data == "adm:referral":
 		s.sendReferralAdminCard(ctx, chatID)
 	case cb.Data == "adm:referral:toggle":

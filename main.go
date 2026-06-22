@@ -77,7 +77,10 @@ func main() {
 	}
 	// Trial and referral are runtime-toggleable: the env values seed the initial
 	// defaults, but a persisted admin override (bot or mini app) wins thereafter.
-	pay.InitTrial(cfg.Trial.Enabled, cfg.Trial.Days)
+	pay.InitTrialConfig(payments.TrialConfig{
+		Enabled: cfg.Trial.Enabled, Days: cfg.Trial.Days, TrafficLimitGB: cfg.Trial.TrafficLimitGB,
+		HwidDeviceLimit: cfg.Trial.HwidDeviceLimit, SquadUUID: cfg.Trial.SquadUUID,
+	})
 	pay.InitReferral(cfg.Referral.Enabled, cfg.Referral.InviterDays, cfg.Referral.InviteeDays)
 	var winbackDays []int
 	if cfg.Winback.Enabled {
@@ -399,8 +402,15 @@ func (f rwFinder) ListAll(ctx context.Context) ([]payments.Subscriber, error) {
 // payments.SquadLister.
 type rwCreator struct{ c *remnawave.Client }
 
-func (f rwCreator) CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string, trafficLimitStrategy string) (*payments.CreatedUser, error) {
-	u, err := f.c.CreateUser(ctx, username, expireAt, squadUUIDs, trafficLimitStrategy)
+func (f rwCreator) CreateUser(ctx context.Context, spec payments.CreateUserSpec) (*payments.CreatedUser, error) {
+	u, err := f.c.CreateUser(ctx, remnawave.CreateUserSpec{
+		Username:             spec.Username,
+		ExpireAt:             spec.ExpireAt,
+		SquadUUIDs:           spec.SquadUUIDs,
+		TrafficLimitBytes:    spec.TrafficLimitBytes,
+		TrafficLimitStrategy: spec.TrafficLimitStrategy,
+		HwidDeviceLimit:      spec.HwidDeviceLimit,
+	})
 	if err != nil {
 		return nil, err
 	}

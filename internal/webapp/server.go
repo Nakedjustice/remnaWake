@@ -55,7 +55,7 @@ type Admin interface {
 	AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error
 	AdminListUsers(ctx context.Context, telegramID int64) ([]payments.WebUserRow, error)
 	AdminSetDefaultTrafficReset(ctx context.Context, telegramID int64, strategy string) error
-	AdminSetTrial(ctx context.Context, telegramID int64, enabled bool, days int) error
+	AdminSetTrial(ctx context.Context, telegramID int64, cfg payments.TrialConfig) error
 	AdminSetReferral(ctx context.Context, telegramID int64, enabled bool, inviterDays, inviteeDays int) error
 	AdminFindUser(ctx context.Context, telegramID int64, query string) (*payments.WebManagedUser, error)
 	AdminUpdateUser(ctx context.Context, telegramID int64, req payments.WebUserUpdate) error
@@ -779,14 +779,20 @@ func (s *Server) handleAdminSetTrial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Enabled bool `json:"enabled"`
-		Days    int  `json:"days"`
+		Enabled         bool   `json:"enabled"`
+		Days            int    `json:"days"`
+		TrafficLimitGB  int    `json:"traffic_limit_gb"`
+		HwidDeviceLimit int    `json:"hwid_device_limit"`
+		SquadUUID       string `json:"squad_uuid"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "malformed request body")
 		return
 	}
-	if err := s.admin.AdminSetTrial(r.Context(), userID, req.Enabled, req.Days); err != nil {
+	if err := s.admin.AdminSetTrial(r.Context(), userID, payments.TrialConfig{
+		Enabled: req.Enabled, Days: req.Days, TrafficLimitGB: req.TrafficLimitGB,
+		HwidDeviceLimit: req.HwidDeviceLimit, SquadUUID: req.SquadUUID,
+	}); err != nil {
 		s.writeAdminError(w, "set trial", userID, err)
 		return
 	}

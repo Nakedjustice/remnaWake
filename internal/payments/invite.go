@@ -313,7 +313,10 @@ func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store
 		return req, nil, expireAt, fmt.Errorf("%w: %v", ErrPanelCreateFailed, err)
 	}
 
-	created, err := s.creator.CreateUser(ctx, req.NewUsername, expireAt, []string{squadUUID}, s.getDefaultTrafficReset())
+	created, err := s.creator.CreateUser(ctx, CreateUserSpec{
+		Username: req.NewUsername, ExpireAt: expireAt, SquadUUIDs: []string{squadUUID},
+		TrafficLimitStrategy: s.getDefaultTrafficReset(),
+	})
 	if err != nil {
 		s.logger.Error("invite: create user in panel failed", "username", req.NewUsername, "err", err.Error())
 		return req, nil, expireAt, fmt.Errorf("%w: %v", ErrPanelCreateFailed, err)

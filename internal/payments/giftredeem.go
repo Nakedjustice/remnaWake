@@ -374,7 +374,10 @@ func (s *Service) redeemGiftCreate(ctx context.Context, telegramID int64, st *re
 		_, _ = s.store.ReissueGiftCode(ctx, st.giftID)
 		return nil, fmt.Errorf("resolve squad: %w", err)
 	}
-	created, err := s.creator.CreateUser(ctx, username, expireAt, []string{squadUUID}, s.getDefaultTrafficReset())
+	created, err := s.creator.CreateUser(ctx, CreateUserSpec{
+		Username: username, ExpireAt: expireAt, SquadUUIDs: []string{squadUUID},
+		TrafficLimitStrategy: s.getDefaultTrafficReset(),
+	})
 	if err != nil {
 		_, _ = s.store.ReissueGiftCode(ctx, st.giftID)
 		return nil, fmt.Errorf("%w: %v", ErrPanelCreateFailed, err)

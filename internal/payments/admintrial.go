@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
@@ -13,17 +14,25 @@ import (
 // sendTrialAdminCard renders the free-trial admin card: current state plus
 // toggle and "change duration" buttons. Mirrors the web admin trial settings.
 func (s *Service) sendTrialAdminCard(ctx context.Context, chatID int64) {
-	enabled, days := s.trialConfig()
+	cfg := s.trialConfig()
 	state := i18n.T("выключен")
 	toggle := i18n.T("✅ Включить")
-	if enabled {
+	if cfg.Enabled {
 		state = i18n.T("включён")
 		toggle = i18n.T("🚫 Выключить")
 	}
-	text := fmt.Sprintf(i18n.T("🎁 Пробный период: %s\nДлительность: %d %s"), state, days, i18n.PluralDays(days))
+	squad := i18n.T("сквад по умолчанию")
+	if cfg.SquadUUID != "" {
+		squad = cfg.SquadUUID
+	}
+	text := fmt.Sprintf(i18n.T("🎁 Пробный период: %s\nДлительность: %d %s\nТрафик: %s\nУстройства: %s\nСквад: %s\nСброс трафика: NO_RESET"),
+		state, cfg.Days, i18n.PluralDays(cfg.Days), formatLimit(int64(cfg.TrafficLimitGB), " GB"), formatLimit(int64(cfg.HwidDeviceLimit), ""), squad)
 	kb := &tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{
 		{{Text: toggle, CallbackData: "adm:trial:toggle"}},
 		{{Text: i18n.T("✏️ Изменить длительность (дни)"), CallbackData: "adm:trial:days"}},
+		{{Text: i18n.T("📊 Изменить лимит трафика"), CallbackData: "adm:trial:traffic"}},
+		{{Text: i18n.T("📱 Изменить лимит устройств"), CallbackData: "adm:trial:hwid"}},
+		{{Text: i18n.T("🛡 Выбрать сквад"), CallbackData: "adm:trial:squad"}},
 		{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}},
 	}}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
@@ -31,10 +40,86 @@ func (s *Service) sendTrialAdminCard(ctx context.Context, chatID int64) {
 
 // handleTrialToggle flips the trial on/off from the admin card and re-renders.
 func (s *Service) handleTrialToggle(ctx context.Context, chatID int64) {
-	enabled, _ := s.trialConfig()
-	if err := s.setTrialEnabled(ctx, !enabled); err != nil {
+	cfg := s.trialConfig()
+	if err := s.setTrialEnabled(ctx, !cfg.Enabled); err != nil {
 		s.logger.Error("admin: save trial enabled failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
+		return
+	}
+	s.sendTrialAdminCard(ctx, chatID)
+}
+
+func (s *Service) startTrialLimitInput(ctx context.Context, chatID int64, step adminInputStep, prompt string) {
+	s.mu.Lock()
+	state := s.adminInput[chatID]
+	state.step = step
+	s.adminInput[chatID] = state
+	s.mu.Unlock()
+	_ = s.bot.SendPlain(ctx, chatID, prompt)
+}
+
+func (s *Service) consumeTrialLimit(ctx context.Context, chatID int64, text string, traffic bool) bool {
+	limit, err := strconv.Atoi(text)
+	if err != nil || limit < 0 {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 0. Значение 0 означает без ограничения."))
+		return true
+	}
+	s.mu.Lock()
+	delete(s.adminInput, chatID)
+	s.mu.Unlock()
+	if traffic {
+		err = s.setTrialTrafficLimit(ctx, limit)
+	} else {
+		err = s.setTrialHwidLimit(ctx, limit)
+	}
+	if err != nil {
+		s.logger.Error("admin: save trial limit failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
+		return true
+	}
+	s.sendTrialAdminCard(ctx, chatID)
+	return true
+}
+
+func (s *Service) sendTrialSquadList(ctx context.Context, chatID int64) {
+	if s.squads == nil {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Список сквадов недоступен."))
+		return
+	}
+	squads, err := s.squads.GetInternalSquads(ctx)
+	if err != nil {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка получения сквадов из панели. Попробуйте позже."))
+		return
+	}
+	selected := s.trialConfig().SquadUUID
+	rows := make([][]tg.InlineKeyboardButton, 0, len(squads)+2)
+	defaultText := i18n.T("Использовать сквад по умолчанию")
+	if selected == "" {
+		defaultText = "✅ " + defaultText
+	}
+	rows = append(rows, []tg.InlineKeyboardButton{{Text: defaultText, CallbackData: "adm:trial:sq:default"}})
+	for _, squad := range squads {
+		text := squad.Name
+		if squad.UUID == selected {
+			text = "✅ " + text
+		}
+		rows = append(rows, []tg.InlineKeyboardButton{{Text: text, CallbackData: "adm:trial:sq:" + squad.UUID}})
+	}
+	rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("← Назад"), CallbackData: "adm:trial"}})
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, i18n.T("Выберите сквад для пробных профилей:"), &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+func (s *Service) handleTrialSquadPick(ctx context.Context, chatID int64, data string) {
+	uuid := strings.TrimPrefix(data, "adm:trial:sq:")
+	if uuid == "default" {
+		uuid = ""
+	}
+	if err := s.setTrialSquad(ctx, uuid); err != nil {
+		if errors.Is(err, ErrBadInput) {
+			_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сквад не найден в панели. Обновите список."))
+		} else {
+			_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения сквада."))
+		}
 		return
 	}
 	s.sendTrialAdminCard(ctx, chatID)

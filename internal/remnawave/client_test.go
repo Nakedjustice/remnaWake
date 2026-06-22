@@ -303,8 +303,14 @@ func TestCreateUserSendsActiveInternalSquads(t *testing.T) {
 	defer server.Close()
 
 	c, _ := NewClient(server.URL, "tok", time.Second)
-	if _, err := c.CreateUser(context.Background(), "alice", expireAt, []string{"sq-1"}, "WEEK"); err != nil {
+	if _, err := c.CreateUser(context.Background(), CreateUserSpec{
+		Username: "alice", ExpireAt: expireAt, SquadUUIDs: []string{"sq-1"},
+		TrafficLimitBytes: 10 * 1024 * 1024 * 1024, TrafficLimitStrategy: "WEEK", HwidDeviceLimit: 1,
+	}); err != nil {
 		t.Fatalf("err: %v", err)
+	}
+	if gotBody["trafficLimitBytes"] != float64(10*1024*1024*1024) || gotBody["hwidDeviceLimit"] != float64(1) {
+		t.Fatalf("creation limits missing from body: %v", gotBody)
 	}
 	squads, ok := gotBody["activeInternalSquads"].([]interface{})
 	if !ok || len(squads) != 1 || squads[0] != "sq-1" {
@@ -317,7 +323,7 @@ func TestCreateUserSendsActiveInternalSquads(t *testing.T) {
 	// Without squads the field must be absent entirely, not an empty array.
 	// An empty strategy falls back to NO_RESET.
 	gotBody = nil
-	if _, err := c.CreateUser(context.Background(), "alice", expireAt, nil, ""); err != nil {
+	if _, err := c.CreateUser(context.Background(), CreateUserSpec{Username: "alice", ExpireAt: expireAt}); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if _, present := gotBody["activeInternalSquads"]; present {

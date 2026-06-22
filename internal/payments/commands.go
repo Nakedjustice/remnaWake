@@ -100,6 +100,10 @@ func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 		return s.consumeUserExpiry(ctx, chatID, text)
 	case adminInputTrialDays:
 		return s.consumeTrialDays(ctx, chatID, text)
+	case adminInputTrialTraffic:
+		return s.consumeTrialLimit(ctx, chatID, text, true)
+	case adminInputTrialHwid:
+		return s.consumeTrialLimit(ctx, chatID, text, false)
 	case adminInputReferralInviter:
 		return s.consumeReferralBonus(ctx, chatID, text, true)
 	case adminInputReferralInvitee:

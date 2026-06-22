@@ -194,8 +194,8 @@ func (f *fakeAdmin) AdminSetRequisites(_ context.Context, tgID int64, text strin
 	f.calls = append(f.calls, adminCall{Name: "setreq", Text: text})
 	return f.err
 }
-func (f *fakeAdmin) AdminSetTrial(_ context.Context, tgID int64, enabled bool, days int) error {
-	f.calls = append(f.calls, adminCall{Name: "settrial", A: tgID, B: int64(days), Text: fmt.Sprintf("%t", enabled)})
+func (f *fakeAdmin) AdminSetTrial(_ context.Context, tgID int64, cfg payments.TrialConfig) error {
+	f.calls = append(f.calls, adminCall{Name: "settrial", A: tgID, B: int64(cfg.Days), Text: fmt.Sprintf("%t:%d:%d:%s", cfg.Enabled, cfg.TrafficLimitGB, cfg.HwidDeviceLimit, cfg.SquadUUID)})
 	return f.err
 }
 func (f *fakeAdmin) AdminSetReferral(_ context.Context, tgID int64, enabled bool, inviter, invitee int) error {
@@ -977,14 +977,14 @@ func TestHandleTrial(t *testing.T) {
 func TestHandleAdminTrialReferral(t *testing.T) {
 	adm := &fakeAdmin{}
 	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
-	req := httptest.NewRequest("POST", "/api/admin/trial", strings.NewReader(`{"enabled":true,"days":5}`))
+	req := httptest.NewRequest("POST", "/api/admin/trial", strings.NewReader(`{"enabled":true,"days":5,"traffic_limit_gb":10,"hwid_device_limit":1,"squad_uuid":"trial-squad"}`))
 	req.Header.Set("Authorization", validAuth(t))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("trial status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	if len(adm.calls) != 1 || adm.calls[0].Name != "settrial" || adm.calls[0].B != 5 {
+	if len(adm.calls) != 1 || adm.calls[0].Name != "settrial" || adm.calls[0].B != 5 || adm.calls[0].Text != "true:10:1:trial-squad" {
 		t.Fatalf("trial calls = %+v", adm.calls)
 	}
 

@@ -659,6 +659,8 @@ const EN = {
   // Free-trial claim (user cabinet)
   '🎁 Бесплатный пробный период': '🎁 Free trial',
   'Создайте профиль и попробуйте сервис бесплатно. Доступно один раз.': 'Create a profile and try the service for free. Available once.',
+  'Срок: {days} дн. · Трафик: {traffic} · Устройства: {devices}': 'Duration: {days} days · Traffic: {traffic} · Devices: {devices}',
+  'Без ограничений': 'Unlimited',
   'Имя пользователя (буквы, цифры и «_»)': 'Username (letters, digits and "_")',
   '🎁 Активировать пробный период': '🎁 Activate trial',
   'Введите имя пользователя.': 'Enter a username.',
@@ -668,7 +670,12 @@ const EN = {
   'Включён: новые пользователи могут активировать пробный профиль.': 'Enabled: new users can activate a trial profile.',
   'Выключен.': 'Disabled.',
   'Длительность (дни)': 'Duration (days)',
-  '💾 Сохранить длительность': '💾 Save duration',
+  'Лимит трафика (GB, 0 — без ограничений)': 'Traffic limit (GB, 0 means unlimited)',
+  'Лимит устройств (0 — без ограничений)': 'Device limit (0 means unlimited)',
+  'Сквад пробного периода': 'Trial squad',
+  'Использовать сквад по умолчанию': 'Use default squad',
+  'Сброс трафика: NO_RESET (общий лимит на весь период).': 'Traffic reset: NO_RESET (one allowance for the entire trial).',
+  '💾 Сохранить настройки': '💾 Save settings',
   '🚫 Выключить': '🚫 Disable',
   '✅ Включить': '✅ Enable',
   '🎉 Реферальная программа': '🎉 Referral program',
@@ -1357,10 +1364,17 @@ function renderNotifPrefs(data) {
 
 // renderTrialClaim builds the free-trial claim card shown to new (unlinked)
 // users when the trial is enabled.
-function renderTrialClaim() {
+function renderTrialClaim(terms) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, t('🎁 Бесплатный пробный период')));
   card.appendChild(el('div', 'hint', t('Создайте профиль и попробуйте сервис бесплатно. Доступно один раз.')));
+  if (terms) {
+    const traffic = terms.traffic_limit_gb === 0 ? t('Без ограничений') : terms.traffic_limit_gb + ' GB';
+    const devices = terms.hwid_device_limit === 0 ? t('Без ограничений') : String(terms.hwid_device_limit);
+    card.appendChild(el('div', 'hint', t('Срок: {days} дн. · Трафик: {traffic} · Устройства: {devices}', {
+      days: terms.days, traffic, devices,
+    })));
+  }
   const input = Object.assign(el('input'), { type: 'text', placeholder: t('Имя пользователя (буквы, цифры и «_»)') });
   card.appendChild(input);
   const btn = el('button', null, t('🎁 Активировать пробный период'));
@@ -1400,7 +1414,7 @@ function showHome() {
   if (!data.linked) {
     appEl.appendChild(renderUnlinked());
     appEl.appendChild(renderRegistration());
-    if (data.trial_available) appEl.appendChild(renderTrialClaim());
+    if (data.trial_available) appEl.appendChild(renderTrialClaim(data.trial_terms));
     const inviteButtons = [
       [t('🎁 Подарить'), showGift],
       [t('👥 Пригласить'), showInvite],
@@ -2155,21 +2169,59 @@ function renderAdminTrial(data) {
     ? t('Включён: новые пользователи могут активировать пробный профиль.')
     : t('Выключен.')));
   const days = Object.assign(el('input'), { type: 'number', min: '1', value: data.trial_days || 1 });
-  const r = el('div', 'row');
-  r.appendChild(el('span', 'k', t('Длительность (дни)')));
-  r.appendChild(days);
-  card.appendChild(r);
-  const save = el('button', null, t('💾 Сохранить длительность'));
-  save.onclick = () => adminAction('/api/admin/trial', { enabled: data.trial_enabled, days: parseInt(days.value, 10) || 0 });
+  const traffic = Object.assign(el('input'), { type: 'number', min: '0', value: data.trial_traffic_limit_gb ?? 10 });
+  const hwid = Object.assign(el('input'), { type: 'number', min: '0', value: data.trial_hwid_device_limit ?? 1 });
+  const squad = el('select');
+  squad.appendChild(Object.assign(el('option', null, t('Загрузка…')), { value: '' }));
+  squad.disabled = true;
+  [
+    [t('Длительность (дни)'), days],
+    [t('Лимит трафика (GB, 0 — без ограничений)'), traffic],
+    [t('Лимит устройств (0 — без ограничений)'), hwid],
+    [t('Сквад пробного периода'), squad],
+  ].forEach(([label, input]) => {
+    const row = el('div', 'row');
+    row.appendChild(el('span', 'k', label));
+    row.appendChild(input);
+    card.appendChild(row);
+  });
+  card.appendChild(el('div', 'hint', t('Сброс трафика: NO_RESET (общий лимит на весь период).')));
+  const payload = enabled => ({
+    enabled,
+    days: parseInt(days.value, 10),
+    traffic_limit_gb: parseInt(traffic.value, 10),
+    hwid_device_limit: parseInt(hwid.value, 10),
+    squad_uuid: squad.disabled ? (data.trial_squad_uuid || '') : squad.value,
+  });
+  const save = el('button', null, t('💾 Сохранить настройки'));
+  save.disabled = true;
+  save.onclick = () => adminAction('/api/admin/trial', payload(data.trial_enabled));
   card.appendChild(save);
   const toggle = el('button', 'switch' + (data.trial_enabled ? ' on' : ''));
   toggle.appendChild(el('span', 'knob'));
   toggle.setAttribute('aria-label', data.trial_enabled ? t('🚫 Выключить') : t('✅ Включить'));
-  toggle.onclick = () => adminAction('/api/admin/trial', { enabled: !data.trial_enabled, days: data.trial_days || 1 });
+  toggle.onclick = () => adminAction('/api/admin/trial', payload(!data.trial_enabled));
   const toggleRow = el('div', 'toggle-item');
   toggleRow.appendChild(el('div', 'ti-label', t('🎁 Пробный период')));
   toggleRow.appendChild(toggle);
   card.appendChild(toggleRow);
+  api('/api/admin/squads').then(res => {
+    squad.textContent = '';
+    squad.appendChild(Object.assign(el('option', null, t('Использовать сквад по умолчанию')), {
+      value: '', selected: !data.trial_squad_uuid,
+    }));
+    (res.squads || []).forEach(item => {
+      squad.appendChild(Object.assign(el('option', null, item.name), {
+        value: item.uuid, selected: item.uuid === data.trial_squad_uuid,
+      }));
+    });
+    squad.disabled = false;
+    save.disabled = false;
+  }).catch(e => {
+    squad.textContent = '';
+    squad.appendChild(Object.assign(el('option', null, t('Ошибка загрузки сквадов')), { value: '' }));
+    tg.showAlert(e.message);
+  });
   return card;
 }
 
