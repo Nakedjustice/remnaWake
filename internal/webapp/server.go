@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ type Cabinet interface {
 type Admin interface {
 	AdminPanelData(ctx context.Context, telegramID int64) (*payments.WebAdminPanel, error)
 	AdminStatsData(ctx context.Context, telegramID int64) (*payments.WebAdminStats, error)
+	AdminPaymentReport(ctx context.Context, telegramID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error)
 	AdminSetTariff(ctx context.Context, telegramID int64, months, price int) error
 	AdminDeleteTariff(ctx context.Context, telegramID int64, months int) error
 	AdminSetRequisites(ctx context.Context, telegramID int64, text string) error
@@ -115,6 +117,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
 	mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
+	mux.HandleFunc("GET /api/admin/payments", s.handleAdminPayments)
 	mux.HandleFunc("GET /api/admin/support", s.handleAdminSupport)
 	mux.HandleFunc("POST /api/admin/support/thread", s.handleAdminSupportThread)
 	mux.HandleFunc("POST /api/admin/support/send", s.handleAdminSupportSend)
@@ -548,6 +551,65 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
+}
+
+func (s *Server) handleAdminPayments(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	days, err := positiveQueryInt(query.Get("days"), 30)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid payment report filters")
+		return
+	}
+	page, err := positiveQueryInt(query.Get("page"), 1)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid payment report filters")
+		return
+	}
+	status := query.Get("status")
+	if status == "" {
+		status = "all"
+	}
+	provider := query.Get("provider")
+	if provider == "" {
+		provider = "all"
+	}
+	if !validPaymentQuery(days, status, provider, query.Get("q")) {
+		writeJSONError(w, http.StatusBadRequest, "invalid payment report filters")
+		return
+	}
+	report, err := s.admin.AdminPaymentReport(r.Context(), userID, payments.WebPaymentFilter{
+		Days: days, Status: status, Provider: provider, Query: query.Get("q"), Page: page,
+	})
+	if err != nil {
+		s.writeAdminError(w, "payment report", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func positiveQueryInt(raw string, fallback int) (int, error) {
+	if raw == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 0, payments.ErrBadInput
+	}
+	return n, nil
+}
+
+func validPaymentQuery(days int, status, provider, search string) bool {
+	if days != 7 && days != 30 && days != 90 || len(strings.TrimSpace(search)) > 100 {
+		return false
+	}
+	if status != "all" && status != "pending" && status != "confirmed" && status != "rejected" {
+		return false
+	}
+	return provider == "all" || provider == payments.ProviderP2P || provider == payments.ProviderPlatega || provider == payments.ProviderTelegramStars
 }
 
 func (s *Server) handleAdminSetTariff(w http.ResponseWriter, r *http.Request) {

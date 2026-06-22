@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -23,6 +24,49 @@ func TestNewCreatesSchema(t *testing.T) {
 	for _, table := range []string{"tariffs", "notified_users", "payment_requests"} {
 		if _, err := st.db.Exec("SELECT 1 FROM " + table + " WHERE 1=0"); err != nil {
 			t.Fatalf("table %s missing: %v", table, err)
+		}
+	}
+}
+
+func TestNewMigratesPaymentRequestIndexes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE payment_requests (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, remnawave_user_id INTEGER NOT NULL,
+		uuid TEXT NOT NULL, username TEXT NOT NULL, telegram_id INTEGER NOT NULL,
+		months INTEGER NOT NULL, price INTEGER NOT NULL, expire_at TEXT NOT NULL,
+		status TEXT NOT NULL, created_at TEXT NOT NULL, confirmed_at TEXT
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	st, err := New(path)
+	if err != nil {
+		t.Fatalf("New old database: %v", err)
+	}
+	defer st.Close()
+	rows, err := st.db.Query(`PRAGMA index_list(payment_requests)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	indexes := map[string]bool{}
+	for rows.Next() {
+		var seq, unique, partial int
+		var name, origin string
+		if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			t.Fatal(err)
+		}
+		indexes[name] = true
+	}
+	for _, name := range []string{"idx_payment_requests_created_at", "idx_payment_requests_status_resolved", "idx_payment_requests_provider", "idx_payment_requests_provider_txn"} {
+		if !indexes[name] {
+			t.Errorf("missing migrated index %s", name)
 		}
 	}
 }

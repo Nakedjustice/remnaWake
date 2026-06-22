@@ -250,9 +250,11 @@ App. A 🇷🇺/🇬🇧 **language
 selector** (top right) defaults to the user's Telegram language (falling back to
 `BOT_LANG`) and remembers an explicit choice.
 
-Admins also get a **Statistics** page matching `/stats`: panel user totals and
-statuses, 30-day confirmed payments and revenue, gift-code counts, and pending
-invites.
+Admins also get a **Statistics** page with panel user totals, gift-code counts,
+and pending invites. Its payment report provides 7/30/90-day revenue,
+conversion and provider breakdowns, a daily trend, and searchable, paginated
+renewal history for P2P, Platega, and Telegram Stars. Gateway transaction IDs
+are shown when available.
 
 **Requirements** — served by the bot on `WEBAPP_LISTEN` (default `:8080`).
 Telegram only opens Mini Apps over **HTTPS**, so put a reverse proxy
