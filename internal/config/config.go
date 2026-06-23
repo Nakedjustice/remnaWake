@@ -217,7 +217,7 @@ func Load() (*Config, error) {
 		},
 		AutoUpdate: AutoUpdateConfig{
 			Enabled:         getenvBool("AUTOUPDATE_ENABLED", false),
-			Image:           strings.TrimSpace(getenv("AUTOUPDATE_IMAGE", "ghcr.io/nakedjustice/remnawave:main")),
+			Image:           strings.TrimSpace(getenv("AUTOUPDATE_IMAGE", "ghcr.io/nakedjustice/remnawake:main")),
 			WatchtowerURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("WATCHTOWER_URL")), "/"),
 			WatchtowerToken: strings.TrimSpace(os.Getenv("WATCHTOWER_TOKEN")),
 		},

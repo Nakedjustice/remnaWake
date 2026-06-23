@@ -100,8 +100,12 @@ grep -q '^REFERRAL_ENABLED=true$' "$REMNAWAKE_DIR/.env"
 grep -q '^AUTOUPDATE_IMAGE=ghcr.io/nakedjustice/remnawake:main$' "$REMNAWAKE_DIR/.env"
 grep -q '127.0.0.1:9090:8080' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q '^  watchtower:$' "$REMNAWAKE_DIR/docker-compose.override.yml"
+grep -q 'image: containrrr/watchtower:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
+grep -q 'pull_policy: always' "$REMNAWAKE_DIR/docker-compose.override.yml"
+grep -q 'DOCKER_API_VERSION: "1.40"' "$REMNAWAKE_DIR/docker-compose.override.yml"
 
-bash "$ROOT/install.sh" doctor
+bash "$ROOT/install.sh" doctor >"$TMP/doctor-stable.log" 2>&1
+! grep -q 'containrrr/watchtower' "$TMP/doctor-stable.log"
 bash "$ROOT/install.sh" update
 
 test -f "$TMP/docker-pull"
@@ -131,5 +135,7 @@ EOF
 grep -q '^REMNAWAKE_CHANNEL=dev$' "$REMNAWAKE_DIR/.env"
 grep -q '^AUTOUPDATE_IMAGE=ghcr.io/nakedjustice/remnawake-dev:latest$' "$REMNAWAKE_DIR/.env"
 grep -q 'image: ghcr.io/nakedjustice/remnawake-dev:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
+bash "$ROOT/install.sh" doctor >"$TMP/doctor-dev.log" 2>&1
+! grep -q 'containrrr/watchtower' "$TMP/doctor-dev.log"
 
 echo "install smoke passed"

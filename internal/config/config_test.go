@@ -281,8 +281,8 @@ func TestLoadAutoUpdateDisabledByDefault(t *testing.T) {
 		t.Fatal("AutoUpdate should be disabled by default")
 	}
 	// Defaults are still populated so they're ready when enabled.
-	if cfg.AutoUpdate.Image != "ghcr.io/nakedjustice/remnawave:main" {
-		t.Fatalf("Image = %q, want ghcr.io/nakedjustice/remnawave:main", cfg.AutoUpdate.Image)
+	if cfg.AutoUpdate.Image != "ghcr.io/nakedjustice/remnawake:main" {
+		t.Fatalf("Image = %q, want ghcr.io/nakedjustice/remnawake:main", cfg.AutoUpdate.Image)
 	}
 	if cfg.AutoUpdate.CheckInterval != 6*time.Hour {
 		t.Fatalf("CheckInterval = %v, want 6h", cfg.AutoUpdate.CheckInterval)
