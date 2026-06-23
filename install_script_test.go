@@ -24,7 +24,9 @@ func TestInstallScriptV2Contract(t *testing.T) {
 		"REFERRAL_ENABLED=$REFERRAL_ENABLED",
 		`AUTOUPDATE_IMAGE="$(env_default AUTOUPDATE_IMAGE "$DEFAULT_DEPLOY_IMAGE")"`,
 		"docker-compose.override.yml",
-		"watchtower:",
+		"containrrr/watchtower:latest",
+		"pull_policy: always",
+		`DOCKER_API_VERSION: "1.40"`,
 		`service_image "$OVERRIDE_FILE" bot`,
 	} {
 		if !strings.Contains(src, want) {
@@ -49,6 +51,9 @@ func TestInstallSmokeScriptCoversSelectedPortAndUpdate(t *testing.T) {
 		"REFERRAL_ENABLED=true",
 		"bash \"$ROOT/install.sh\" doctor",
 		"bash \"$ROOT/install.sh\" update",
+		"image: containrrr/watchtower:latest",
+		"pull_policy: always",
+		`DOCKER_API_VERSION: "1.40"`,
 		"! grep -q 'containrrr/watchtower'",
 	} {
 		if !strings.Contains(src, want) {

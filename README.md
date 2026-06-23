@@ -239,6 +239,11 @@ shared `WATCHTOWER_TOKEN`. The bot calls Watchtower's `/v1/update` on
 empty the feature is notify-only and shows the manual
 `docker compose pull && docker compose up -d` command.
 
+The generated Watchtower service uses `containrrr/watchtower:latest` with
+`pull_policy: always` and `DOCKER_API_VERSION=1.40`. If an older install logs
+`client version 1.25 is too old`, rerun `./install.sh configure`, or refresh the
+sidecar with `docker compose pull watchtower` and `docker compose up -d watchtower`.
+
 ## 🖥 Telegram Mini App
 
 When `WEBAPP_URL` is set, the bot serves a Mini App version of the cabinet and
