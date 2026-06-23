@@ -52,10 +52,12 @@ services:
   # its /v1/update endpoint (after an admin taps "Install now"). Watchtower —
   # not the bot — holds the docker socket, so the bot stays unprivileged.
   # watchtower:
-  #   image: containrrr/watchtower
+  #   image: containrrr/watchtower:latest
+  #   pull_policy: always
   #   container_name: remnaWake-watchtower
   #   restart: unless-stopped
   #   environment:
+  #     DOCKER_API_VERSION: "1.40"
   #     WATCHTOWER_HTTP_API_UPDATE: "true"
   #     WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_TOKEN}"
   #     # Only touch this project's container, not every container on the host:

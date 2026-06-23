@@ -247,6 +247,12 @@ JPEG/PNG действует лимит 10 МБ, для PDF, WebP и HEIC — 50 
 Docker-сокету есть только у Watchtower. Если `WATCHTOWER_URL` пустой — режим
 «только уведомления» с командой `docker compose pull && docker compose up -d`.
 
+Сгенерированный сервис Watchtower использует `containrrr/watchtower:latest`,
+`pull_policy: always` и `DOCKER_API_VERSION=1.40`. Если старая установка пишет
+`client version 1.25 is too old`, заново запустите `./install.sh configure` или
+один раз обновите sidecar командой `docker compose pull watchtower`, затем
+`docker compose up -d watchtower`.
+
 ## 🖥 Мини-приложение Telegram
 
 Если задан `WEBAPP_URL`, бот поднимает мини-приложение «Личный кабинет» и

@@ -691,10 +691,12 @@ write_override_file() {
     if [ -n "$WATCHTOWER_URL" ]; then
       printf '\n'
       printf '  watchtower:\n'
-      printf '    image: containrrr/watchtower\n'
+      printf '    image: containrrr/watchtower:latest\n'
+      printf '    pull_policy: always\n'
       printf '    container_name: remnaWake-watchtower\n'
       printf '    restart: unless-stopped\n'
       printf '    environment:\n'
+      printf '      DOCKER_API_VERSION: "1.40"\n'
       printf '      WATCHTOWER_HTTP_API_UPDATE: "true"\n'
       printf '      WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_TOKEN}"\n'
       printf '      WATCHTOWER_SCOPE: "remnawake"\n'
@@ -1139,7 +1141,14 @@ doctor_mode() {
     v_duration "$value" >/dev/null 2>&1 && check_ok "AUTOUPDATE_CHECK_INTERVAL is valid" || check_fail "AUTOUPDATE_CHECK_INTERVAL is invalid: $value"
     if [ -n "$(env_default WATCHTOWER_URL "")" ]; then
       [ -n "$(env_default WATCHTOWER_TOKEN "")" ] && check_ok "Watchtower token is set" || check_fail "WATCHTOWER_TOKEN is required when WATCHTOWER_URL is set"
-      grep -q 'watchtower:' "$OVERRIDE_FILE" 2>/dev/null && check_ok "Watchtower service is present in override" || check_fail "Watchtower URL is set but override has no watchtower service"
+      if grep -q 'watchtower:' "$OVERRIDE_FILE" 2>/dev/null; then
+        check_ok "Watchtower service is present in override"
+        grep -q 'image: containrrr/watchtower:latest' "$OVERRIDE_FILE" 2>/dev/null && check_ok "Watchtower image uses latest tag" || check_warn "Watchtower image is stale; rerun ./install.sh configure"
+        grep -q 'pull_policy: always' "$OVERRIDE_FILE" 2>/dev/null && check_ok "Watchtower pull policy refreshes the sidecar" || check_warn "Watchtower pull_policy is missing; rerun ./install.sh configure"
+        grep -q 'DOCKER_API_VERSION: "1.40"' "$OVERRIDE_FILE" 2>/dev/null && check_ok "Watchtower Docker API version is compatible" || check_warn "Watchtower Docker API version is missing; rerun ./install.sh configure"
+      else
+        check_fail "Watchtower URL is set but override has no watchtower service"
+      fi
     else
       check_ok "Auto-update is notify-only (no Watchtower URL)"
     fi
