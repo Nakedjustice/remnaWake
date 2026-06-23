@@ -231,13 +231,13 @@ newer `AUTOUPDATE_IMAGE` and DMs every admin when one is published, with
 
 Because the bot runs as a distroless, unprivileged container, **one-tap
 install** is delegated to a [Watchtower](https://containrrr.dev/watchtower/)
-sidecar in HTTP-API trigger-only mode. Uncomment the `watchtower` service and
-`autoupdate` network in [`docker-compose.yml`](docker-compose.yml), then set
-`AUTOUPDATE_ENABLED=true`, `WATCHTOWER_URL=http://watchtower:8080` and a shared
-`WATCHTOWER_TOKEN`. The bot calls Watchtower's `/v1/update` on **Install now**;
-only Watchtower holds the Docker socket. With `WATCHTOWER_URL` empty the feature
-is notify-only and shows the manual `docker compose pull && docker compose up -d`
-command. `install.sh` can wire this up interactively.
+sidecar in HTTP-API trigger-only mode. `install.sh configure` can generate the
+Watchtower service in `docker-compose.override.yml`, set
+`AUTOUPDATE_ENABLED=true`, `WATCHTOWER_URL=http://watchtower:8080` and create a
+shared `WATCHTOWER_TOKEN`. The bot calls Watchtower's `/v1/update` on
+**Install now**; only Watchtower holds the Docker socket. With `WATCHTOWER_URL`
+empty the feature is notify-only and shows the manual
+`docker compose pull && docker compose up -d` command.
 
 ## 🖥 Telegram Mini App
 
@@ -260,8 +260,11 @@ are shown when available.
 **Requirements** — served by the bot on `WEBAPP_LISTEN` (default `:8080`).
 Telegram only opens Mini Apps over **HTTPS**, so put a reverse proxy
 (nginx / Caddy / Traefik) in front and point `WEBAPP_URL` at the public HTTPS
-address. Requests are authenticated by validating Telegram `initData` (HMAC
-signed with the bot token) — no extra secrets.
+address. For host-level proxies the installer publishes
+`127.0.0.1:${WEBAPP_HOST_PORT}:8080` (default host port `8080`); if you choose a
+different host port, use it in the proxy target below. Requests are
+authenticated by validating Telegram `initData` (HMAC signed with the bot token)
+— no extra secrets.
 
 ### Reverse proxy templates
 
@@ -314,7 +317,8 @@ If you already run [remnawave](https://remna.st) with its own **containerised**
 Caddy, don't use `127.0.0.1:8080` — inside the Caddy container that points at
 Caddy itself. Reach the bot by its **container name** over the shared network.
 
-**1. Join the bot to remnawave's network** (skip the `ports:` block):
+**1. Join the bot to remnawave's network** (skip the `ports:` block). The
+installer writes this as `docker-compose.override.yml`; the full shape is:
 
 ```yaml
 services:
@@ -376,6 +380,7 @@ docker compose restart caddy    # in your caddy directory
 | `CURRENCY`             | no       | `₽`              | Currency label shown next to tariff prices                   |
 | `WEBAPP_URL`           | no       | —                | Public HTTPS URL of the Mini App (empty = off)               |
 | `WEBAPP_LISTEN`        | no       | `:8080`          | Local bind address for the mini app server                   |
+| `WEBAPP_HOST_PORT`     | no       | `8080`           | Host-only reverse-proxy port; installer maps `127.0.0.1:<port>` to container port `8080` |
 | `WINBACK_ENABLED`      | no       | `true`           | Send win-back messages after expiry                          |
 | `WINBACK_DAYS`         | no       | `1,3`            | Days **after** expiry to send the win-back message           |
 | `BOT_LANG`             | no       | `ru`             | Bot language: `ru` / `en` (also the Mini App default)        |
@@ -421,10 +426,21 @@ mkdir -p ~/remnaWake && cd ~/remnaWake
 curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/install.sh | bash
 ```
 
-The installer asks for the panel URL, tokens, admin ID, timezone, run time (plus
-optional Mini App and Platega settings), writes a locked-down `.env` (mode
-`600`) and `docker-compose.yml`, and offers to pull the image and start. Needs
-`curl` (or `wget`) + Docker Engine + the Compose plugin — no `git` needed.
+The installer asks for the panel URL, tokens, admin ID, timezone, run time, and
+optional Mini App, Platega, Stars, trial, referral and auto-update settings. On
+rerun it reuses existing `.env` values as defaults, keeps timestamped backups,
+writes `.env` with mode `600`, fetches `docker-compose.yml`, and writes local
+topology choices to `docker-compose.override.yml`. Needs `curl` (or `wget`) +
+Docker Engine + the Compose plugin — no `git` needed.
+
+Maintenance helpers:
+
+```bash
+./install.sh configure   # rerun the wizard safely
+./install.sh doctor      # check Docker, .env, compose config, ports and updates
+./install.sh update      # back up config, pull the image and restart
+./install.sh backup      # copy .env and compose files into ./backups
+```
 
 ### Local (development)
 
@@ -447,7 +463,7 @@ docker compose logs -f
 Update later:
 
 ```bash
-docker compose pull && docker compose up -d
+./install.sh update
 ```
 
 ### Docker (build from source)

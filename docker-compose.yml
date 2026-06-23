@@ -19,10 +19,11 @@ services:
     labels:
       com.centurylinklabs.watchtower.scope: "remnawake"
     # Telegram Mini App: set WEBAPP_URL in .env and expose the embedded web
-    # server (default :8080) to your HTTPS reverse proxy.
+    # server (container port 8080) to your HTTPS reverse proxy.
     #
-    # Host-level proxy (nginx / standalone Caddy on the host): uncomment the
-    # ports block so the proxy can reach the bot on 127.0.0.1:8080.
+    # Host-level proxy (nginx / standalone Caddy on the host): install.sh writes
+    # docker-compose.override.yml with a 127.0.0.1:${WEBAPP_HOST_PORT}:8080
+    # mapping. Manual equivalent:
     # ports:
     #   - "127.0.0.1:8080:8080"
     #
@@ -37,9 +38,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    # One-tap auto-update: to let the bot's "Install now" button apply updates,
-    # uncomment the watchtower service below, put the bot and watchtower on a
-    # shared network, and set in .env:
+    # One-tap auto-update: install.sh can write docker-compose.override.yml with
+    # the Watchtower service below, put the bot and watchtower on a shared
+    # network, and set in .env:
     #   AUTOUPDATE_ENABLED=true
     #   WATCHTOWER_URL=http://watchtower:8080
     #   WATCHTOWER_TOKEN=<the same token as below>

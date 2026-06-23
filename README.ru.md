@@ -240,13 +240,12 @@ JPEG/PNG действует лимит 10 МБ, для PDF, WebP и HEIC — 50 
 Поскольку бот работает как distroless-контейнер без привилегий, **установка в
 один тап** делегируется sidecar-контейнеру
 [Watchtower](https://containrrr.dev/watchtower/) в режиме HTTP-API по триггеру.
-Раскомментируйте сервис `watchtower` и сеть `autoupdate` в
-[`docker-compose.yml`](docker-compose.yml) и задайте `AUTOUPDATE_ENABLED=true`,
-`WATCHTOWER_URL=http://watchtower:8080` и общий `WATCHTOWER_TOKEN`. По кнопке
-**Установить сейчас** бот вызывает `/v1/update` Watchtower; доступ к
+`install.sh configure` может сгенерировать сервис Watchtower в
+`docker-compose.override.yml`, задать `AUTOUPDATE_ENABLED=true`,
+`WATCHTOWER_URL=http://watchtower:8080` и создать общий `WATCHTOWER_TOKEN`. По
+кнопке **Установить сейчас** бот вызывает `/v1/update` Watchtower; доступ к
 Docker-сокету есть только у Watchtower. Если `WATCHTOWER_URL` пустой — режим
 «только уведомления» с командой `docker compose pull && docker compose up -d`.
-Всё можно настроить через `install.sh`.
 
 ## 🖥 Мини-приложение Telegram
 
@@ -267,8 +266,11 @@ Docker-сокету есть только у Watchtower. Если `WATCHTOWER_UR
 **Что нужно** — мини-приложение раздаёт сам бот на `WEBAPP_LISTEN` (по умолчанию
 `:8080`). Telegram открывает мини-приложения только по **HTTPS**, поэтому
 поставьте впереди реверс-прокси (nginx / Caddy / Traefik) и укажите в
-`WEBAPP_URL` публичный HTTPS-адрес. Запросы аутентифицируются проверкой Telegram
-`initData` (HMAC-подпись токеном бота) — дополнительные секреты не нужны.
+`WEBAPP_URL` публичный HTTPS-адрес. Для прокси на хосте установщик публикует
+`127.0.0.1:${WEBAPP_HOST_PORT}:8080` (порт хоста по умолчанию `8080`); если
+выбрали другой порт, используйте его в `proxy_pass` / `reverse_proxy`. Запросы
+аутентифицируются проверкой Telegram `initData` (HMAC-подпись токеном бота) —
+дополнительные секреты не нужны.
 
 ### Шаблоны для реверс-прокси
 
@@ -322,7 +324,8 @@ sudo nginx -t && sudo systemctl reload nginx
 адрес указывает на сам Caddy. Бот должен быть доступен по **имени контейнера**
 через общую сеть.
 
-**1. Подключите бота к сети remnawave** (без блока `ports:`):
+**1. Подключите бота к сети remnawave** (без блока `ports:`). Установщик пишет
+это в `docker-compose.override.yml`; полная форма выглядит так:
 
 ```yaml
 services:
@@ -385,6 +388,7 @@ docker compose restart caddy    # в каталоге caddy
 | `CURRENCY`               | нет         | `₽`               | Обозначение валюты рядом с ценами тарифов                        |
 | `WEBAPP_URL`             | нет         | —                 | Публичный HTTPS-адрес мини-приложения (пусто = выключено)        |
 | `WEBAPP_LISTEN`          | нет         | `:8080`           | Локальный адрес сервера мини-приложения (за реверс-прокси)       |
+| `WEBAPP_HOST_PORT`       | нет         | `8080`            | Порт на хосте для реверс-прокси; установщик мапит `127.0.0.1:<порт>` на порт контейнера `8080` |
 | `WINBACK_ENABLED`        | нет         | `true`            | Отправлять возвращающие сообщения после окончания подписки      |
 | `WINBACK_DAYS`           | нет         | `1,3`             | Через сколько дней **после** окончания отправлять (через запятую) |
 | `BOT_LANG`               | нет         | `ru`              | Язык бота: `ru` / `en` (также язык Mini App по умолчанию)        |
@@ -431,10 +435,21 @@ mkdir -p ~/remnaWake && cd ~/remnaWake
 curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/install.sh | bash
 ```
 
-Установщик спросит URL панели, токены, ID администратора, таймзону, время запуска
-(а также опциональные настройки Mini App и Platega), запишет `.env` (права `600`)
-и `docker-compose.yml` и предложит скачать образ и запустить. Нужны `curl` (либо
-`wget`) и Docker Engine с плагином Compose — `git` не требуется.
+Установщик спросит URL панели, токены, ID администратора, таймзону, время запуска,
+а также опциональные настройки Mini App, Platega, Stars, пробного периода,
+рефералов и автообновления. При повторном запуске он подставляет текущие значения
+из `.env`, сохраняет timestamp-бэкапы, пишет `.env` с правами `600`, скачивает
+`docker-compose.yml`, а локальную топологию пишет в `docker-compose.override.yml`.
+Нужны `curl` (либо `wget`) и Docker Engine с плагином Compose — `git` не требуется.
+
+Команды обслуживания:
+
+```bash
+./install.sh configure   # безопасно перезапустить мастер настройки
+./install.sh doctor      # проверить Docker, .env, compose config, порты и обновления
+./install.sh update      # сделать бэкап, скачать образ и перезапустить
+./install.sh backup      # скопировать .env и compose-файлы в ./backups
+```
 
 ### Локально (разработка)
 
@@ -457,7 +472,7 @@ docker compose logs -f
 Обновление позже:
 
 ```bash
-docker compose pull && docker compose up -d
+./install.sh update
 ```
 
 ### Docker (сборка из исходников)
