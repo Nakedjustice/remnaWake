@@ -365,6 +365,7 @@ docker compose restart caddy    # in your caddy directory
 
 | Variable               | Required | Default          | Description                                                  |
 | ---------------------- | -------- | ---------------- | ------------------------------------------------------------ |
+| `REMNAWAKE_CHANNEL`    | no       | `main`           | Installer-selected release channel: `main` stable or `dev` unstable |
 | `REMNAWAVE_BASE_URL`   | yes      | —                | Base URL of the panel                                        |
 | `REMNAWAVE_API_TOKEN`  | yes      | —                | Remnawave panel API token                                    |
 | `TELEGRAM_BOT_TOKEN`   | yes      | —                | Telegram bot token (from @BotFather)                         |
@@ -426,12 +427,16 @@ mkdir -p ~/remnaWake && cd ~/remnaWake
 curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/install.sh | bash
 ```
 
-The installer asks for the panel URL, tokens, admin ID, timezone, run time, and
-optional Mini App, Platega, Stars, trial, referral and auto-update settings. On
-rerun it reuses existing `.env` values as defaults, keeps timestamped backups,
-writes `.env` with mode `600`, fetches `docker-compose.yml`, and writes local
-topology choices to `docker-compose.override.yml`. Needs `curl` (or `wget`) +
-Docker Engine + the Compose plugin — no `git` needed.
+The installer first asks for a release channel. `main` is the default stable
+channel. `dev` uses the development branch and
+`ghcr.io/nakedjustice/remnawake-dev:latest`; the installer shows an instability
+warning and asks for confirmation before using it. It then asks for the panel
+URL, tokens, admin ID, timezone, run time, and optional Mini App, Platega, Stars,
+trial, referral and auto-update settings. On rerun it reuses existing `.env`
+values as defaults, keeps timestamped backups, writes `.env` with mode `600`,
+fetches `docker-compose.yml`, and writes local topology choices to
+`docker-compose.override.yml`. Needs `curl` (or `wget`) + Docker Engine + the
+Compose plugin — no `git` needed.
 
 Maintenance helpers:
 
@@ -504,8 +509,8 @@ GHCR packages (names are lowercased):
 - `main` → `ghcr.io/<you>/<repo>:latest` for stable deployments;
 - `dev` → `ghcr.io/<you>/<repo>-dev:latest` for pre-merge testing.
 
-Pull the development package and point the `image:` line in a test deployment's
-`docker-compose.yml` at it before merging `dev` into `main`:
+Use the installer channel prompt to select the development package for a test
+deployment before merging `dev` into `main`, or pull it manually:
 
 ```bash
 docker pull ghcr.io/<you>/<repo>-dev:latest

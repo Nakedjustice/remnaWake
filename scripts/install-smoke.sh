@@ -64,6 +64,7 @@ export REMNAWAKE_SMOKE_ROOT="$ROOT"
 export REMNAWAKE_SMOKE_DIR="$TMP"
 
 bash "$ROOT/install.sh" configure <<'EOF'
+main
 https://panel.example.com
 remnawave-token
 123456789:AAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -105,5 +106,30 @@ bash "$ROOT/install.sh" update
 
 test -f "$TMP/docker-pull"
 test -f "$TMP/docker-up"
+
+export REMNAWAKE_DIR="$TMP/devapp"
+
+bash "$ROOT/install.sh" configure <<'EOF'
+dev
+y
+https://panel.example.com
+remnawave-token
+123456789:AAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+123456
+Europe/Moscow
+09:00
+n
+n
+n
+n
+n
+n
+n
+n
+EOF
+
+grep -q '^REMNAWAKE_CHANNEL=dev$' "$REMNAWAKE_DIR/.env"
+grep -q '^AUTOUPDATE_IMAGE=ghcr.io/nakedjustice/remnawake-dev:latest$' "$REMNAWAKE_DIR/.env"
+grep -q 'image: ghcr.io/nakedjustice/remnawake-dev:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
 
 echo "install smoke passed"

@@ -74,10 +74,10 @@ chmod +x install.sh 2>/dev/null || true
 ok "Downloaded the installer to $(pwd)"
 
 # --- Launch the interactive installer ---------------------------------------
-# Point the installer at the same REPO/BRANCH so it fetches the matching
-# docker-compose.yml. When run via `curl ... | bash`, stdin is the pipe, so the
-# installer's prompts must be reattached to the real terminal via /dev/tty.
-export REMNAWAKE_REPO_RAW="https://raw.githubusercontent.com/$REPO/$BRANCH"
+# Point the installer at the same repository. The installer selects main/dev raw
+# files from the release-channel prompt unless REMNAWAKE_REPO_RAW is explicitly
+# provided by the caller.
+export REMNAWAKE_REPO="$REPO"
 run_installer() {
   if [ -t 0 ]; then
     bash install.sh
