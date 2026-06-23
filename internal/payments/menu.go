@@ -45,7 +45,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 		var rows [][]tg.InlineKeyboardButton
 		// The free-trial button leads the menu when enabled, since it targets new
 		// users who have nothing else to do yet.
-		if enabled, _ := s.trialConfig(); enabled {
+			if s.trialConfig().Enabled {
 			rows = append(rows, []tg.InlineKeyboardButton{
 				{Text: i18n.T("🎁 Попробовать бесплатно"), CallbackData: "menu:trial"},
 			})

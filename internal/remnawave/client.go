@@ -206,20 +206,32 @@ func (c *Client) getUser(ctx context.Context, endpoint, op string) (*User, error
 	return &payload.Response, nil
 }
 
-func (c *Client) CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string, trafficLimitStrategy string) (*User, error) {
-	if trafficLimitStrategy == "" {
-		trafficLimitStrategy = "NO_RESET"
+// CreateUserSpec contains fields that must be applied atomically when a user is
+// created. Zero traffic/HWID limits use Remnawave's unlimited semantics.
+type CreateUserSpec struct {
+	Username             string
+	ExpireAt             time.Time
+	SquadUUIDs           []string
+	TrafficLimitBytes    int64
+	TrafficLimitStrategy string
+	HwidDeviceLimit      int
+}
+
+func (c *Client) CreateUser(ctx context.Context, spec CreateUserSpec) (*User, error) {
+	if spec.TrafficLimitStrategy == "" {
+		spec.TrafficLimitStrategy = "NO_RESET"
 	}
 	endpoint := fmt.Sprintf("%s/api/users", c.baseURL)
 	reqBody := map[string]interface{}{
-		"username":             username,
-		"expireAt":             expireAt.UTC().Format(time.RFC3339),
+		"username":             spec.Username,
+		"expireAt":             spec.ExpireAt.UTC().Format(time.RFC3339),
 		"status":               "ACTIVE",
-		"trafficLimitBytes":    0,
-		"trafficLimitStrategy": trafficLimitStrategy,
+		"trafficLimitBytes":    spec.TrafficLimitBytes,
+		"trafficLimitStrategy": spec.TrafficLimitStrategy,
+		"hwidDeviceLimit":      spec.HwidDeviceLimit,
 	}
-	if len(squadUUIDs) > 0 {
-		reqBody["activeInternalSquads"] = squadUUIDs
+	if len(spec.SquadUUIDs) > 0 {
+		reqBody["activeInternalSquads"] = spec.SquadUUIDs
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {

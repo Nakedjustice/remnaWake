@@ -186,13 +186,15 @@ type fakeCreator struct {
 	created    []string
 	squads     [][]string // squad UUIDs passed with each CreateUser call
 	strategies []string   // traffic-reset strategy passed with each call
+	specs      []CreateUserSpec
 }
 
-func (f *fakeCreator) CreateUser(_ context.Context, username string, _ time.Time, squadUUIDs []string, trafficLimitStrategy string) (*CreatedUser, error) {
-	f.created = append(f.created, username)
-	f.squads = append(f.squads, squadUUIDs)
-	f.strategies = append(f.strategies, trafficLimitStrategy)
-	return &CreatedUser{UUID: "fake-uuid", Username: username}, nil
+func (f *fakeCreator) CreateUser(_ context.Context, spec CreateUserSpec) (*CreatedUser, error) {
+	f.created = append(f.created, spec.Username)
+	f.squads = append(f.squads, spec.SquadUUIDs)
+	f.strategies = append(f.strategies, spec.TrafficLimitStrategy)
+	f.specs = append(f.specs, spec)
+	return &CreatedUser{UUID: "fake-uuid", Username: spec.Username}, nil
 }
 
 // fakeUpdater records UpdateUser calls for the "Manage user" flow tests.

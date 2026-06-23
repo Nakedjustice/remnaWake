@@ -1,34 +1,29 @@
 #!/usr/bin/env bash
 #
-# Interactive installer for remnaWake.
-#
-# Asks for everything the bot needs (the values that end up in ./.env),
-# validates the answers, writes a locked-down .env file, and optionally
-# builds and starts the container with Docker Compose.
+# Installer and maintenance helper for remnaWake.
 #
 # Usage:
 #   chmod +x install.sh
 #   ./install.sh
+#   ./install.sh configure
+#   ./install.sh doctor
+#   ./install.sh update
+#   ./install.sh backup
 #
 set -euo pipefail
 
-# --- Reattach the terminal when piped (curl … | bash) -----------------------
-# Standalone use reads the script from a pipe, leaving stdin pointed at the
-# pipe; without this the prompts below would read no input. Probe that /dev/tty
-# is actually openable first (it is not under cron/CI) so we never abort here.
-if [ ! -t 0 ] && [ -e /dev/tty ] && (exec </dev/tty) 2>/dev/null; then
+# Reattach the terminal when piped (curl ... | bash), unless tests explicitly
+# keep stdin attached to a here-doc.
+if [ "${REMNAWAKE_NO_TTY:-}" != "1" ] && [ ! -t 0 ] && [ -e /dev/tty ] && (exec </dev/tty) 2>/dev/null; then
   exec </dev/tty
 fi
 
-# --- Where to install -------------------------------------------------------
-# The bot runs from the pre-built GHCR image, so the only files that need to
-# live on the server are ./docker-compose.yml and ./.env — not the source repo.
-# This script fetches docker-compose.yml on demand, so it works run straight
-# from a URL or from a cloned checkout (which reuses the files already there).
-REPO_RAW="${REMNAWAKE_REPO_RAW:-https://raw.githubusercontent.com/Nakedjustice/remnaWake/main}"
+REPO="${REMNAWAKE_REPO:-Nakedjustice/remnaWake}"
+REPO_RAW_OVERRIDE="${REMNAWAKE_REPO_RAW:-}"
+DEPLOY_IMAGE_OVERRIDE="${REMNAWAKE_DEPLOY_IMAGE:-}"
+REPO_RAW="${REPO_RAW_OVERRIDE:-https://raw.githubusercontent.com/Nakedjustice/remnaWake/main}"
+DEFAULT_DEPLOY_IMAGE="${DEPLOY_IMAGE_OVERRIDE:-ghcr.io/nakedjustice/remnawake:main}"
 
-# Install into this script's directory when run from a file, else the current
-# directory; override with REMNAWAKE_DIR.
 __src="${BASH_SOURCE[0]:-}"
 if [ -n "$__src" ] && [ -f "$__src" ]; then
   INSTALL_DIR="$(cd -- "$(dirname -- "$__src")" >/dev/null 2>&1 && pwd)"
@@ -41,8 +36,9 @@ cd "$INSTALL_DIR"
 
 ENV_FILE="$INSTALL_DIR/.env"
 COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
+OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
+BACKUP_DIR="$INSTALL_DIR/backups"
 
-# --- Colours (disabled when not a terminal) ---------------------------------
 if [ -t 1 ]; then
   BOLD="$(printf '\033[1m')"; DIM="$(printf '\033[2m')"
   GREEN="$(printf '\033[32m')"; YELLOW="$(printf '\033[33m')"
@@ -56,7 +52,33 @@ ok()    { printf '%s\n' "${GREEN}$*${RESET}"; }
 warn()  { printf '%s\n' "${YELLOW}$*${RESET}" >&2; }
 err()   { printf '%s\n' "${RED}$*${RESET}" >&2; }
 
-# Download a URL to a file with curl or wget (whichever exists); 127 if neither.
+usage() {
+  cat <<EOF
+remnaWake installer
+
+Usage:
+  ./install.sh [configure]
+  ./install.sh doctor
+  ./install.sh update
+  ./install.sh backup
+  ./install.sh --help
+
+Modes:
+  configure  Interactive setup. Reuses existing .env values as defaults.
+  doctor     Check Docker, compose config, .env keys, ports and update settings.
+  update     Back up config, pull the image and restart with Docker Compose.
+  backup     Copy .env and compose files into ./backups.
+
+Environment:
+  REMNAWAKE_DIR       Install directory. Default: script directory or current dir.
+  REMNAWAKE_REPO      GitHub repository used for channel raw URLs.
+  REMNAWAKE_REPO_RAW  Raw GitHub URL used to fetch docker-compose.yml.
+  REMNAWAKE_CHANNEL   Deployment channel: main or dev. Default: main.
+  REMNAWAKE_DEPLOY_IMAGE
+                      Image used for new installs unless overridden in .env.
+EOF
+}
+
 fetch() {
   local url="$1" dest="$2"
   if command -v curl >/dev/null 2>&1; then
@@ -68,9 +90,102 @@ fetch() {
   fi
 }
 
-# --- Prompt helpers ---------------------------------------------------------
-# Read a value, re-prompting until the validator passes.
-# Args: <var_name> <prompt> <default> <validator_fn|""> [secret]
+timestamp() {
+  date +%Y%m%d%H%M%S
+}
+
+backup_file() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  local dest="$file.bak.$(timestamp)"
+  cp "$file" "$dest"
+  ok "Backed up $(basename "$file") to $dest"
+}
+
+run_backup() {
+  mkdir -p "$BACKUP_DIR"
+  local stamp dest copied=0
+  stamp="$(timestamp)"
+  for file in "$ENV_FILE" "$COMPOSE_FILE" "$OVERRIDE_FILE"; do
+    if [ -f "$file" ]; then
+      dest="$BACKUP_DIR/$(basename "$file").$stamp"
+      cp "$file" "$dest"
+      ok "Backed up $(basename "$file") to $dest"
+      copied=$((copied + 1))
+    fi
+  done
+  if [ "$copied" -eq 0 ]; then
+    warn "No .env or compose files found to back up in $INSTALL_DIR"
+  fi
+}
+
+env_get() {
+  local key="$1" line
+  [ -f "$ENV_FILE" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "$key="*) printf '%s' "${line#*=}"; return 0 ;;
+    esac
+  done <"$ENV_FILE"
+  return 1
+}
+
+env_default() {
+  local key="$1" fallback="${2:-}" value
+  if value="$(env_get "$key")"; then
+    printf '%s' "$value"
+  else
+    printf '%s' "$fallback"
+  fi
+}
+
+known_env_key() {
+  case "$1" in
+    REMNAWAKE_CHANNEL)
+      return 0
+      ;;
+    REMNAWAVE_BASE_URL|REMNAWAVE_API_TOKEN|TELEGRAM_BOT_TOKEN|TELEGRAM_PARSE_MODE|TELEGRAM_ADMIN_ID)
+      return 0
+      ;;
+    TZ|RUN_AT|LOG_LEVEL|HTTP_TIMEOUT|DRY_RUN|RUN_ON_START|CURRENCY|BOT_LANG)
+      return 0
+      ;;
+    WINBACK_ENABLED|WINBACK_DAYS|WEBAPP_URL|WEBAPP_LISTEN|WEBAPP_HOST_PORT)
+      return 0
+      ;;
+    PLATEGA_MERCHANT_ID|PLATEGA_SECRET|PLATEGA_METHOD|PLATEGA_CURRENCY|PLATEGA_RETURN_URL)
+      return 0
+      ;;
+    TELEGRAM_STARS_ENABLED|TELEGRAM_STARS_RATE)
+      return 0
+      ;;
+    TRIAL_ENABLED|TRIAL_DAYS|TRIAL_TRAFFIC_LIMIT_GB|TRIAL_HWID_DEVICE_LIMIT|TRIAL_SQUAD_UUID)
+      return 0
+      ;;
+    REFERRAL_ENABLED|REFERRAL_INVITER_BONUS_DAYS|REFERRAL_INVITEE_BONUS_DAYS)
+      return 0
+      ;;
+    AUTOUPDATE_ENABLED|AUTOUPDATE_IMAGE|AUTOUPDATE_CHECK_INTERVAL|WATCHTOWER_URL|WATCHTOWER_TOKEN)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+preserved_env_lines() {
+  local line key
+  [ -f "$ENV_FILE" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
+    key="${line%%=*}"
+    if ! known_env_key "$key"; then
+      printf '%s\n' "$line"
+    fi
+  done <"$ENV_FILE"
+}
+
 ask() {
   local __var="$1" prompt="$2" default="${3:-}" validator="${4:-}" secret="${5:-}"
   local input display_default="" value
@@ -86,16 +201,35 @@ ask() {
     fi
 
     value="${input:-$default}"
-
     if [ -z "$value" ]; then
-      err "  → A value is required."
+      err "  -> A value is required."
       continue
     fi
-
     if [ -n "$validator" ] && ! "$validator" "$value"; then
       continue
     fi
+    printf -v "$__var" '%s' "$value"
+    return 0
+  done
+}
 
+ask_optional() {
+  local __var="$1" prompt="$2" default="${3:-}" validator="${4:-}" secret="${5:-}"
+  local input display_default="" value
+  [ -n "$default" ] && display_default=" ${DIM}[$default]${RESET}"
+
+  while true; do
+    printf '%s' "${BOLD}${prompt}${RESET}${display_default}: " >&2
+    if [ "$secret" = "secret" ]; then
+      read -r -s input
+      printf '\n' >&2
+    else
+      read -r input
+    fi
+    value="${input:-$default}"
+    if [ -n "$value" ] && [ -n "$validator" ] && ! "$validator" "$value"; then
+      continue
+    fi
     printf -v "$__var" '%s' "$value"
     return 0
   done
@@ -111,23 +245,22 @@ ask_yes_no() {
     case "$ans" in
       y|Y|yes|YES) return 0 ;;
       n|N|no|NO)   return 1 ;;
-      *) err "  → Please answer y or n." ;;
+      *) err "  -> Please answer y or n." ;;
     esac
   done
 }
 
-# --- Validators -------------------------------------------------------------
 v_url() {
   case "$1" in
     http://*|https://*) return 0 ;;
-    *) err "  → Must start with http:// or https://"; return 1 ;;
+    *) err "  -> Must start with http:// or https://"; return 1 ;;
   esac
 }
 
 v_https_url() {
   case "$1" in
     https://*) return 0 ;;
-    *) err "  → Telegram Mini Apps require an https:// URL."; return 1 ;;
+    *) err "  -> Telegram Mini Apps require an https:// URL."; return 1 ;;
   esac
 }
 
@@ -135,19 +268,17 @@ v_bot_token() {
   if printf '%s' "$1" | grep -Eq '^[0-9]+:[A-Za-z0-9_-]+$'; then
     return 0
   fi
-  warn "  → That does not look like a BotFather token (e.g. 123456789:AA...)."
+  warn "  -> That does not look like a BotFather token (e.g. 123456789:AA...)."
   ask_yes_no "    Use it anyway?" "n" && return 0
   return 1
 }
 
 v_admin_id() {
   local input="$1"
-  # A single "0" disables the admin-gated flows.
   if [ "$input" = "0" ]; then
-    warn "  → 0 entered: the «Я оплатил» payment and «/invite» flows will be disabled."
+    warn "  -> 0 entered: payment, invite and register admin flows will be disabled."
     return 0
   fi
-  # Otherwise accept a comma-separated list of numeric IDs (spaces tolerated).
   local old_ifs="$IFS" token valid=0
   IFS=','
   for token in $input; do
@@ -155,7 +286,7 @@ v_admin_id() {
     token="$(printf '%s' "$token" | tr -d ' \t')"
     [ -z "$token" ] && continue
     if ! printf '%s' "$token" | grep -Eq '^[0-9]+$'; then
-      err "  → Each ID must be digits only. Got: \"$token\""
+      err "  -> Each ID must be digits only. Got: \"$token\""
       IFS="$old_ifs"
       return 1
     fi
@@ -163,7 +294,7 @@ v_admin_id() {
   done
   IFS="$old_ifs"
   if [ "$valid" -eq 0 ]; then
-    err "  → Must be a numeric Telegram user ID (digits only), or 0 to disable."
+    err "  -> Must be a numeric Telegram user ID, or 0 to disable."
     return 1
   fi
   return 0
@@ -173,15 +304,14 @@ v_time_hhmm() {
   if printf '%s' "$1" | grep -Eq '^([01][0-9]|2[0-3]):[0-5][0-9]$'; then
     return 0
   fi
-  err "  → Must be HH:MM in 24h format (e.g. 09:00)."
+  err "  -> Must be HH:MM in 24h format (e.g. 09:00)."
   return 1
 }
 
 v_tz() {
-  # Best-effort: if the zoneinfo DB is present, require the zone to exist.
   if [ -d /usr/share/zoneinfo ]; then
     if [ -f "/usr/share/zoneinfo/$1" ]; then return 0; fi
-    err "  → Unknown timezone. Use an IANA name like Europe/Moscow or UTC."
+    err "  -> Unknown timezone. Use an IANA name like Europe/Moscow or UTC."
     return 1
   fi
   return 0
@@ -191,94 +321,114 @@ v_duration() {
   if printf '%s' "$1" | grep -Eq '^[0-9]+(ns|us|µs|ms|s|m|h)$'; then
     return 0
   fi
-  err "  → Must be a Go duration like 15s, 500ms, 1m."
+  err "  -> Must be a Go duration like 15s, 500ms, 1m."
   return 1
 }
 
 v_loglevel() {
   case "$1" in
     debug|info|warn|warning|error) return 0 ;;
-    *) err "  → One of: debug, info, warn, error."; return 1 ;;
+    *) err "  -> One of: debug, info, warn, error."; return 1 ;;
   esac
 }
 
 v_bool() {
   case "$1" in
     true|false) return 0 ;;
-    *) err "  → Must be true or false."; return 1 ;;
+    *) err "  -> Must be true or false."; return 1 ;;
   esac
 }
 
 v_lang() {
   case "$1" in
     ru|en) return 0 ;;
-    *) err "  → One of: ru, en."; return 1 ;;
+    *) err "  -> One of: ru, en."; return 1 ;;
+  esac
+}
+
+v_channel() {
+  case "$1" in
+    main|dev) return 0 ;;
+    *) err "  -> One of: main, dev."; return 1 ;;
   esac
 }
 
 v_days_list() {
-  local old_ifs="$IFS" token
+  local old_ifs="$IFS" token valid=0
   IFS=','
   for token in $1; do
     IFS="$old_ifs"
     token="$(printf '%s' "$token" | tr -d ' \t')"
     [ -z "$token" ] && continue
     if ! printf '%s' "$token" | grep -Eq '^[1-9][0-9]*$'; then
-      err "  → Each value must be a positive integer. Got: \"$token\""
+      err "  -> Each value must be a positive integer. Got: \"$token\""
       IFS="$old_ifs"
       return 1
     fi
+    valid=$((valid + 1))
   done
   IFS="$old_ifs"
+  if [ "$valid" -eq 0 ]; then
+    err "  -> Enter at least one positive integer."
+    return 1
+  fi
   return 0
 }
 
 v_platega_method() {
   case "$1" in
     sbp|card|cards) return 0 ;;
-    *) err "  → One of: sbp, card."; return 1 ;;
+    *) err "  -> One of: sbp, card."; return 1 ;;
   esac
 }
 
 v_posint() {
   case "$1" in
-    ''|*[!0-9]*) err "  → Enter a positive whole number."; return 1 ;;
-    0) err "  → Enter a positive whole number."; return 1 ;;
+    ''|*[!0-9]*) err "  -> Enter a positive whole number."; return 1 ;;
+    0) err "  -> Enter a positive whole number."; return 1 ;;
     *) return 0 ;;
   esac
 }
 
-v_domain() {
-  # A bare hostname (no scheme, no path), e.g. bot.example.com.
-  if printf '%s' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$'; then
+v_nonnegint() {
+  case "$1" in
+    ''|*[!0-9]*) err "  -> Enter a whole number, 0 or higher."; return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+v_port() {
+  case "$1" in
+    ''|*[!0-9]*) err "  -> Enter a TCP port number."; return 1 ;;
+  esac
+  if [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; then
     return 0
   fi
-  err "  → Enter a bare domain like bot.example.com (no http://, no path)."
+  err "  -> Port must be between 1 and 65535."
   return 1
 }
 
-# --- Alongside-Remnawave helpers --------------------------------------------
-# Big, can't-miss warning: the Caddy/network auto-config assumes a MANUAL
-# Remnawave install with the documented layout.
+v_domain() {
+  if printf '%s' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$'; then
+    return 0
+  fi
+  err "  -> Enter a bare domain like bot.example.com (no http://, no path)."
+  return 1
+}
+
 print_alongside_warning() {
   printf '\n' >&2
-  warn "════════════════════════════════════════════════════════════════════════"
-  warn "  ⚠  AUTO-CONFIG SUPPORTS *MANUAL* REMNAWAVE INSTALLS ONLY"
-  warn "────────────────────────────────────────────────────────────────────────"
+  warn "================================================================"
+  warn "  AUTO-CONFIG SUPPORTS MANUAL REMNAWAVE INSTALLS ONLY"
+  warn "----------------------------------------------------------------"
   warn "  It assumes the documented layout: an external docker network named"
   warn "  'remnawave-network' and a Caddyfile at /opt/remnawave/caddy/Caddyfile."
   warn ""
-  warn "  Panels set up by one-click installer SCRIPTS (xxphantom, DigneZzZ, …)"
-  warn "  often use a different network name, Caddyfile path, or even nginx —"
-  warn "  the steps below may NOT match your setup."
-  warn ""
-  warn "  Verify the network name (docker network ls) and your Caddyfile path"
-  warn "  before relying on this, or wire the reverse proxy by hand."
-  warn "════════════════════════════════════════════════════════════════════════"
+  warn "  One-click panel installers may use a different network, Caddyfile path,"
+  warn "  or nginx. Verify your setup before relying on the automatic steps."
+  warn "================================================================"
 }
 
-# Show the manual Caddy site block + reload steps (used when we can't or
-# shouldn't edit the Caddyfile automatically). Uses $caddy_host / $CADDYFILE.
 print_caddy_manual() {
   warn "Add this site to your Remnawave Caddyfile (next to the panel entries):"
   warn ""
@@ -290,161 +440,148 @@ print_caddy_manual() {
   warn "  cd \"$(dirname "$CADDYFILE")\" && docker compose restart caddy"
 }
 
-# --- Banner -----------------------------------------------------------------
-cat >&2 <<EOF
-${BOLD}remnaWake installer${RESET}
-${DIM}This will collect the settings the bot needs and write them to ./.env${RESET}
+channel_image() {
+  if [ -n "$DEPLOY_IMAGE_OVERRIDE" ]; then
+    printf '%s' "$DEPLOY_IMAGE_OVERRIDE"
+    return 0
+  fi
+  case "$1" in
+    dev) printf 'ghcr.io/nakedjustice/remnawake-dev:latest' ;;
+    *) printf 'ghcr.io/nakedjustice/remnawake:main' ;;
+  esac
+}
 
-EOF
+channel_repo_raw() {
+  if [ -n "$REPO_RAW_OVERRIDE" ]; then
+    printf '%s' "$REPO_RAW_OVERRIDE"
+    return 0
+  fi
+  case "$1" in
+    dev) printf 'https://raw.githubusercontent.com/%s/dev' "$REPO" ;;
+    *) printf 'https://raw.githubusercontent.com/%s/main' "$REPO" ;;
+  esac
+}
 
-# --- Guard against clobbering an existing .env ------------------------------
-if [ -f "$ENV_FILE" ]; then
-  warn "An .env file already exists at $ENV_FILE"
-  if ask_yes_no "Overwrite it? (a timestamped backup will be kept)" "n"; then
-    backup="$ENV_FILE.bak.$(date +%Y%m%d%H%M%S)"
-    cp "$ENV_FILE" "$backup"
-    ok "Backed up existing .env to $backup"
+apply_channel_defaults() {
+  REMNAWAKE_CHANNEL="${REMNAWAKE_CHANNEL:-main}"
+  REPO_RAW="$(channel_repo_raw "$REMNAWAKE_CHANNEL")"
+  DEFAULT_DEPLOY_IMAGE="$(channel_image "$REMNAWAKE_CHANNEL")"
+}
+
+select_release_channel() {
+  info "-- Release channel ----------------------------------------"
+  ask REMNAWAKE_CHANNEL "Deployment channel (main = stable, dev = unstable)" "$REMNAWAKE_CHANNEL" v_channel
+  if [ "$REMNAWAKE_CHANNEL" = "dev" ]; then
+    warn "The dev channel may be unstable and can contain unreviewed or pre-release changes."
+    warn "Use it only for testing before merging dev into main."
+    if ! ask_yes_no "Use the unstable dev channel anyway?" "n"; then
+      REMNAWAKE_CHANNEL="main"
+      ok "Using stable main channel."
+    fi
+  fi
+  apply_channel_defaults
+  AUTOUPDATE_IMAGE="$DEFAULT_DEPLOY_IMAGE"
+}
+
+load_defaults() {
+  REMNAWAKE_CHANNEL="$(env_default REMNAWAKE_CHANNEL "${REMNAWAKE_CHANNEL:-main}")"
+  v_channel "$REMNAWAKE_CHANNEL" >/dev/null 2>&1 || REMNAWAKE_CHANNEL="main"
+  apply_channel_defaults
+
+  REMNAWAVE_BASE_URL="$(env_default REMNAWAVE_BASE_URL "")"
+  REMNAWAVE_API_TOKEN="$(env_default REMNAWAVE_API_TOKEN "")"
+  TELEGRAM_BOT_TOKEN="$(env_default TELEGRAM_BOT_TOKEN "")"
+  TELEGRAM_PARSE_MODE="$(env_default TELEGRAM_PARSE_MODE "HTML")"
+  TELEGRAM_ADMIN_ID="$(env_default TELEGRAM_ADMIN_ID "0")"
+
+  TZ="$(env_default TZ "Europe/Moscow")"
+  RUN_AT="$(env_default RUN_AT "09:00")"
+  LOG_LEVEL="$(env_default LOG_LEVEL "info")"
+  HTTP_TIMEOUT="$(env_default HTTP_TIMEOUT "15s")"
+  DRY_RUN="$(env_default DRY_RUN "false")"
+  RUN_ON_START="$(env_default RUN_ON_START "true")"
+  CURRENCY="$(env_default CURRENCY "₽")"
+  BOT_LANG="$(env_default BOT_LANG "ru")"
+
+  WINBACK_ENABLED="$(env_default WINBACK_ENABLED "true")"
+  WINBACK_DAYS="$(env_default WINBACK_DAYS "1,3")"
+
+  WEBAPP_URL="$(env_default WEBAPP_URL "")"
+  WEBAPP_LISTEN=":8080"
+  WEBAPP_HOST_PORT="$(env_default WEBAPP_HOST_PORT "8080")"
+
+  PLATEGA_MERCHANT_ID="$(env_default PLATEGA_MERCHANT_ID "")"
+  PLATEGA_SECRET="$(env_default PLATEGA_SECRET "")"
+  PLATEGA_METHOD="$(env_default PLATEGA_METHOD "sbp")"
+  PLATEGA_CURRENCY="$(env_default PLATEGA_CURRENCY "RUB")"
+  PLATEGA_RETURN_URL="$(env_default PLATEGA_RETURN_URL "https://t.me")"
+
+  TELEGRAM_STARS_ENABLED="$(env_default TELEGRAM_STARS_ENABLED "false")"
+  TELEGRAM_STARS_RATE="$(env_default TELEGRAM_STARS_RATE "")"
+
+  TRIAL_ENABLED="$(env_default TRIAL_ENABLED "false")"
+  TRIAL_DAYS="$(env_default TRIAL_DAYS "3")"
+  TRIAL_TRAFFIC_LIMIT_GB="$(env_default TRIAL_TRAFFIC_LIMIT_GB "10")"
+  TRIAL_HWID_DEVICE_LIMIT="$(env_default TRIAL_HWID_DEVICE_LIMIT "1")"
+  TRIAL_SQUAD_UUID="$(env_default TRIAL_SQUAD_UUID "")"
+
+  REFERRAL_ENABLED="$(env_default REFERRAL_ENABLED "false")"
+  REFERRAL_INVITER_BONUS_DAYS="$(env_default REFERRAL_INVITER_BONUS_DAYS "30")"
+  REFERRAL_INVITEE_BONUS_DAYS="$(env_default REFERRAL_INVITEE_BONUS_DAYS "0")"
+
+  AUTOUPDATE_ENABLED="$(env_default AUTOUPDATE_ENABLED "false")"
+  AUTOUPDATE_IMAGE="$(env_default AUTOUPDATE_IMAGE "$DEFAULT_DEPLOY_IMAGE")"
+  AUTOUPDATE_CHECK_INTERVAL="$(env_default AUTOUPDATE_CHECK_INTERVAL "6h")"
+  WATCHTOWER_URL="$(env_default WATCHTOWER_URL "")"
+  WATCHTOWER_TOKEN="$(env_default WATCHTOWER_TOKEN "")"
+
+  ALONGSIDE_REMNAWAVE="no"
+  HOST_PROXY_ENABLED="no"
+  caddy_host=""
+}
+
+bool_default() {
+  [ "$1" = "true" ] && printf 'y' || printf 'n'
+}
+
+nonempty_default() {
+  [ -n "$1" ] && printf 'y' || printf 'n'
+}
+
+generate_token() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 24
   else
-    err "Aborting so the existing .env is left untouched."
+    head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'
+  fi
+}
+
+ensure_compose_file() {
+  if [ -f "$COMPOSE_FILE" ]; then
+    return 0
+  fi
+  info "Fetching docker-compose.yml..."
+  if ! fetch "$REPO_RAW/docker-compose.yml" "$COMPOSE_FILE"; then
+    err "Could not download docker-compose.yml (need curl or wget)."
+    err "Grab it manually next to .env: $REPO_RAW/docker-compose.yml"
     exit 1
   fi
-fi
+  ok "Wrote docker-compose.yml"
+}
 
-# --- Required settings ------------------------------------------------------
-info "── Remnawave panel ─────────────────────────────────────────"
-ask REMNAWAVE_BASE_URL  "Remnawave panel URL (e.g. https://panel.example.com)" "" v_url
-# Normalise: drop any trailing slash (the bot does this too, but keep .env clean).
-REMNAWAVE_BASE_URL="${REMNAWAVE_BASE_URL%/}"
-ask REMNAWAVE_API_TOKEN "Remnawave API token (panel → API tokens)" "" "" secret
+write_env_file() {
+  local preserved tmp_env
+  preserved="$(preserved_env_lines || true)"
 
-printf '\n' >&2
-info "── Telegram ────────────────────────────────────────────────"
-ask TELEGRAM_BOT_TOKEN  "Telegram bot token (from @BotFather, e.g. 123456789:AA...)" "" v_bot_token secret
-ask TELEGRAM_ADMIN_ID   "Telegram admin user ID(s) (numeric, comma-separated e.g. 123456 or 123456,789012; 0 to disable)" "0" v_admin_id
+  umask 177
+  tmp_env="$(mktemp "$ENV_FILE.XXXXXX")"
+  trap 'rm -f "$tmp_env"' EXIT
 
-# --- Scheduling -------------------------------------------------------------
-printf '\n' >&2
-info "── Schedule ────────────────────────────────────────────────"
-ask TZ      "Timezone (IANA name)" "Europe/Moscow" v_tz
-ask RUN_AT  "Daily run time (HH:MM, local to the timezone above)" "09:00" v_time_hhmm
-
-# --- Mini App (optional) ------------------------------------------------------
-printf '\n' >&2
-info "── Telegram Mini App (optional) ────────────────────────────"
-WEBAPP_URL=""
-WEBAPP_LISTEN=":8080"
-if ask_yes_no "Enable the Mini App personal cabinet? (needs an HTTPS reverse proxy in front)" "n"; then
-  ask WEBAPP_URL "Public Mini App URL (e.g. https://bot.example.com)" "" v_https_url
-  WEBAPP_URL="${WEBAPP_URL%/}"
-fi
-
-# --- Platega payment gateway (optional) -------------------------------------
-printf '\n' >&2
-info "── Platega payment gateway (optional) ──────────────────────"
-PLATEGA_MERCHANT_ID=""
-PLATEGA_SECRET=""
-PLATEGA_METHOD="sbp"
-PLATEGA_CURRENCY="RUB"
-PLATEGA_RETURN_URL="https://t.me"
-warn "Default is manual P2P (you confirm payments yourself). Platega adds online"
-warn "SBP/card payments; you can switch the active provider later from the admin menu."
-if ask_yes_no "Configure Platega online payments now?" "n"; then
-  ask PLATEGA_MERCHANT_ID "Platega merchant id (from the Platega dashboard)" "" ""
-  ask PLATEGA_SECRET      "Platega secret (X-Secret)" "" "" secret
-  ask PLATEGA_METHOD      "Payment method (sbp / card)" "sbp" v_platega_method
-  ask PLATEGA_CURRENCY    "Currency code sent to Platega (ISO, e.g. RUB)" "RUB" ""
-  ask PLATEGA_RETURN_URL  "Return URL after payment (e.g. your bot link)" "https://t.me" v_url
-  PLATEGA_RETURN_URL="${PLATEGA_RETURN_URL%/}"
-fi
-
-# --- Telegram Stars (optional) ----------------------------------------------
-printf '\n' >&2
-info "── Telegram Stars (optional) ───────────────────────────────"
-TELEGRAM_STARS_ENABLED="false"
-TELEGRAM_STARS_RATE=""
-warn "Native in-app Telegram Stars (XTR) payments. Uses the bot token — no extra"
-warn "keys and no webhook. You can enable it alongside P2P/Platega from the admin menu."
-if ask_yes_no "Enable Telegram Stars payments now?" "n"; then
-  TELEGRAM_STARS_ENABLED="true"
-  ask TELEGRAM_STARS_RATE "Price units per 1 Star (Stars charged = ceil(price / rate))" "1" v_posint
-fi
-
-# --- Reverse proxy (only when the web server is actually used) ---------------
-# The Mini App and the Platega webhook both need the bot's HTTP server reachable
-# over HTTPS. Ask the topology so we can wire docker-compose.yml (and, for the
-# alongside case, the Remnawave Caddyfile) automatically.
-ALONGSIDE_REMNAWAVE="no"
-caddy_host=""
-if [ -n "$WEBAPP_URL" ] || [ -n "$PLATEGA_MERCHANT_ID" ]; then
-  printf '\n' >&2
-  info "── Reverse proxy ───────────────────────────────────────────"
-  warn "The Mini App / Platega webhook need the bot's web server reachable over HTTPS."
-  if ask_yes_no "Is this bot on the SAME server as your Remnawave panel, behind its containerised Caddy?" "n"; then
-    ALONGSIDE_REMNAWAVE="yes"
-    print_alongside_warning
-    if [ -n "$WEBAPP_URL" ]; then
-      caddy_host="$(printf '%s' "$WEBAPP_URL" | sed -E 's#^https?://##; s#/.*$##')"
-    else
-      printf '\n' >&2
-      ask caddy_host "Public domain for the bot (e.g. bot.example.com)" "" v_domain
-    fi
-  fi
-fi
-
-# --- Defaults for the rest (overridable via advanced section) ---------------
-TELEGRAM_PARSE_MODE="HTML"
-LOG_LEVEL="info"
-HTTP_TIMEOUT="15s"
-DRY_RUN="false"
-RUN_ON_START="true"
-CURRENCY="₽"
-BOT_LANG="ru"
-WINBACK_ENABLED="true"
-WINBACK_DAYS="1,3"
-AUTOUPDATE_ENABLED="false"
-AUTOUPDATE_IMAGE="ghcr.io/nakedjustice/remnawave:main"
-AUTOUPDATE_CHECK_INTERVAL="6h"
-WATCHTOWER_URL=""
-WATCHTOWER_TOKEN=""
-
-printf '\n' >&2
-if ask_yes_no "Configure advanced options (parse mode, log level, timeout, dry-run, currency, language, win-back)?" "n"; then
-  info "── Advanced ────────────────────────────────────────────────"
-  ask TELEGRAM_PARSE_MODE "Telegram parse mode (HTML / MarkdownV2)" "HTML"  ""
-  ask LOG_LEVEL           "Log level (debug/info/warn/error)"       "info"  v_loglevel
-  ask HTTP_TIMEOUT        "HTTP timeout (Go duration, e.g. 15s)"    "15s"   v_duration
-  ask DRY_RUN             "Dry run? log instead of sending (true/false)"   "false" v_bool
-  ask RUN_ON_START        "Run once immediately on start (true/false)"     "true"  v_bool
-  ask CURRENCY            "Currency label shown next to tariff prices"     "₽"     ""
-  ask BOT_LANG            "Bot language (ru / en)"                         "ru"    v_lang
-  ask WINBACK_ENABLED     "Send win-back messages to expired users (true/false)" "true" v_bool
-  ask WINBACK_DAYS        "Days after expiry to send win-back (comma-separated, e.g. 1,3)" "1,3" v_days_list
-fi
-
-printf '\n' >&2
-if ask_yes_no "Enable auto-update notifications (DM admins when a new bot version is released)?" "n"; then
-  AUTOUPDATE_ENABLED="true"
-  ask AUTOUPDATE_CHECK_INTERVAL "Check for updates every (Go duration, e.g. 6h)" "6h" v_duration
-  if ask_yes_no "Enable one-tap install via a Watchtower sidecar?" "n"; then
-    WATCHTOWER_URL="http://watchtower:8080"
-    if command -v openssl >/dev/null 2>&1; then
-      WATCHTOWER_TOKEN="$(openssl rand -hex 24)"
-    else
-      WATCHTOWER_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    fi
-    info "One-tap install enabled. Before starting, uncomment the 'watchtower' service"
-    info "and the 'autoupdate' network in docker-compose.yml (see the comments there)."
-  fi
-fi
-
-# --- Write .env atomically with strict permissions --------------------------
-umask 177  # new files -> 0600
-tmp_env="$(mktemp "$ENV_FILE.XXXXXX")"
-trap 'rm -f "$tmp_env"' EXIT
-
-cat >"$tmp_env" <<EOF
+  cat >"$tmp_env" <<EOF
 # Generated by install.sh on $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-# Keep this file private — it contains API tokens.
+# Keep this file private: it contains API tokens.
+
+REMNAWAKE_CHANNEL=$REMNAWAKE_CHANNEL
 
 REMNAWAVE_BASE_URL=$REMNAWAVE_BASE_URL
 REMNAWAVE_API_TOKEN=$REMNAWAVE_API_TOKEN
@@ -467,15 +604,13 @@ BOT_LANG=$BOT_LANG
 WINBACK_ENABLED=$WINBACK_ENABLED
 WINBACK_DAYS=$WINBACK_DAYS
 
-# Telegram Mini App: public HTTPS URL served by your reverse proxy
-# (empty = mini app disabled) and the local bind address behind it.
+# Telegram Mini App and Platega webhook web server. WEBAPP_HOST_PORT is the
+# host-only reverse-proxy port; the container keeps listening on 8080.
 WEBAPP_URL=$WEBAPP_URL
 WEBAPP_LISTEN=$WEBAPP_LISTEN
+WEBAPP_HOST_PORT=$WEBAPP_HOST_PORT
 
-# Platega payment gateway (optional): online SBP/card payments as an alternative
-# to manual P2P. Empty merchant id/secret = Platega off (P2P only). The active
-# provider is switched at runtime from the bot /admin menu or the Mini App admin
-# panel. Set the Platega dashboard notification URL to <public-host>/platega/callback.
+# Platega payment gateway (optional): online SBP/card payments.
 PLATEGA_MERCHANT_ID=$PLATEGA_MERCHANT_ID
 PLATEGA_SECRET=$PLATEGA_SECRET
 PLATEGA_METHOD=$PLATEGA_METHOD
@@ -483,14 +618,23 @@ PLATEGA_CURRENCY=$PLATEGA_CURRENCY
 PLATEGA_RETURN_URL=$PLATEGA_RETURN_URL
 
 # Telegram Stars (optional): native in-app XTR payments using the bot token.
-# No webhook needed. TELEGRAM_STARS_RATE is price units per Star (required when
-# enabled). Enable the provider at runtime from the /admin menu or Mini App.
 TELEGRAM_STARS_ENABLED=$TELEGRAM_STARS_ENABLED
 TELEGRAM_STARS_RATE=$TELEGRAM_STARS_RATE
 
+# Free trial defaults. Admins can change these later from the bot or Mini App.
+TRIAL_ENABLED=$TRIAL_ENABLED
+TRIAL_DAYS=$TRIAL_DAYS
+TRIAL_TRAFFIC_LIMIT_GB=$TRIAL_TRAFFIC_LIMIT_GB
+TRIAL_HWID_DEVICE_LIMIT=$TRIAL_HWID_DEVICE_LIMIT
+TRIAL_SQUAD_UUID=$TRIAL_SQUAD_UUID
+
+# Referral bonus defaults. Admins can change these later from the bot or Mini App.
+REFERRAL_ENABLED=$REFERRAL_ENABLED
+REFERRAL_INVITER_BONUS_DAYS=$REFERRAL_INVITER_BONUS_DAYS
+REFERRAL_INVITEE_BONUS_DAYS=$REFERRAL_INVITEE_BONUS_DAYS
+
 # Auto-update: notify admins when a new image is published. One-tap install
-# requires the watchtower sidecar (see docker-compose.yml); leave WATCHTOWER_URL
-# empty for notify-only (the button then shows manual upgrade instructions).
+# requires the watchtower sidecar in docker-compose.override.yml.
 AUTOUPDATE_ENABLED=$AUTOUPDATE_ENABLED
 AUTOUPDATE_IMAGE=$AUTOUPDATE_IMAGE
 AUTOUPDATE_CHECK_INTERVAL=$AUTOUPDATE_CHECK_INTERVAL
@@ -498,66 +642,97 @@ WATCHTOWER_URL=$WATCHTOWER_URL
 WATCHTOWER_TOKEN=$WATCHTOWER_TOKEN
 EOF
 
-mv "$tmp_env" "$ENV_FILE"
-trap - EXIT
-chmod 600 "$ENV_FILE"
-umask 022  # back to normal perms for the (non-secret) compose file
-
-printf '\n' >&2
-ok "Wrote configuration to $ENV_FILE (permissions 600)."
-
-# --- Fetch docker-compose.yml (standalone: no repo checkout needed) ---------
-if [ ! -f "$COMPOSE_FILE" ]; then
-  info "Fetching docker-compose.yml…"
-  if ! fetch "$REPO_RAW/docker-compose.yml" "$COMPOSE_FILE"; then
-    err "Could not download docker-compose.yml (need curl or wget)."
-    err "Grab it manually next to .env:  $REPO_RAW/docker-compose.yml"
-    exit 1
+  if [ -n "$preserved" ]; then
+    {
+      printf '\n# Preserved custom keys from the previous .env.\n'
+      printf '%s\n' "$preserved"
+    } >>"$tmp_env"
   fi
-  ok "Wrote docker-compose.yml"
-fi
 
-# --- Wire the reverse proxy into docker-compose.yml -------------------------
-if [ "$ALONGSIDE_REMNAWAVE" = "yes" ]; then
-  # Join Remnawave's external network so its Caddy reaches remnaWake-bot:8080;
-  # do NOT publish the port (inside the Caddy container 127.0.0.1 is Caddy).
-  sed -i \
-    -e 's|^    # networks:|    networks:|' \
-    -e 's|^    #   - remnawave-network|      - remnawave-network|' \
-    -e 's|^# networks:|networks:|' \
-    -e 's|^#   remnawave-network:|  remnawave-network:|' \
-    -e 's|^#     name: remnawave-network|    name: remnawave-network|' \
-    -e 's|^#     external: true|    external: true|' \
-    "$COMPOSE_FILE"
-  if grep -q '^    networks:' "$COMPOSE_FILE" && grep -q '^  remnawave-network:' "$COMPOSE_FILE"; then
-    ok "docker-compose.yml: joined the external 'remnawave-network'."
-  else
-    warn "Could not auto-edit docker-compose.yml — uncomment the two 'networks:' blocks by hand"
-    warn "(see README, section «Running alongside remnawave»)."
-  fi
-elif [ -n "$WEBAPP_URL" ] || [ -n "$PLATEGA_MERCHANT_ID" ]; then
-  # Host-level proxy: publish the port on loopback for nginx / standalone Caddy.
-  sed -i \
-    -e 's|^    # ports:|    ports:|' \
-    -e 's|^    #   - "127.0.0.1:8080:8080"|      - "127.0.0.1:8080:8080"|' \
-    "$COMPOSE_FILE"
-  if grep -q '^    ports:' "$COMPOSE_FILE"; then
-    ok "docker-compose.yml: published 127.0.0.1:8080 for your reverse proxy."
-  else
-    warn "Could not auto-edit docker-compose.yml — uncomment the 'ports:' block by hand."
-  fi
-fi
+  mv "$tmp_env" "$ENV_FILE"
+  trap - EXIT
+  chmod 600 "$ENV_FILE"
+  umask 022
+  ok "Wrote configuration to $ENV_FILE (permissions 600)."
+}
 
-# --- Wire the bot site into the Remnawave Caddyfile (alongside case) ---------
-if [ "$ALONGSIDE_REMNAWAVE" = "yes" ] && [ -n "$caddy_host" ]; then
+write_override_file() {
+  local base_image need_bot_detail="no" need_autoupdate_network="no" need_remnawave_network="no" tmp
+  base_image="$(compose_image || true)"
+  if [ "$HOST_PROXY_ENABLED" = "yes" ] || [ "$ALONGSIDE_REMNAWAVE" = "yes" ] || [ -n "$WATCHTOWER_URL" ] || { [ -n "$base_image" ] && [ "$AUTOUPDATE_IMAGE" != "$base_image" ]; }; then
+    need_bot_detail="yes"
+  fi
+  [ "$ALONGSIDE_REMNAWAVE" = "yes" ] && need_remnawave_network="yes"
+  [ -n "$WATCHTOWER_URL" ] && need_autoupdate_network="yes"
+
+  tmp="$(mktemp "$OVERRIDE_FILE.XXXXXX")"
+  trap 'rm -f "$tmp"' EXIT
+  {
+    printf '# Generated by install.sh. Re-run ./install.sh configure to change it.\n'
+    printf '# The base docker-compose.yml is intentionally left untouched.\n\n'
+    printf 'services:\n'
+    if [ "$need_bot_detail" = "yes" ]; then
+      printf '  bot:\n'
+      if [ -n "$base_image" ] && [ "$AUTOUPDATE_IMAGE" != "$base_image" ]; then
+        printf '    image: %s\n' "$AUTOUPDATE_IMAGE"
+      fi
+      if [ "$HOST_PROXY_ENABLED" = "yes" ]; then
+        printf '    ports:\n'
+        printf '      - "127.0.0.1:%s:8080"\n' "$WEBAPP_HOST_PORT"
+      fi
+      if [ "$need_remnawave_network" = "yes" ] || [ "$need_autoupdate_network" = "yes" ]; then
+        printf '    networks:\n'
+        [ "$need_remnawave_network" = "yes" ] && printf '      - remnawave-network\n'
+        [ "$need_autoupdate_network" = "yes" ] && printf '      - autoupdate\n'
+      fi
+    else
+      printf '  bot: {}\n'
+    fi
+    if [ -n "$WATCHTOWER_URL" ]; then
+      printf '\n'
+      printf '  watchtower:\n'
+      printf '    image: containrrr/watchtower\n'
+      printf '    container_name: remnaWake-watchtower\n'
+      printf '    restart: unless-stopped\n'
+      printf '    environment:\n'
+      printf '      WATCHTOWER_HTTP_API_UPDATE: "true"\n'
+      printf '      WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_TOKEN}"\n'
+      printf '      WATCHTOWER_SCOPE: "remnawake"\n'
+      printf '    volumes:\n'
+      printf '      - /var/run/docker.sock:/var/run/docker.sock\n'
+      printf '    networks:\n'
+      printf '      - autoupdate\n'
+    fi
+    if [ "$need_remnawave_network" = "yes" ] || [ "$need_autoupdate_network" = "yes" ]; then
+      printf '\nnetworks:\n'
+      if [ "$need_remnawave_network" = "yes" ]; then
+        printf '  remnawave-network:\n'
+        printf '    name: remnawave-network\n'
+        printf '    external: true\n'
+      fi
+      if [ "$need_autoupdate_network" = "yes" ]; then
+        printf '  autoupdate:\n'
+        printf '    driver: bridge\n'
+      fi
+    fi
+  } >"$tmp"
+  mv "$tmp" "$OVERRIDE_FILE"
+  trap - EXIT
+  ok "Wrote installer-managed docker-compose.override.yml"
+}
+
+wire_caddy_if_needed() {
+  if [ "$ALONGSIDE_REMNAWAVE" != "yes" ] || [ -z "$caddy_host" ]; then
+    return 0
+  fi
   CADDYFILE="${REMNAWAVE_CADDYFILE:-/opt/remnawave/caddy/Caddyfile}"
   if [ -f "$CADDYFILE" ] && [ -w "$CADDYFILE" ]; then
     if grep -q 'reverse_proxy remnaWake-bot:8080' "$CADDYFILE"; then
-      ok "Caddyfile already proxies remnaWake-bot:8080 — left unchanged."
+      ok "Caddyfile already proxies remnaWake-bot:8080; left unchanged."
     elif ask_yes_no "Append a Caddy site for $caddy_host to $CADDYFILE?" "y"; then
-      cp "$CADDYFILE" "$CADDYFILE.bak.$(date +%Y%m%d%H%M%S)"
+      backup_file "$CADDYFILE"
       printf '\nhttps://%s {\n    reverse_proxy remnaWake-bot:8080\n}\n' "$caddy_host" >>"$CADDYFILE"
-      ok "Added the bot site to $CADDYFILE (backup kept)."
+      ok "Added the bot site to $CADDYFILE."
       warn "Make sure $caddy_host resolves to this server, then reload Caddy:"
       warn "  cd \"$(dirname "$CADDYFILE")\" && docker compose restart caddy"
     else
@@ -565,18 +740,48 @@ if [ "$ALONGSIDE_REMNAWAVE" = "yes" ] && [ -n "$caddy_host" ]; then
     fi
   else
     warn "Remnawave Caddyfile not found or not writable at $CADDYFILE"
-    warn "(override the path with REMNAWAVE_CADDYFILE=/path/to/Caddyfile)."
+    warn "Override the path with REMNAWAVE_CADDYFILE=/path/to/Caddyfile."
     print_caddy_manual
   fi
-fi
+}
 
-# --- Summary (secrets masked) -----------------------------------------------
-mask() { local s="$1"; [ "${#s}" -le 8 ] && { printf '****'; return; }; printf '%s…%s' "${s:0:4}" "${s: -4}"; }
-platega_summary="disabled (P2P only)"
-[ -n "$PLATEGA_MERCHANT_ID" ] && platega_summary="enabled ($PLATEGA_METHOD, $PLATEGA_CURRENCY)"
-stars_summary="disabled"
-[ "$TELEGRAM_STARS_ENABLED" = "true" ] && stars_summary="enabled (rate $TELEGRAM_STARS_RATE)"
-cat >&2 <<EOF
+detect_compose() {
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    printf 'docker compose'
+  elif command -v docker-compose >/dev/null 2>&1; then
+    printf 'docker-compose'
+  else
+    return 1
+  fi
+}
+
+compose_image() {
+  [ -f "$COMPOSE_FILE" ] || return 1
+  sed -n 's/^[[:space:]]*image:[[:space:]]*//p' "$COMPOSE_FILE" | head -n 1 | tr -d '"'
+}
+
+override_image() {
+  [ -f "$OVERRIDE_FILE" ] || return 1
+  sed -n 's/^[[:space:]]*image:[[:space:]]*//p' "$OVERRIDE_FILE" | head -n 1 | tr -d '"'
+}
+
+mask() {
+  local s="$1"
+  [ "${#s}" -le 8 ] && { printf '****'; return; }
+  printf '%s...%s' "${s:0:4}" "${s: -4}"
+}
+
+print_summary() {
+  local platega_summary="disabled (P2P only)" stars_summary="disabled" trial_summary="disabled" referral_summary="disabled"
+  local web_host_summary="not published"
+  [ -n "$PLATEGA_MERCHANT_ID" ] && platega_summary="enabled ($PLATEGA_METHOD, $PLATEGA_CURRENCY)"
+  [ "$TELEGRAM_STARS_ENABLED" = "true" ] && stars_summary="enabled (rate $TELEGRAM_STARS_RATE)"
+  [ "$TRIAL_ENABLED" = "true" ] && trial_summary="enabled (${TRIAL_DAYS}d, ${TRIAL_TRAFFIC_LIMIT_GB}GB, ${TRIAL_HWID_DEVICE_LIMIT} device limit)"
+  [ "$REFERRAL_ENABLED" = "true" ] && referral_summary="enabled (inviter +${REFERRAL_INVITER_BONUS_DAYS}d, invitee +${REFERRAL_INVITEE_BONUS_DAYS}d)"
+  [ "$HOST_PROXY_ENABLED" = "yes" ] && web_host_summary="127.0.0.1:${WEBAPP_HOST_PORT} -> container:8080"
+  [ "$ALONGSIDE_REMNAWAVE" = "yes" ] && web_host_summary="not published; Caddy uses remnaWake-bot:8080"
+
+  cat >&2 <<EOF
 
 ${BOLD}Summary${RESET}
   Panel URL          : $REMNAWAVE_BASE_URL
@@ -585,71 +790,395 @@ ${BOLD}Summary${RESET}
   Admin ID(s)        : $TELEGRAM_ADMIN_ID
   Timezone / run-at  : $TZ at $RUN_AT
   Parse / log / http : $TELEGRAM_PARSE_MODE / $LOG_LEVEL / $HTTP_TIMEOUT
-  Dry-run / on-start : $DRY_RUN / $RUN_ON_START
-  Currency           : $CURRENCY
+  Currency / language: $CURRENCY / $BOT_LANG
+  Channel            : $REMNAWAKE_CHANNEL
+  Image              : $AUTOUPDATE_IMAGE
   Mini App           : ${WEBAPP_URL:-disabled}
+  Web host port      : $web_host_summary
   Platega            : $platega_summary
   Telegram Stars     : $stars_summary
+  Trial              : $trial_summary
+  Referral           : $referral_summary
+  Auto-update        : $AUTOUPDATE_ENABLED
 
 EOF
+}
 
-# --- Reverse-proxy / Platega checklist --------------------------------------
-if [ -n "$WEBAPP_URL" ] || [ -n "$PLATEGA_MERCHANT_ID" ]; then
+print_proxy_checklist() {
+  if [ -z "$WEBAPP_URL" ] && [ -z "$PLATEGA_MERCHANT_ID" ]; then
+    return 0
+  fi
+  local webhook_host
   webhook_host="${caddy_host:-$(printf '%s' "$WEBAPP_URL" | sed -E 's#^https?://##; s#/.*$##')}"
   [ -z "$webhook_host" ] && webhook_host="<your-public-host>"
   if [ "$ALONGSIDE_REMNAWAVE" = "yes" ]; then
     warn "Reverse proxy (alongside Remnawave / containerised Caddy):"
-    warn "  • docker-compose.yml now joins the external 'remnawave-network' — confirm"
-    warn "    that is the network your Remnawave Caddy actually uses:  docker network ls"
-    warn "  • Caddy site $webhook_host → remnaWake-bot:8080 (added above, or shown to add by hand)."
-    warn "  • Make sure $webhook_host resolves to this server in DNS before reloading Caddy."
+    warn "  - docker-compose.override.yml joins the external 'remnawave-network'."
+    warn "  - Confirm that this is the network your Remnawave Caddy uses: docker network ls"
+    warn "  - Caddy site $webhook_host -> remnaWake-bot:8080."
   else
     warn "Reverse proxy (host-level nginx / standalone Caddy):"
-    warn "  • docker-compose.yml now publishes 127.0.0.1:8080."
-    warn "  • Point your HTTPS reverse proxy at it: ${WEBAPP_URL:-https://$webhook_host} → 127.0.0.1:8080"
-    warn "    (nginx and Caddy templates are in the README, section «Telegram Mini App»)."
+    warn "  - docker-compose.override.yml publishes 127.0.0.1:${WEBAPP_HOST_PORT}:8080."
+    warn "  - Point HTTPS proxy ${WEBAPP_URL:-https://$webhook_host} -> 127.0.0.1:${WEBAPP_HOST_PORT}."
   fi
   if [ -n "$PLATEGA_MERCHANT_ID" ]; then
-    warn "  • Platega: set the dashboard notification URL to https://$webhook_host/platega/callback"
+    warn "  - Platega: set the dashboard notification URL to https://$webhook_host/platega/callback"
   fi
-fi
+}
 
-if [ -n "$PLATEGA_MERCHANT_ID" ]; then
-  warn "Platega: the bot starts on P2P — switch the active provider to Platega from the"
-  warn "  bot /admin menu or the Mini App admin panel."
-fi
+configure_mode() {
+  load_defaults
 
-# --- Detect Docker Compose --------------------------------------------------
-COMPOSE=""
-if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-  COMPOSE="docker compose"
-elif command -v docker-compose >/dev/null 2>&1; then
-  COMPOSE="docker-compose"
-fi
+  cat >&2 <<EOF
+${BOLD}remnaWake installer${RESET}
+${DIM}This will collect the settings the bot needs and write them to ./.env.${RESET}
+${DIM}Existing .env values are reused as defaults; backups are kept before rewrites.${RESET}
 
-if [ -z "$COMPOSE" ]; then
-  warn "Docker Compose was not found on this machine."
-  warn "Install Docker Engine + the Compose plugin, then run:"
-  warn "  ${COMPOSE:-docker compose} up -d"
-  ok "Configuration is ready — start the bot whenever Docker is available."
-  exit 0
-fi
+EOF
 
-if ! docker info >/dev/null 2>&1; then
-  warn "Docker is installed but not accessible by this user."
-  warn "You may need to run the next step with sudo, or add your user to the 'docker' group."
-fi
+  [ -f "$ENV_FILE" ] && backup_file "$ENV_FILE"
+  [ -f "$OVERRIDE_FILE" ] && backup_file "$OVERRIDE_FILE"
 
-printf '\n' >&2
-if ask_yes_no "Pull the pre-built image and start the bot now with '$COMPOSE up -d'?" "y"; then
-  info "Pulling image and starting…"
-  $COMPOSE up -d
+  select_release_channel
   printf '\n' >&2
-  ok "Bot is up. Useful commands:"
-  printf '%s\n' "  ${DIM}$COMPOSE logs -f${RESET}     # follow logs"           >&2
-  printf '%s\n' "  ${DIM}$COMPOSE ps${RESET}          # status"                 >&2
-  printf '%s\n' "  ${DIM}$COMPOSE pull && $COMPOSE up -d${RESET}  # update to latest" >&2
-  printf '%s\n' "  ${DIM}$COMPOSE down${RESET}        # stop & remove"          >&2
-else
-  ok "Skipped startup. When ready, run:  $COMPOSE up -d"
-fi
+
+  info "-- Remnawave panel -----------------------------------------"
+  ask REMNAWAVE_BASE_URL  "Remnawave panel URL (e.g. https://panel.example.com)" "$REMNAWAVE_BASE_URL" v_url
+  REMNAWAVE_BASE_URL="${REMNAWAVE_BASE_URL%/}"
+  ask REMNAWAVE_API_TOKEN "Remnawave API token (panel -> API tokens)" "$REMNAWAVE_API_TOKEN" "" secret
+
+  printf '\n' >&2
+  info "-- Telegram -----------------------------------------------"
+  ask TELEGRAM_BOT_TOKEN "Telegram bot token (from @BotFather, e.g. 123456789:AA...)" "$TELEGRAM_BOT_TOKEN" v_bot_token secret
+  ask TELEGRAM_ADMIN_ID  "Telegram admin user ID(s), comma-separated; 0 to disable" "$TELEGRAM_ADMIN_ID" v_admin_id
+
+  printf '\n' >&2
+  info "-- Schedule -----------------------------------------------"
+  ask TZ     "Timezone (IANA name)" "$TZ" v_tz
+  ask RUN_AT "Daily run time (HH:MM, local to the timezone above)" "$RUN_AT" v_time_hhmm
+
+  printf '\n' >&2
+  info "-- Telegram Mini App (optional) ---------------------------"
+  if ask_yes_no "Enable the Mini App personal cabinet? (needs HTTPS reverse proxy)" "$(nonempty_default "$WEBAPP_URL")"; then
+    ask WEBAPP_URL "Public Mini App URL (e.g. https://bot.example.com)" "$WEBAPP_URL" v_https_url
+    WEBAPP_URL="${WEBAPP_URL%/}"
+  else
+    WEBAPP_URL=""
+  fi
+
+  printf '\n' >&2
+  info "-- Platega payment gateway (optional) ---------------------"
+  warn "Default is manual P2P. Platega adds online SBP/card payments."
+  if ask_yes_no "Configure Platega online payments now?" "$(nonempty_default "$PLATEGA_MERCHANT_ID")"; then
+    ask PLATEGA_MERCHANT_ID "Platega merchant id" "$PLATEGA_MERCHANT_ID" ""
+    ask PLATEGA_SECRET      "Platega secret (X-Secret)" "$PLATEGA_SECRET" "" secret
+    ask PLATEGA_METHOD      "Payment method (sbp / card)" "$PLATEGA_METHOD" v_platega_method
+    ask PLATEGA_CURRENCY    "Currency code sent to Platega (ISO, e.g. RUB)" "$PLATEGA_CURRENCY" ""
+    ask PLATEGA_RETURN_URL  "Return URL after payment (e.g. your bot link)" "$PLATEGA_RETURN_URL" v_url
+    PLATEGA_RETURN_URL="${PLATEGA_RETURN_URL%/}"
+  else
+    PLATEGA_MERCHANT_ID=""
+    PLATEGA_SECRET=""
+    PLATEGA_METHOD="sbp"
+    PLATEGA_CURRENCY="RUB"
+    PLATEGA_RETURN_URL="https://t.me"
+  fi
+
+  printf '\n' >&2
+  info "-- Telegram Stars (optional) ------------------------------"
+  if ask_yes_no "Enable Telegram Stars payments now?" "$(bool_default "$TELEGRAM_STARS_ENABLED")"; then
+    TELEGRAM_STARS_ENABLED="true"
+    ask TELEGRAM_STARS_RATE "Price units per 1 Star (Stars charged = ceil(price / rate))" "${TELEGRAM_STARS_RATE:-1}" v_posint
+  else
+    TELEGRAM_STARS_ENABLED="false"
+    TELEGRAM_STARS_RATE=""
+  fi
+
+  printf '\n' >&2
+  info "-- Free trial (optional) -----------------------------------"
+  if ask_yes_no "Enable one-time free trial defaults?" "$(bool_default "$TRIAL_ENABLED")"; then
+    TRIAL_ENABLED="true"
+    ask TRIAL_DAYS "Trial length in days" "$TRIAL_DAYS" v_posint
+    ask TRIAL_TRAFFIC_LIMIT_GB "Trial traffic limit in GB (0 = unlimited)" "$TRIAL_TRAFFIC_LIMIT_GB" v_nonnegint
+    ask TRIAL_HWID_DEVICE_LIMIT "Trial device limit (0 = unlimited)" "$TRIAL_HWID_DEVICE_LIMIT" v_nonnegint
+    ask_optional TRIAL_SQUAD_UUID "Trial squad UUID (empty = default squad)" "$TRIAL_SQUAD_UUID" ""
+  else
+    TRIAL_ENABLED="false"
+  fi
+
+  printf '\n' >&2
+  info "-- Referral bonus (optional) ------------------------------"
+  if ask_yes_no "Enable referral bonus defaults?" "$(bool_default "$REFERRAL_ENABLED")"; then
+    REFERRAL_ENABLED="true"
+    while true; do
+      ask REFERRAL_INVITER_BONUS_DAYS "Bonus days for inviter" "$REFERRAL_INVITER_BONUS_DAYS" v_nonnegint
+      ask REFERRAL_INVITEE_BONUS_DAYS "Bonus days for invitee" "$REFERRAL_INVITEE_BONUS_DAYS" v_nonnegint
+      if [ "$REFERRAL_INVITER_BONUS_DAYS" -gt 0 ] || [ "$REFERRAL_INVITEE_BONUS_DAYS" -gt 0 ]; then
+        break
+      fi
+      err "  -> At least one referral bonus must be positive."
+    done
+  else
+    REFERRAL_ENABLED="false"
+  fi
+
+  if [ -n "$WEBAPP_URL" ] || [ -n "$PLATEGA_MERCHANT_ID" ]; then
+    printf '\n' >&2
+    info "-- Reverse proxy ------------------------------------------"
+    warn "The Mini App / Platega webhook need the bot web server reachable over HTTPS."
+    if ask_yes_no "Is this bot on the same server as Remnawave, behind its containerised Caddy?" "n"; then
+      ALONGSIDE_REMNAWAVE="yes"
+      HOST_PROXY_ENABLED="no"
+      print_alongside_warning
+      if [ -n "$WEBAPP_URL" ]; then
+        caddy_host="$(printf '%s' "$WEBAPP_URL" | sed -E 's#^https?://##; s#/.*$##')"
+      else
+        ask caddy_host "Public domain for the bot (e.g. bot.example.com)" "" v_domain
+      fi
+    else
+      ALONGSIDE_REMNAWAVE="no"
+      HOST_PROXY_ENABLED="yes"
+      ask WEBAPP_HOST_PORT "Host port for nginx/Caddy to reach the bot on 127.0.0.1" "$WEBAPP_HOST_PORT" v_port
+    fi
+  fi
+
+  printf '\n' >&2
+  if ask_yes_no "Configure advanced options (parse mode, log level, timeout, dry-run, currency, language, win-back)?" "n"; then
+    info "-- Advanced -----------------------------------------------"
+    ask TELEGRAM_PARSE_MODE "Telegram parse mode (HTML / MarkdownV2)" "$TELEGRAM_PARSE_MODE" ""
+    ask LOG_LEVEL           "Log level (debug/info/warn/error)" "$LOG_LEVEL" v_loglevel
+    ask HTTP_TIMEOUT        "HTTP timeout (Go duration, e.g. 15s)" "$HTTP_TIMEOUT" v_duration
+    ask DRY_RUN             "Dry run? log instead of sending (true/false)" "$DRY_RUN" v_bool
+    ask RUN_ON_START        "Run once immediately on start (true/false)" "$RUN_ON_START" v_bool
+    ask CURRENCY            "Currency label shown next to tariff prices" "$CURRENCY" ""
+    ask BOT_LANG            "Bot language (ru / en)" "$BOT_LANG" v_lang
+    ask WINBACK_ENABLED     "Send win-back messages to expired users (true/false)" "$WINBACK_ENABLED" v_bool
+    ask WINBACK_DAYS        "Days after expiry to send win-back (comma-separated, e.g. 1,3)" "$WINBACK_DAYS" v_days_list
+  fi
+
+  printf '\n' >&2
+  if ask_yes_no "Enable auto-update notifications (DM admins when a new bot version is released)?" "$(bool_default "$AUTOUPDATE_ENABLED")"; then
+    AUTOUPDATE_ENABLED="true"
+    ask AUTOUPDATE_IMAGE "Image to check for updates" "$AUTOUPDATE_IMAGE" ""
+    ask AUTOUPDATE_CHECK_INTERVAL "Check for updates every (Go duration, e.g. 6h)" "$AUTOUPDATE_CHECK_INTERVAL" v_duration
+    if ask_yes_no "Enable one-tap install via a Watchtower sidecar?" "$(nonempty_default "$WATCHTOWER_URL")"; then
+      WATCHTOWER_URL="http://watchtower:8080"
+      [ -n "$WATCHTOWER_TOKEN" ] || WATCHTOWER_TOKEN="$(generate_token)"
+      info "One-tap install enabled. docker-compose.override.yml will include Watchtower."
+    else
+      WATCHTOWER_URL=""
+      WATCHTOWER_TOKEN=""
+    fi
+  else
+    AUTOUPDATE_ENABLED="false"
+    WATCHTOWER_URL=""
+    WATCHTOWER_TOKEN=""
+  fi
+
+  ensure_compose_file
+  write_env_file
+  write_override_file
+  wire_caddy_if_needed
+  print_summary
+  print_proxy_checklist
+
+  if [ -n "$PLATEGA_MERCHANT_ID" ]; then
+    warn "Platega: the bot starts on P2P; enable Platega from /admin or the Mini App."
+  fi
+
+  local compose
+  if ! compose="$(detect_compose)"; then
+    warn "Docker Compose was not found on this machine."
+    warn "Install Docker Engine + Compose, then run: docker compose up -d"
+    ok "Configuration is ready."
+    return 0
+  fi
+
+  if command -v docker >/dev/null 2>&1 && ! docker info >/dev/null 2>&1; then
+    warn "Docker is installed but not accessible by this user."
+    warn "You may need sudo or docker group membership for the start step."
+  fi
+
+  printf '\n' >&2
+  if ask_yes_no "Pull the pre-built image and start the bot now with '$compose up -d'?" "y"; then
+    info "Pulling image and starting..."
+    $compose up -d
+    printf '\n' >&2
+    ok "Bot is up. Useful commands:"
+    printf '%s\n' "  ${DIM}$compose logs -f${RESET}                 # follow logs" >&2
+    printf '%s\n' "  ${DIM}$compose ps${RESET}                      # status" >&2
+    printf '%s\n' "  ${DIM}./install.sh doctor${RESET}              # check setup" >&2
+    printf '%s\n' "  ${DIM}./install.sh update${RESET}              # pull and restart" >&2
+  else
+    ok "Skipped startup. When ready, run: $compose up -d"
+  fi
+}
+
+port_in_use() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn 2>/dev/null | grep -Eq "[:.]${port}[[:space:]]" && return 0
+  elif command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -ltn 2>/dev/null | grep -Eq "[:.]${port}[[:space:]]" && return 0
+  fi
+  return 1
+}
+
+doctor_mode() {
+  local failures=0 warnings=0 compose value base_image autoupdate_image effective_image web_port mode
+
+  check_ok() { ok "OK: $*"; }
+  check_warn() { warn "WARN: $*"; warnings=$((warnings + 1)); }
+  check_fail() { err "FAIL: $*"; failures=$((failures + 1)); }
+
+  REMNAWAKE_CHANNEL="$(env_default REMNAWAKE_CHANNEL "${REMNAWAKE_CHANNEL:-main}")"
+  v_channel "$REMNAWAKE_CHANNEL" >/dev/null 2>&1 || REMNAWAKE_CHANNEL="main"
+  apply_channel_defaults
+
+  info "remnaWake doctor"
+
+  value="$REMNAWAKE_CHANNEL"
+  if v_channel "$value" >/dev/null 2>&1; then
+    check_ok "REMNAWAKE_CHANNEL is $value"
+  else
+    check_fail "REMNAWAKE_CHANNEL is invalid: $value"
+  fi
+
+  [ -f "$ENV_FILE" ] && check_ok ".env exists" || check_fail ".env is missing; run ./install.sh configure"
+  [ -f "$COMPOSE_FILE" ] && check_ok "docker-compose.yml exists" || check_fail "docker-compose.yml is missing"
+  [ -f "$OVERRIDE_FILE" ] && check_ok "docker-compose.override.yml exists" || check_warn "docker-compose.override.yml is missing; run ./install.sh configure"
+
+  for key in REMNAWAVE_BASE_URL REMNAWAVE_API_TOKEN TELEGRAM_BOT_TOKEN; do
+    if value="$(env_get "$key")" && [ -n "$value" ]; then
+      check_ok "$key is set"
+    else
+      check_fail "$key is missing"
+    fi
+  done
+
+  if [ -f "$ENV_FILE" ]; then
+    mode=""
+    if mode="$(stat -c %a "$ENV_FILE" 2>/dev/null)"; then
+      [ "$mode" = "600" ] && check_ok ".env permissions are 600" || check_warn ".env permissions are $mode, expected 600"
+    else
+      check_warn "Could not inspect .env permissions on this platform"
+    fi
+  fi
+
+  web_port="$(env_default WEBAPP_HOST_PORT "8080")"
+  if v_port "$web_port" >/dev/null 2>&1; then
+    check_ok "WEBAPP_HOST_PORT is valid ($web_port)"
+    if port_in_use "$web_port"; then
+      check_warn "Port $web_port appears to be in use; this is OK if remnaWake is already running"
+    else
+      check_ok "Port $web_port does not appear to be listening"
+    fi
+  else
+    check_fail "WEBAPP_HOST_PORT is invalid: $web_port"
+  fi
+
+  if command -v docker >/dev/null 2>&1; then
+    check_ok "docker command exists"
+    if docker info >/dev/null 2>&1; then
+      check_ok "Docker daemon is accessible"
+    else
+      check_warn "Docker command exists but daemon is not accessible"
+    fi
+  else
+    check_fail "docker command not found"
+  fi
+
+  if compose="$(detect_compose)"; then
+    check_ok "Docker Compose is available ($compose)"
+    if [ -f "$COMPOSE_FILE" ] && $compose config >/dev/null 2>&1; then
+      check_ok "docker compose config succeeds"
+    else
+      check_fail "docker compose config failed"
+    fi
+  else
+    check_fail "Docker Compose not found"
+  fi
+
+  if [ -f "$COMPOSE_FILE" ]; then
+    base_image="$(compose_image || true)"
+    case "$base_image" in
+      *remnawake*) check_ok "Compose image looks correct ($base_image)" ;;
+      "") check_warn "Could not read image from docker-compose.yml" ;;
+      *) check_warn "Compose image does not contain remnawake: $base_image" ;;
+    esac
+    autoupdate_image="$(env_default AUTOUPDATE_IMAGE "$DEFAULT_DEPLOY_IMAGE")"
+    effective_image="$(override_image || true)"
+    [ -n "$effective_image" ] || effective_image="$base_image"
+    if [ -n "$effective_image" ] && [ "$autoupdate_image" != "$effective_image" ]; then
+      check_warn "AUTOUPDATE_IMAGE ($autoupdate_image) differs from effective compose image ($effective_image)"
+    else
+      check_ok "AUTOUPDATE_IMAGE matches effective compose image"
+    fi
+  fi
+
+  if [ "$(env_default AUTOUPDATE_ENABLED "false")" = "true" ]; then
+    value="$(env_default AUTOUPDATE_CHECK_INTERVAL "6h")"
+    v_duration "$value" >/dev/null 2>&1 && check_ok "AUTOUPDATE_CHECK_INTERVAL is valid" || check_fail "AUTOUPDATE_CHECK_INTERVAL is invalid: $value"
+    if [ -n "$(env_default WATCHTOWER_URL "")" ]; then
+      [ -n "$(env_default WATCHTOWER_TOKEN "")" ] && check_ok "Watchtower token is set" || check_fail "WATCHTOWER_TOKEN is required when WATCHTOWER_URL is set"
+      grep -q 'watchtower:' "$OVERRIDE_FILE" 2>/dev/null && check_ok "Watchtower service is present in override" || check_fail "Watchtower URL is set but override has no watchtower service"
+    else
+      check_ok "Auto-update is notify-only (no Watchtower URL)"
+    fi
+  fi
+
+  printf '\n' >&2
+  if [ "$failures" -eq 0 ]; then
+    ok "Doctor finished with $warnings warning(s)."
+    return 0
+  fi
+  err "Doctor found $failures failure(s) and $warnings warning(s)."
+  return 1
+}
+
+update_mode() {
+  local compose
+  ensure_compose_file
+  if ! compose="$(detect_compose)"; then
+    err "Docker Compose was not found. Install Docker Engine + Compose first."
+    exit 1
+  fi
+  run_backup
+  info "Pulling image..."
+  $compose pull
+  info "Restarting..."
+  $compose up -d
+  ok "Update complete. Useful commands:"
+  printf '%s\n' "  $compose ps" >&2
+  printf '%s\n' "  $compose logs -f" >&2
+}
+
+main() {
+  local mode="${1:-configure}"
+  case "$mode" in
+    configure|config|"")
+      configure_mode
+      ;;
+    doctor|check)
+      doctor_mode
+      ;;
+    update|upgrade)
+      update_mode
+      ;;
+    backup)
+      run_backup
+      ;;
+    -h|--help|help)
+      usage
+      ;;
+    *)
+      err "Unknown mode: $mode"
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"

@@ -101,6 +101,12 @@ type WebTrialResult struct {
 	SubscriptionURL string `json:"subscription_url,omitempty"`
 }
 
+type WebTrialTerms struct {
+	Days            int `json:"days"`
+	TrafficLimitGB  int `json:"traffic_limit_gb"`
+	HwidDeviceLimit int `json:"hwid_device_limit"`
+}
+
 type WebRegistrationResult struct {
 	Username string `json:"username"`
 }
@@ -137,7 +143,8 @@ type WebCabinet struct {
 	Notifications *WebNotifPrefs `json:"notifications,omitempty"`
 	// TrialAvailable is true when the free trial is enabled and this user has no
 	// linked profile yet, so the frontend can offer the claim card.
-	TrialAvailable bool `json:"trial_available,omitempty"`
+	TrialAvailable bool           `json:"trial_available,omitempty"`
+	TrialTerms     *WebTrialTerms `json:"trial_terms,omitempty"`
 }
 
 // CabinetData assembles the personal-cabinet view for the mini app: linked
@@ -259,8 +266,11 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 
 	// Offer the free trial only to enabled deployments where this user has no
 	// linked profile yet.
-	if enabled, _ := s.trialConfig(); enabled && len(subs) == 0 {
+	if cfg := s.trialConfig(); cfg.Enabled && len(subs) == 0 {
 		out.TrialAvailable = true
+		out.TrialTerms = &WebTrialTerms{
+			Days: cfg.Days, TrafficLimitGB: cfg.TrafficLimitGB, HwidDeviceLimit: cfg.HwidDeviceLimit,
+		}
 	}
 
 	return out, nil

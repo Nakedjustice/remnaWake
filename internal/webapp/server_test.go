@@ -163,10 +163,11 @@ type adminCall struct {
 }
 
 type fakeAdmin struct {
-	panel *payments.WebAdminPanel
-	stats *payments.WebAdminStats
-	err   error
-	calls []adminCall
+	panel  *payments.WebAdminPanel
+	stats  *payments.WebAdminStats
+	report *payments.WebPaymentReport
+	err    error
+	calls  []adminCall
 }
 
 func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.WebAdminPanel, error) {
@@ -176,6 +177,10 @@ func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.Web
 func (f *fakeAdmin) AdminStatsData(_ context.Context, tgID int64) (*payments.WebAdminStats, error) {
 	f.calls = append(f.calls, adminCall{Name: "stats", A: tgID})
 	return f.stats, f.err
+}
+func (f *fakeAdmin) AdminPaymentReport(_ context.Context, tgID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error) {
+	f.calls = append(f.calls, adminCall{Name: "payments", A: tgID, B: int64(filter.Page), Text: fmt.Sprintf("%d:%s:%s:%s", filter.Days, filter.Status, filter.Provider, filter.Query)})
+	return f.report, f.err
 }
 func (f *fakeAdmin) AdminSetTariff(_ context.Context, tgID int64, months, price int) error {
 	f.calls = append(f.calls, adminCall{Name: "settariff", A: int64(months), B: int64(price)})
@@ -189,8 +194,8 @@ func (f *fakeAdmin) AdminSetRequisites(_ context.Context, tgID int64, text strin
 	f.calls = append(f.calls, adminCall{Name: "setreq", Text: text})
 	return f.err
 }
-func (f *fakeAdmin) AdminSetTrial(_ context.Context, tgID int64, enabled bool, days int) error {
-	f.calls = append(f.calls, adminCall{Name: "settrial", A: tgID, B: int64(days), Text: fmt.Sprintf("%t", enabled)})
+func (f *fakeAdmin) AdminSetTrial(_ context.Context, tgID int64, cfg payments.TrialConfig) error {
+	f.calls = append(f.calls, adminCall{Name: "settrial", A: tgID, B: int64(cfg.Days), Text: fmt.Sprintf("%t:%d:%d:%s", cfg.Enabled, cfg.TrafficLimitGB, cfg.HwidDeviceLimit, cfg.SquadUUID)})
 	return f.err
 }
 func (f *fakeAdmin) AdminSetReferral(_ context.Context, tgID int64, enabled bool, inviter, invitee int) error {
@@ -586,6 +591,51 @@ func TestHandleAdminStats(t *testing.T) {
 	}
 }
 
+func TestHandleAdminPaymentsDefaultsAndFilters(t *testing.T) {
+	adm := &fakeAdmin{report: &payments.WebPaymentReport{
+		Days: 7, Total: 1, Page: 2, PageSize: 25, TotalPages: 2,
+		Items: []payments.WebPaymentRecord{{ID: 9, Username: "alice", ProviderTxnID: "txn-9"}},
+	}}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/payments?days=7&status=confirmed&provider=platega&q=alice&page=2", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "payments" || adm.calls[0].B != 2 || adm.calls[0].Text != "7:confirmed:platega:alice" {
+		t.Fatalf("calls = %+v", adm.calls)
+	}
+	var got payments.WebPaymentReport
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Total != 1 || got.Items[0].ProviderTxnID != "txn-9" {
+		t.Fatalf("payload = %+v", got)
+	}
+}
+
+func TestHandleAdminPaymentsDefaultQueryAndValidation(t *testing.T) {
+	adm := &fakeAdmin{report: &payments.WebPaymentReport{}}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/payments", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || len(adm.calls) != 1 || adm.calls[0].Text != "30:all:all:" || adm.calls[0].B != 1 {
+		t.Fatalf("status=%d calls=%+v", w.Code, adm.calls)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/payments?page=zero", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest || len(adm.calls) != 1 {
+		t.Fatalf("invalid status=%d calls=%+v", w.Code, adm.calls)
+	}
+}
+
 func TestStaticAdminStatisticsView(t *testing.T) {
 	b, err := staticFS.ReadFile("static/index.html")
 	if err != nil {
@@ -594,10 +644,14 @@ func TestStaticAdminStatisticsView(t *testing.T) {
 	src := string(b)
 	for _, want := range []string{
 		"/api/admin/stats",
+		"/api/admin/payments",
 		"showAdminStats",
 		"📊 Статистика",
 		"Panel users",
-		"payments_confirmed_30d",
+		"conversion_rate",
+		"provider_txn_id",
+		"payment-chart",
+		"payment-history",
 		"admin-stat-value",
 	} {
 		if !strings.Contains(src, want) {
@@ -923,14 +977,14 @@ func TestHandleTrial(t *testing.T) {
 func TestHandleAdminTrialReferral(t *testing.T) {
 	adm := &fakeAdmin{}
 	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
-	req := httptest.NewRequest("POST", "/api/admin/trial", strings.NewReader(`{"enabled":true,"days":5}`))
+	req := httptest.NewRequest("POST", "/api/admin/trial", strings.NewReader(`{"enabled":true,"days":5,"traffic_limit_gb":10,"hwid_device_limit":1,"squad_uuid":"trial-squad"}`))
 	req.Header.Set("Authorization", validAuth(t))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("trial status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	if len(adm.calls) != 1 || adm.calls[0].Name != "settrial" || adm.calls[0].B != 5 {
+	if len(adm.calls) != 1 || adm.calls[0].Name != "settrial" || adm.calls[0].B != 5 || adm.calls[0].Text != "true:10:1:trial-squad" {
 		t.Fatalf("trial calls = %+v", adm.calls)
 	}
 

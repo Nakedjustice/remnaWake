@@ -50,8 +50,8 @@ func (s *Service) clearTrial(chatID int64) {
 // It is the single guard shared by the offer check and beginTrialFlow so an
 // advertised button always leads to a working flow.
 func (s *Service) trialAvailable() bool {
-	enabled, _ := s.trialConfig()
-	return s.isEnabled() && enabled && s.creator != nil
+	cfg := s.trialConfig()
+	return s.isEnabled() && cfg.Enabled && s.creator != nil
 }
 
 // TrialOffered reports whether the free trial should be advertised to users.
@@ -86,7 +86,7 @@ func (s *Service) beginTrialFlow(ctx context.Context, chatID int64) bool {
 	if !s.trialAvailable() {
 		return false
 	}
-	_, days := s.trialConfig()
+	cfg := s.trialConfig()
 	// The trial is for brand-new users only: anyone who already has a linked
 	// profile is ineligible.
 	subs, err := s.finder.FindByTelegramID(ctx, chatID)
@@ -102,8 +102,8 @@ func (s *Service) beginTrialFlow(ctx context.Context, chatID int64) bool {
 	}
 	s.setTrial(chatID, &trialState{createdAt: s.now()})
 	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
-		i18n.T("🎁 Бесплатный пробный период на %d %s!\n\nВведите желаемое имя пользователя для вашего профиля (буквы, цифры и «_», от 3 до 32 символов). /cancel — отмена."),
-		days, i18n.PluralDays(days)))
+		i18n.T("🎁 Бесплатный пробный период на %d %s!\nТрафик: %s\nУстройства: %s\n\nВведите желаемое имя пользователя для вашего профиля (буквы, цифры и «_», от 3 до 32 символов). /cancel — отмена."),
+		cfg.Days, i18n.PluralDays(cfg.Days), formatLimit(int64(cfg.TrafficLimitGB), " GB"), formatLimit(int64(cfg.HwidDeviceLimit), "")))
 	return true
 }
 
@@ -180,8 +180,8 @@ func (s *Service) createTrial(ctx context.Context, chatID int64, username string
 // returns sentinel errors (ErrTrialDisabled / ErrBadInput / ErrTrialNotEligible
 // / ErrUsernameTaken / ErrTrialAlreadyUsed / ErrPanelCreateFailed).
 func (s *Service) claimTrial(ctx context.Context, telegramID int64, username string) (*CreatedUser, time.Time, error) {
-	enabled, days := s.trialConfig()
-	if !enabled || s.creator == nil {
+	cfg := s.trialConfig()
+	if !cfg.Enabled || s.creator == nil {
 		return nil, time.Time{}, ErrTrialDisabled
 	}
 	if !isValidUsername(username) {
@@ -204,6 +204,15 @@ func (s *Service) claimTrial(ctx context.Context, telegramID int64, username str
 		return nil, time.Time{}, ErrUsernameTaken
 	}
 
+	var squadUUID string
+	if !s.dryRun {
+		squadUUID, err = s.resolveTrialSquadUUID(ctx, cfg.SquadUUID)
+		if err != nil {
+			s.logger.Error("trial: resolve squad failed", "username", username, "err", err.Error())
+			return nil, time.Time{}, fmt.Errorf("%w: %v", ErrPanelCreateFailed, err)
+		}
+	}
+
 	ok, err := s.store.ClaimTrial(ctx, telegramID, username, s.now())
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("trial: claim: %w", err)
@@ -212,7 +221,7 @@ func (s *Service) claimTrial(ctx context.Context, telegramID int64, username str
 		return nil, time.Time{}, ErrTrialAlreadyUsed
 	}
 
-	expireAt := s.now().AddDate(0, 0, days)
+	expireAt := s.now().AddDate(0, 0, cfg.Days)
 
 	if s.dryRun {
 		s.logger.Info("dry-run: would create trial user", "username", username,
@@ -220,14 +229,14 @@ func (s *Service) claimTrial(ctx context.Context, telegramID int64, username str
 		return nil, expireAt, nil
 	}
 
-	squadUUID, err := s.resolveDefaultSquadUUID(ctx)
-	if err != nil {
-		s.logger.Error("trial: resolve default squad failed", "username", username, "err", err.Error())
-		s.releaseTrialClaim(ctx, telegramID)
-		return nil, time.Time{}, fmt.Errorf("%w: %v", ErrPanelCreateFailed, err)
-	}
-
-	created, err := s.creator.CreateUser(ctx, username, expireAt, []string{squadUUID}, s.getDefaultTrafficReset())
+	created, err := s.creator.CreateUser(ctx, CreateUserSpec{
+		Username:             username,
+		ExpireAt:             expireAt,
+		SquadUUIDs:           []string{squadUUID},
+		TrafficLimitBytes:    int64(cfg.TrafficLimitGB) * bytesPerGB,
+		TrafficLimitStrategy: "NO_RESET",
+		HwidDeviceLimit:      cfg.HwidDeviceLimit,
+	})
 	if err != nil {
 		s.logger.Error("trial: create user failed", "username", username, "err", err.Error())
 		s.releaseTrialClaim(ctx, telegramID)
@@ -242,6 +251,25 @@ func (s *Service) claimTrial(ctx context.Context, telegramID int64, username str
 		}
 	}
 	return created, expireAt, nil
+}
+
+func (s *Service) resolveTrialSquadUUID(ctx context.Context, configured string) (string, error) {
+	if configured == "" {
+		return s.resolveDefaultSquadUUID(ctx)
+	}
+	if s.squads == nil {
+		return "", fmt.Errorf("trial squad %q cannot be validated", configured)
+	}
+	squads, err := s.squads.GetInternalSquads(ctx)
+	if err != nil {
+		return "", fmt.Errorf("list internal squads: %w", err)
+	}
+	for _, squad := range squads {
+		if squad.UUID == configured {
+			return configured, nil
+		}
+	}
+	return "", fmt.Errorf("configured trial squad %q no longer exists", configured)
 }
 
 // releaseTrialClaim rolls back a trial claim after a failed activation so the

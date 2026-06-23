@@ -94,19 +94,23 @@ type WebAdminPanel struct {
 	// created users (NO_RESET | DAY | WEEK | MONTH).
 	DefaultTrafficResetStrategy string `json:"default_traffic_reset_strategy"`
 	// Trial / referral runtime settings, editable from the admin panel.
-	TrialEnabled        bool `json:"trial_enabled"`
-	TrialDays           int  `json:"trial_days"`
-	ReferralEnabled     bool `json:"referral_enabled"`
-	ReferralInviterDays int  `json:"referral_inviter_days"`
-	ReferralInviteeDays int  `json:"referral_invitee_days"`
+	TrialEnabled         bool   `json:"trial_enabled"`
+	TrialDays            int    `json:"trial_days"`
+	TrialTrafficLimitGB  int    `json:"trial_traffic_limit_gb"`
+	TrialHwidDeviceLimit int    `json:"trial_hwid_device_limit"`
+	TrialSquadUUID       string `json:"trial_squad_uuid"`
+	ReferralEnabled      bool   `json:"referral_enabled"`
+	ReferralInviterDays  int    `json:"referral_inviter_days"`
+	ReferralInviteeDays  int    `json:"referral_invitee_days"`
 }
 
 // WebSquad is one panel internal squad offered in the mini app default-squad
 // picker.
 type WebSquad struct {
-	UUID     string `json:"uuid"`
-	Name     string `json:"name"`
-	Selected bool   `json:"selected"`
+	UUID          string `json:"uuid"`
+	Name          string `json:"name"`
+	Selected      bool   `json:"selected"`
+	TrialSelected bool   `json:"trial_selected"`
 }
 
 // adminGuard rejects calls from non-admin Telegram IDs. The ID comes from
@@ -152,7 +156,12 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	_, out.DefaultSquadName = s.defaultSquadSelection(ctx)
 	out.DefaultTrafficResetStrategy = s.getDefaultTrafficReset()
 
-	out.TrialEnabled, out.TrialDays = s.trialConfig()
+	trial := s.trialConfig()
+	out.TrialEnabled = trial.Enabled
+	out.TrialDays = trial.Days
+	out.TrialTrafficLimitGB = trial.TrafficLimitGB
+	out.TrialHwidDeviceLimit = trial.HwidDeviceLimit
+	out.TrialSquadUUID = trial.SquadUUID
 	out.ReferralEnabled, out.ReferralInviterDays, out.ReferralInviteeDays = s.referralConfig()
 
 	buyers, err := s.store.ListGiftBuyers(ctx)
@@ -333,14 +342,11 @@ func (s *Service) AdminSetProviderEnabled(ctx context.Context, telegramID int64,
 
 // AdminSetTrial enables/disables the free trial and sets its length (days ≥ 1)
 // from the mini app admin panel (same settings as the adm:trial bot card).
-func (s *Service) AdminSetTrial(ctx context.Context, telegramID int64, enabled bool, days int) error {
+func (s *Service) AdminSetTrial(ctx context.Context, telegramID int64, cfg TrialConfig) error {
 	if err := s.adminGuard(telegramID); err != nil {
 		return err
 	}
-	if err := s.setTrialDays(ctx, days); err != nil {
-		return err
-	}
-	return s.setTrialEnabled(ctx, enabled)
+	return s.setTrialConfig(ctx, cfg)
 }
 
 // AdminSetReferral enables/disables the referral bonus and sets the inviter and
@@ -369,9 +375,10 @@ func (s *Service) AdminListSquads(ctx context.Context, telegramID int64) ([]WebS
 		return nil, fmt.Errorf("%w: %v", ErrPanelUnavailable, err)
 	}
 	selectedUUID, _ := s.defaultSquadSelection(ctx)
+	trialUUID := s.trialConfig().SquadUUID
 	out := make([]WebSquad, 0, len(squads))
 	for _, sq := range squads {
-		out = append(out, WebSquad{UUID: sq.UUID, Name: sq.Name, Selected: sq.UUID == selectedUUID})
+		out = append(out, WebSquad{UUID: sq.UUID, Name: sq.Name, Selected: sq.UUID == selectedUUID, TrialSelected: sq.UUID == trialUUID})
 	}
 	return out, nil
 }

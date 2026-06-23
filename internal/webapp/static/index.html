@@ -276,6 +276,45 @@
   .admin-stat { min-height: 92px; padding: 15px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
   .admin-stat-value { margin-top: 7px; font-size: 23px; font-weight: 800; letter-spacing: -.03em; }
   .admin-stat-label { color: var(--hint); font-size: 11px; font-weight: 700; line-height: 1.35; }
+  .payment-range { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 5px; margin-bottom: 14px;
+    border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+  .payment-range button { margin: 0; padding: 9px 8px; border-radius: 11px; background: transparent; color: var(--hint); }
+  .payment-range button.active { background: var(--accent-soft); color: var(--accent); }
+  .payment-chart { padding: 15px; overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .payment-chart-bars { display: flex; height: 142px; align-items: flex-end; gap: 4px; overflow-x: auto; padding: 10px 1px 4px; }
+  .payment-chart-column { display: flex; min-width: 9px; height: 100%; flex: 1 0 9px; align-items: flex-end; }
+  .payment-chart-bar { width: 100%; min-height: 3px; border-radius: 5px 5px 2px 2px;
+    background: linear-gradient(180deg, var(--accent), rgba(123,92,255,.42)); }
+  .payment-chart-legend { display: flex; justify-content: space-between; gap: 12px; margin-top: 9px; color: var(--hint); font-size: 11px; }
+  .payment-provider-list { display: grid; gap: 8px; }
+  .payment-provider { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; padding: 13px 14px;
+    border: 1px solid var(--border); border-radius: 15px; background: var(--surface); }
+  .payment-provider-name { font-weight: 800; }
+  .payment-provider-revenue { color: var(--accent); font-weight: 800; }
+  .payment-provider-meta { grid-column: 1 / -1; color: var(--hint); font-size: 12px; }
+  .payment-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .payment-filters .payment-search { grid-column: 1 / -1; display: flex; gap: 8px; }
+  .payment-filters input, .payment-filters select { width: 100%; min-width: 0; margin: 0; }
+  .payment-filters .payment-search button { width: auto; flex: none; margin: 0; }
+  .payment-history { display: grid; gap: 10px; }
+  .payment-record { padding: 15px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .payment-record-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .payment-record-title { font-size: 16px; font-weight: 800; }
+  .payment-record-price { margin-top: 3px; color: var(--accent); font-size: 18px; font-weight: 800; }
+  .payment-record-meta { margin-top: 10px; color: var(--hint); font-size: 12px; line-height: 1.65; }
+  .payment-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+  .payment-badge { padding: 4px 8px; border-radius: 999px; background: var(--surface-2); color: var(--hint);
+    font-size: 10px; font-weight: 800; text-transform: uppercase; }
+  .payment-badge.confirmed { background: rgba(52,199,89,.13); color: var(--tone-active); }
+  .payment-badge.rejected { background: rgba(255,69,58,.13); color: var(--tone-expired); }
+  .payment-badge.pending { background: rgba(255,184,0,.13); color: #d99b00; }
+  .payment-txn { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 9px 10px;
+    border-radius: 11px; background: var(--surface-2); }
+  .payment-txn code { min-width: 0; flex: 1; overflow: hidden; color: var(--hint); text-overflow: ellipsis; white-space: nowrap; }
+  .payment-txn button { width: auto; flex: none; margin: 0; padding: 6px 9px; font-size: 12px; }
+  .payment-pages { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+  .payment-pages button { width: auto; margin: 0; }
+  .payment-pages span { color: var(--hint); font-size: 12px; }
   .admin-card .row input, .admin-card .item input, .admin-card .item select { min-width: 0; }
   .admin-card > button:last-child { border-radius: 999px; }
   .admin-card textarea { min-height: 120px; }
@@ -289,6 +328,7 @@
     .admin-request { align-items: flex-start; flex-wrap: wrap; }
     .admin-request-actions { width: 100%; justify-content: flex-end; }
     .admin-stat-grid { gap: 8px; }
+    .payment-chart-bars { height: 118px; }
   }
 </style>
 </head>
@@ -425,6 +465,36 @@ const EN = {
   'Подтверждено': 'Confirmed',
   'Выручка': 'Revenue',
   'Ожидают подтверждения': 'Awaiting confirmation',
+  'Платежи и выручка': 'Payments and revenue',
+  'Последние 7 дней': 'Last 7 days',
+  'Последние 30 дней': 'Last 30 days',
+  'Последние 90 дней': 'Last 90 days',
+  'Отклонено': 'Rejected',
+  'Конверсия': 'Conversion',
+  'Динамика выручки': 'Revenue trend',
+  'Нет подтверждённых платежей за период.': 'No confirmed payments in this period.',
+  'По дням: {count} платежей на {revenue}': 'Daily: {count} payments totalling {revenue}',
+  'Способы оплаты': 'Payment methods',
+  'подтверждено {confirmed} · отклонено {rejected} · ожидает {pending}': 'confirmed {confirmed} · rejected {rejected} · pending {pending}',
+  'История платежей': 'Payment history',
+  'Поиск по пользователю, Telegram ID или транзакции': 'Search user, Telegram ID or transaction',
+  'Найти': 'Search',
+  'Все статусы': 'All statuses',
+  'Ожидает': 'Pending',
+  'Все способы': 'All methods',
+  'Платежи не найдены.': 'No payments found.',
+  'Подписка': 'Subscription',
+  'Плательщик': 'Payer',
+  'Создано': 'Created',
+  'Решено': 'Resolved',
+  'месяц': 'month',
+  'месяца': 'months',
+  'месяцев': 'months',
+  'Скопировать ID транзакции': 'Copy transaction ID',
+  'Страница {page} из {total}': 'Page {page} of {total}',
+  'Назад': 'Previous',
+  'Далее': 'Next',
+  'Статистика пользователей временно недоступна.': 'User statistics are temporarily unavailable.',
   'Подарочные коды': 'Gift codes',
   'Ожидают оплаты': 'Awaiting payment',
   'Выданы': 'Issued',
@@ -589,6 +659,8 @@ const EN = {
   // Free-trial claim (user cabinet)
   '🎁 Бесплатный пробный период': '🎁 Free trial',
   'Создайте профиль и попробуйте сервис бесплатно. Доступно один раз.': 'Create a profile and try the service for free. Available once.',
+  'Срок: {days} дн. · Трафик: {traffic} · Устройства: {devices}': 'Duration: {days} days · Traffic: {traffic} · Devices: {devices}',
+  'Без ограничений': 'Unlimited',
   'Имя пользователя (буквы, цифры и «_»)': 'Username (letters, digits and "_")',
   '🎁 Активировать пробный период': '🎁 Activate trial',
   'Введите имя пользователя.': 'Enter a username.',
@@ -598,7 +670,12 @@ const EN = {
   'Включён: новые пользователи могут активировать пробный профиль.': 'Enabled: new users can activate a trial profile.',
   'Выключен.': 'Disabled.',
   'Длительность (дни)': 'Duration (days)',
-  '💾 Сохранить длительность': '💾 Save duration',
+  'Лимит трафика (GB, 0 — без ограничений)': 'Traffic limit (GB, 0 means unlimited)',
+  'Лимит устройств (0 — без ограничений)': 'Device limit (0 means unlimited)',
+  'Сквад пробного периода': 'Trial squad',
+  'Использовать сквад по умолчанию': 'Use default squad',
+  'Сброс трафика: NO_RESET (общий лимит на весь период).': 'Traffic reset: NO_RESET (one allowance for the entire trial).',
+  '💾 Сохранить настройки': '💾 Save settings',
   '🚫 Выключить': '🚫 Disable',
   '✅ Включить': '✅ Enable',
   '🎉 Реферальная программа': '🎉 Referral program',
@@ -1287,10 +1364,17 @@ function renderNotifPrefs(data) {
 
 // renderTrialClaim builds the free-trial claim card shown to new (unlinked)
 // users when the trial is enabled.
-function renderTrialClaim() {
+function renderTrialClaim(terms) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, t('🎁 Бесплатный пробный период')));
   card.appendChild(el('div', 'hint', t('Создайте профиль и попробуйте сервис бесплатно. Доступно один раз.')));
+  if (terms) {
+    const traffic = terms.traffic_limit_gb === 0 ? t('Без ограничений') : terms.traffic_limit_gb + ' GB';
+    const devices = terms.hwid_device_limit === 0 ? t('Без ограничений') : String(terms.hwid_device_limit);
+    card.appendChild(el('div', 'hint', t('Срок: {days} дн. · Трафик: {traffic} · Устройства: {devices}', {
+      days: terms.days, traffic, devices,
+    })));
+  }
   const input = Object.assign(el('input'), { type: 'text', placeholder: t('Имя пользователя (буквы, цифры и «_»)') });
   card.appendChild(input);
   const btn = el('button', null, t('🎁 Активировать пробный период'));
@@ -1330,7 +1414,7 @@ function showHome() {
   if (!data.linked) {
     appEl.appendChild(renderUnlinked());
     appEl.appendChild(renderRegistration());
-    if (data.trial_available) appEl.appendChild(renderTrialClaim());
+    if (data.trial_available) appEl.appendChild(renderTrialClaim(data.trial_terms));
     const inviteButtons = [
       [t('🎁 Подарить'), showGift],
       [t('👥 Пригласить'), showInvite],
@@ -1540,6 +1624,7 @@ async function showCabinet() {
 // adminData caches the latest /api/admin payload so the admin hub and its
 // sub-views render from the same data without re-fetching on every navigation.
 let adminData = null;
+let adminPaymentFilters = { days: 30, status: 'all', provider: 'all', query: '', page: 1 };
 
 // showAdmin (re)loads /api/admin and renders the admin hub.
 async function showAdmin() {
@@ -2084,21 +2169,59 @@ function renderAdminTrial(data) {
     ? t('Включён: новые пользователи могут активировать пробный профиль.')
     : t('Выключен.')));
   const days = Object.assign(el('input'), { type: 'number', min: '1', value: data.trial_days || 1 });
-  const r = el('div', 'row');
-  r.appendChild(el('span', 'k', t('Длительность (дни)')));
-  r.appendChild(days);
-  card.appendChild(r);
-  const save = el('button', null, t('💾 Сохранить длительность'));
-  save.onclick = () => adminAction('/api/admin/trial', { enabled: data.trial_enabled, days: parseInt(days.value, 10) || 0 });
+  const traffic = Object.assign(el('input'), { type: 'number', min: '0', value: data.trial_traffic_limit_gb ?? 10 });
+  const hwid = Object.assign(el('input'), { type: 'number', min: '0', value: data.trial_hwid_device_limit ?? 1 });
+  const squad = el('select');
+  squad.appendChild(Object.assign(el('option', null, t('Загрузка…')), { value: '' }));
+  squad.disabled = true;
+  [
+    [t('Длительность (дни)'), days],
+    [t('Лимит трафика (GB, 0 — без ограничений)'), traffic],
+    [t('Лимит устройств (0 — без ограничений)'), hwid],
+    [t('Сквад пробного периода'), squad],
+  ].forEach(([label, input]) => {
+    const row = el('div', 'row');
+    row.appendChild(el('span', 'k', label));
+    row.appendChild(input);
+    card.appendChild(row);
+  });
+  card.appendChild(el('div', 'hint', t('Сброс трафика: NO_RESET (общий лимит на весь период).')));
+  const payload = enabled => ({
+    enabled,
+    days: parseInt(days.value, 10),
+    traffic_limit_gb: parseInt(traffic.value, 10),
+    hwid_device_limit: parseInt(hwid.value, 10),
+    squad_uuid: squad.disabled ? (data.trial_squad_uuid || '') : squad.value,
+  });
+  const save = el('button', null, t('💾 Сохранить настройки'));
+  save.disabled = true;
+  save.onclick = () => adminAction('/api/admin/trial', payload(data.trial_enabled));
   card.appendChild(save);
   const toggle = el('button', 'switch' + (data.trial_enabled ? ' on' : ''));
   toggle.appendChild(el('span', 'knob'));
   toggle.setAttribute('aria-label', data.trial_enabled ? t('🚫 Выключить') : t('✅ Включить'));
-  toggle.onclick = () => adminAction('/api/admin/trial', { enabled: !data.trial_enabled, days: data.trial_days || 1 });
+  toggle.onclick = () => adminAction('/api/admin/trial', payload(!data.trial_enabled));
   const toggleRow = el('div', 'toggle-item');
   toggleRow.appendChild(el('div', 'ti-label', t('🎁 Пробный период')));
   toggleRow.appendChild(toggle);
   card.appendChild(toggleRow);
+  api('/api/admin/squads').then(res => {
+    squad.textContent = '';
+    squad.appendChild(Object.assign(el('option', null, t('Использовать сквад по умолчанию')), {
+      value: '', selected: !data.trial_squad_uuid,
+    }));
+    (res.squads || []).forEach(item => {
+      squad.appendChild(Object.assign(el('option', null, item.name), {
+        value: item.uuid, selected: item.uuid === data.trial_squad_uuid,
+      }));
+    });
+    squad.disabled = false;
+    save.disabled = false;
+  }).catch(e => {
+    squad.textContent = '';
+    squad.appendChild(Object.assign(el('option', null, t('Ошибка загрузки сквадов')), { value: '' }));
+    tg.showAlert(e.message);
+  });
   return card;
 }
 
@@ -2390,49 +2513,252 @@ function showAdminBilling() {
 // in-place mutations re-render correctly.
 async function showAdminStats() {
   currentRender = showAdminStats;
-  let stats;
-  try {
-    stats = await api('/api/admin/stats');
-  } catch (e) { tg.showAlert(e.message); return; }
-
-  const statsCard = (title, rows) => {
-    const section = el('section', 'admin-section');
-    section.appendChild(el('div', 'admin-section-label', title));
-    const grid = el('div', 'admin-stat-grid');
-    rows.forEach(([label, value]) => {
-      const tile = el('div', 'admin-stat');
-      tile.appendChild(el('div', 'admin-stat-label', label));
-      tile.appendChild(el('div', 'admin-stat-value', String(value)));
-      grid.appendChild(tile);
-    });
-    section.appendChild(grid);
-    return section;
-  };
+  const f = adminPaymentFilters;
+  const params = new URLSearchParams({
+    days: String(f.days), status: f.status, provider: f.provider,
+    q: f.query, page: String(f.page),
+  });
+  const [statsResult, reportResult] = await Promise.allSettled([
+    api('/api/admin/stats'), api('/api/admin/payments?' + params.toString()),
+  ]);
+  if (reportResult.status === 'rejected') {
+    tg.showAlert(reportResult.reason.message);
+    return;
+  }
+  const stats = statsResult.status === 'fulfilled' ? statsResult.value : null;
+  const report = reportResult.value;
+  const analytics = report.analytics;
 
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Статистика')));
-  appEl.appendChild(statsCard(t('Пользователи панели'), [
-    [t('Всего'), stats.users_total],
-    [t('Активные'), stats.users_active],
-    [t('Истекают в ближайшие 7 дней'), stats.users_expiring_soon],
-    [t('Истекшие'), stats.users_expired],
-    [t('С привязанным Telegram'), stats.users_linked],
+
+  const range = el('div', 'payment-range');
+  [[7, t('Последние 7 дней')], [30, t('Последние 30 дней')], [90, t('Последние 90 дней')]].forEach(([days, label]) => {
+    const button = el('button', days === f.days ? 'active' : '', label);
+    button.onclick = () => { adminPaymentFilters.days = days; adminPaymentFilters.page = 1; showAdminStats(); };
+    range.appendChild(button);
+  });
+  appEl.appendChild(range);
+  appEl.appendChild(paymentStatsCard(t('Платежи и выручка'), [
+    [t('Выручка'), analytics.revenue_label],
+    [t('Подтверждено'), analytics.confirmed],
+    [t('Отклонено'), analytics.rejected],
+    [t('Ожидают подтверждения'), analytics.pending],
+    [t('Конверсия'), `${analytics.conversion_rate}%`],
   ]));
-  appEl.appendChild(statsCard(t('Оплаты за 30 дней'), [
-    [t('Подтверждено'), stats.payments_confirmed_30d],
-    [t('Выручка'), stats.revenue_label],
-    [t('Ожидают подтверждения'), stats.payments_pending],
-  ]));
-  appEl.appendChild(statsCard(t('Подарочные коды'), [
-    [t('Ожидают оплаты'), stats.gifts_pending],
-    [t('Выданы'), stats.gifts_issued],
-    [t('Активированы'), stats.gifts_activated],
-  ]));
-  appEl.appendChild(statsCard(t('👥 Приглашения'), [
-    [t('Ожидают одобрения'), stats.invites_pending],
-  ]));
+  appEl.appendChild(renderPaymentChart(analytics, report.days));
+  appEl.appendChild(renderPaymentProviders(analytics.providers || []));
+  appEl.appendChild(renderPaymentHistory(report));
+
+  if (stats) {
+    appEl.appendChild(paymentStatsCard(t('Пользователи панели'), [
+      [t('Всего'), stats.users_total],
+      [t('Активные'), stats.users_active],
+      [t('Истекают в ближайшие 7 дней'), stats.users_expiring_soon],
+      [t('Истекшие'), stats.users_expired],
+      [t('С привязанным Telegram'), stats.users_linked],
+    ]));
+    appEl.appendChild(paymentStatsCard(t('Подарочные коды'), [
+      [t('Ожидают оплаты'), stats.gifts_pending],
+      [t('Выданы'), stats.gifts_issued],
+      [t('Активированы'), stats.gifts_activated],
+    ]));
+    appEl.appendChild(paymentStatsCard(t('👥 Приглашения'), [
+      [t('Ожидают одобрения'), stats.invites_pending],
+    ]));
+  } else {
+    const warning = el('div', 'admin-card admin-empty', t('Статистика пользователей временно недоступна.'));
+    appEl.appendChild(warning);
+  }
   statusEl.hidden = true;
   appEl.hidden = false;
+}
+
+function paymentStatsCard(title, rows) {
+  const section = el('section', 'admin-section');
+  section.appendChild(el('div', 'admin-section-label', title));
+  const grid = el('div', 'admin-stat-grid');
+  rows.forEach(([label, value]) => {
+    const tile = el('div', 'admin-stat');
+    tile.appendChild(el('div', 'admin-stat-label', label));
+    tile.appendChild(el('div', 'admin-stat-value', String(value)));
+    grid.appendChild(tile);
+  });
+  section.appendChild(grid);
+  return section;
+}
+
+function renderPaymentChart(analytics, days) {
+  const section = el('section', 'admin-section');
+  section.appendChild(el('div', 'admin-section-label', t('Динамика выручки')));
+  const chart = el('div', 'payment-chart');
+  const daily = analytics.daily || [];
+  if (!daily.length) {
+    chart.appendChild(el('div', 'admin-empty', t('Нет подтверждённых платежей за период.')));
+    section.appendChild(chart);
+    return section;
+  }
+  const byDate = new Map(daily.map(d => [d.date, d]));
+  const points = [];
+  const today = new Date();
+  for (let offset = days - 1; offset >= 0; offset--) {
+    const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - offset));
+    const key = date.toISOString().slice(0, 10);
+    points.push(byDate.get(key) || { date: key, confirmed: 0, revenue: 0, revenue_label: '0' });
+  }
+  const max = Math.max(...points.map(d => d.revenue), 1);
+  const bars = el('div', 'payment-chart-bars');
+  points.forEach(d => {
+    const column = el('div', 'payment-chart-column');
+    const bar = el('div', 'payment-chart-bar');
+    bar.style.height = `${Math.max(2, Math.round(d.revenue / max * 100))}%`;
+    bar.title = `${d.date}: ${d.confirmed} · ${d.revenue_label}`;
+    column.appendChild(bar);
+    bars.appendChild(column);
+  });
+  chart.appendChild(bars);
+  const confirmed = points.reduce((sum, d) => sum + d.confirmed, 0);
+  const legend = el('div', 'payment-chart-legend');
+  legend.appendChild(el('span', null, points[0].date.slice(5)));
+  legend.appendChild(el('span', null, t('По дням: {count} платежей на {revenue}', { count: confirmed, revenue: analytics.revenue_label })));
+  legend.appendChild(el('span', null, points[points.length - 1].date.slice(5)));
+  chart.appendChild(legend);
+  section.appendChild(chart);
+  return section;
+}
+
+function renderPaymentProviders(providers) {
+  const section = el('section', 'admin-section');
+  section.appendChild(el('div', 'admin-section-label', t('Способы оплаты')));
+  const list = el('div', 'payment-provider-list');
+  providers.forEach(p => {
+    const row = el('div', 'payment-provider');
+    row.appendChild(el('div', 'payment-provider-name', paymentProviderLabel(p.provider)));
+    row.appendChild(el('div', 'payment-provider-revenue', p.revenue_label));
+    row.appendChild(el('div', 'payment-provider-meta', t('подтверждено {confirmed} · отклонено {rejected} · ожидает {pending}', p)));
+    list.appendChild(row);
+  });
+  section.appendChild(list);
+  return section;
+}
+
+function renderPaymentHistory(report) {
+  const section = el('section', 'admin-section');
+  section.appendChild(el('div', 'admin-section-label', `${t('История платежей')} · ${report.total}`));
+  const filters = el('div', 'payment-filters');
+  const searchRow = el('div', 'payment-search');
+  const search = Object.assign(el('input'), { value: adminPaymentFilters.query, placeholder: t('Поиск по пользователю, Telegram ID или транзакции') });
+  const applySearch = () => {
+    adminPaymentFilters.query = search.value.trim();
+    adminPaymentFilters.page = 1;
+    showAdminStats();
+  };
+  search.onkeydown = e => { if (e.key === 'Enter') applySearch(); };
+  searchRow.appendChild(search);
+  const searchButton = el('button', null, t('Найти'));
+  searchButton.onclick = applySearch;
+  searchRow.appendChild(searchButton);
+  filters.appendChild(searchRow);
+  const status = el('select');
+  [['all', t('Все статусы')], ['pending', t('Ожидает')], ['confirmed', t('Подтверждено')], ['rejected', t('Отклонено')]].forEach(([value, label]) => {
+    const option = Object.assign(el('option', null, label), { value, selected: value === adminPaymentFilters.status });
+    status.appendChild(option);
+  });
+  status.onchange = () => { adminPaymentFilters.status = status.value; adminPaymentFilters.page = 1; showAdminStats(); };
+  filters.appendChild(status);
+  const provider = el('select');
+  [['all', t('Все способы')], ['p2p', paymentProviderLabel('p2p')], ['platega', paymentProviderLabel('platega')], ['telegram_stars', paymentProviderLabel('telegram_stars')]].forEach(([value, label]) => {
+    const option = Object.assign(el('option', null, label), { value, selected: value === adminPaymentFilters.provider });
+    provider.appendChild(option);
+  });
+  provider.onchange = () => { adminPaymentFilters.provider = provider.value; adminPaymentFilters.page = 1; showAdminStats(); };
+  filters.appendChild(provider);
+  section.appendChild(filters);
+
+  const history = el('div', 'payment-history');
+  if (!(report.items || []).length) {
+    history.appendChild(el('div', 'admin-card admin-empty', t('Платежи не найдены.')));
+  }
+  (report.items || []).forEach(payment => history.appendChild(renderPaymentRecord(payment)));
+  section.appendChild(history);
+  if (report.total_pages > 1) {
+    const pages = el('div', 'payment-pages');
+    const previous = el('button', 'secondary', t('Назад'));
+    previous.disabled = report.page <= 1;
+    previous.onclick = () => { adminPaymentFilters.page--; showAdminStats(); };
+    pages.appendChild(previous);
+    pages.appendChild(el('span', null, t('Страница {page} из {total}', { page: report.page, total: report.total_pages })));
+    const next = el('button', 'secondary', t('Далее'));
+    next.disabled = report.page >= report.total_pages;
+    next.onclick = () => { adminPaymentFilters.page++; showAdminStats(); };
+    pages.appendChild(next);
+    section.appendChild(pages);
+  }
+  return section;
+}
+
+function renderPaymentRecord(payment) {
+  const card = el('article', 'payment-record');
+  const head = el('div', 'payment-record-head');
+  const title = el('div');
+  title.appendChild(el('div', 'payment-record-title', `#${payment.id} · ${payment.username}`));
+  title.appendChild(el('div', 'payment-record-price', `${payment.price_label} · ${payment.months} ${paymentMonthLabel(payment.months)}`));
+  head.appendChild(title);
+  const badges = el('div', 'payment-badges');
+  badges.appendChild(el('span', 'payment-badge', paymentProviderLabel(payment.provider)));
+  badges.appendChild(el('span', `payment-badge ${payment.status}`, paymentStatusLabel(payment.status)));
+  head.appendChild(badges);
+  card.appendChild(head);
+  const meta = el('div', 'payment-record-meta');
+  meta.appendChild(el('div', null, `${t('Подписка')}: ${payment.username}${payment.telegram_id ? ` · TG ${payment.telegram_id}` : ''}`));
+  const payer = payment.payer_username || (payment.payer_telegram_id ? `TG ${payment.payer_telegram_id}` : payment.username);
+  meta.appendChild(el('div', null, `${t('Плательщик')}: ${payer}${payment.payer_username && payment.payer_telegram_id ? ` · TG ${payment.payer_telegram_id}` : ''}`));
+  meta.appendChild(el('div', null, `${t('Создано')}: ${formatPaymentDate(payment.created_at)}`));
+  if (payment.resolved_at) meta.appendChild(el('div', null, `${t('Решено')}: ${formatPaymentDate(payment.resolved_at)}`));
+  card.appendChild(meta);
+  if (payment.provider_txn_id) {
+    const txn = el('div', 'payment-txn');
+    txn.appendChild(el('code', null, payment.provider_txn_id));
+    const copy = el('button', 'secondary', t('Скопировать ID транзакции'));
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(payment.provider_txn_id);
+        copy.textContent = t('✅ Скопировано');
+        setTimeout(() => copy.textContent = t('Скопировать ID транзакции'), 1500);
+      } catch { tg.showAlert(t('Не удалось скопировать, выделите ссылку вручную.')); }
+    };
+    txn.appendChild(copy);
+    card.appendChild(txn);
+  }
+  return card;
+}
+
+function paymentProviderLabel(provider) {
+  if (provider === 'platega') return 'Platega';
+  if (provider === 'telegram_stars') return t('Telegram Stars');
+  return 'P2P';
+}
+
+function paymentStatusLabel(status) {
+  if (status === 'confirmed') return t('Подтверждено');
+  if (status === 'rejected') return t('Отклонено');
+  return t('Ожидает');
+}
+
+function paymentMonthLabel(months) {
+  if (LANG === 'en') return months === 1 ? t('месяц') : t('месяца');
+  const mod10 = months % 10, mod100 = months % 100;
+  if (mod10 === 1 && mod100 !== 11) return t('месяц');
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return t('месяца');
+  return t('месяцев');
+}
+
+function formatPaymentDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(LANG === 'en' ? 'en-GB' : 'ru-RU', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
 }
 
 function showAdminPaymentRequests() {

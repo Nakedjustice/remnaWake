@@ -110,8 +110,11 @@ func (s StarsConfig) Available() bool {
 // user (one with no linked profile) can create a trial profile lasting Days
 // days, once per Telegram ID.
 type TrialConfig struct {
-	Enabled bool
-	Days    int
+	Enabled         bool
+	Days            int
+	TrafficLimitGB  int
+	HwidDeviceLimit int
+	SquadUUID       string
 }
 
 // ReferralConfig configures the optional invite-referral bonus. When Enabled, an
@@ -201,8 +204,11 @@ func Load() (*Config, error) {
 			Enabled: getenvBool("TELEGRAM_STARS_ENABLED", false),
 		},
 		Trial: TrialConfig{
-			Enabled: getenvBool("TRIAL_ENABLED", false),
-			Days:    getenvInt("TRIAL_DAYS", 3),
+			Enabled:         getenvBool("TRIAL_ENABLED", false),
+			Days:            getenvInt("TRIAL_DAYS", 3),
+			TrafficLimitGB:  getenvInt("TRIAL_TRAFFIC_LIMIT_GB", 10),
+			HwidDeviceLimit: getenvInt("TRIAL_HWID_DEVICE_LIMIT", 1),
+			SquadUUID:       strings.TrimSpace(os.Getenv("TRIAL_SQUAD_UUID")),
 		},
 		Referral: ReferralConfig{
 			Enabled:     getenvBool("REFERRAL_ENABLED", false),
@@ -289,6 +295,12 @@ func (c *Config) validate() error {
 	}
 	if c.Trial.Enabled && c.Trial.Days < 1 {
 		return errors.New("TRIAL_DAYS must be a positive integer when TRIAL_ENABLED is true")
+	}
+	if c.Trial.TrafficLimitGB < 0 {
+		return errors.New("TRIAL_TRAFFIC_LIMIT_GB must be non-negative")
+	}
+	if c.Trial.HwidDeviceLimit < 0 {
+		return errors.New("TRIAL_HWID_DEVICE_LIMIT must be non-negative")
 	}
 	if c.Referral.Enabled {
 		if c.Referral.InviterDays < 0 || c.Referral.InviteeDays < 0 {

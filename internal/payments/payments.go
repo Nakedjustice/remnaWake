@@ -42,11 +42,30 @@ type CreatedUser struct {
 	SubscriptionURL string
 }
 
-// Creator creates a new user in the remote panel, assigned to the given
-// internal squads (empty = no squads) and the given traffic-reset strategy
-// (empty = NO_RESET).
+// CreateUserSpec contains every creation-time policy applied to a new profile.
+type CreateUserSpec struct {
+	Username             string
+	ExpireAt             time.Time
+	SquadUUIDs           []string
+	TrafficLimitBytes    int64
+	TrafficLimitStrategy string
+	HwidDeviceLimit      int
+}
+
+// TrialConfig is the immutable snapshot used when offering and creating a
+// trial profile. Zero traffic/HWID limits mean unlimited.
+type TrialConfig struct {
+	Enabled         bool
+	Days            int
+	TrafficLimitGB  int
+	HwidDeviceLimit int
+	SquadUUID       string
+}
+
+// Creator creates a new user in the remote panel with all limits applied in
+// the initial request.
 type Creator interface {
-	CreateUser(ctx context.Context, username string, expireAt time.Time, squadUUIDs []string, trafficLimitStrategy string) (*CreatedUser, error)
+	CreateUser(ctx context.Context, spec CreateUserSpec) (*CreatedUser, error)
 }
 
 // UserPatch carries the manageable fields of an existing user. It mirrors
@@ -166,6 +185,8 @@ const (
 	adminInputUserTraffic
 	adminInputUserExpiry
 	adminInputTrialDays
+	adminInputTrialTraffic
+	adminInputTrialHwid
 	adminInputReferralInviter
 	adminInputReferralInvitee
 	adminInputSupportReply
@@ -325,11 +346,9 @@ type Service struct {
 	// the button then shows manual instructions. Wired once at startup.
 	updateTrigger func(context.Context) error
 
-	// trialEnabled / trialDays configure the one-time free-trial flow, wired at
-	// startup via SetTrial when TRIAL_ENABLED. Protected by mu.
-	trialEnabled bool
-	trialDays    int
-	trials       map[int64]*trialState // protected by mu; per-chat trial conversation
+	// trialConfigValue configures future one-time trial profiles. Protected by mu.
+	trialConfigValue TrialConfig
+	trials           map[int64]*trialState // protected by mu; per-chat trial conversation
 
 	// referral* configure the invite-referral bonus, wired at startup via
 	// SetReferral when REFERRAL_ENABLED. Protected by mu.
@@ -372,6 +391,9 @@ const defaultTrafficResetKey = "default_traffic_reset_strategy"
 const (
 	trialEnabledKey        = "trial_enabled"
 	trialDaysKey           = "trial_days"
+	trialTrafficLimitGBKey = "trial_traffic_limit_gb"
+	trialHwidLimitKey      = "trial_hwid_device_limit"
+	trialSquadUUIDKey      = "trial_squad_uuid"
 	referralEnabledKey     = "referral_enabled"
 	referralInviterDaysKey = "referral_inviter_days"
 	referralInviteeDaysKey = "referral_invitee_days"
@@ -513,60 +535,147 @@ func (s *Service) SetTelegramStars(rate int) {
 // override (via the bot or mini app) is persisted and takes precedence on the
 // next start. Called once at startup, unconditionally.
 func (s *Service) InitTrial(envEnabled bool, envDays int) {
+	s.InitTrialConfig(TrialConfig{Enabled: envEnabled, Days: envDays, TrafficLimitGB: 10, HwidDeviceLimit: 1})
+}
+
+// InitTrialConfig loads persisted settings over deployment-provided defaults.
+func (s *Service) InitTrialConfig(env TrialConfig) {
 	ctx := context.Background()
-	enabled := envEnabled
+	cfg := TrialConfig{
+		Enabled:         env.Enabled,
+		Days:            env.Days,
+		TrafficLimitGB:  env.TrafficLimitGB,
+		HwidDeviceLimit: env.HwidDeviceLimit,
+		SquadUUID:       strings.TrimSpace(env.SquadUUID),
+	}
 	if v, found, err := s.store.GetSetting(ctx, trialEnabledKey); err != nil {
 		s.logger.Error("load trial enabled setting failed", "err", err.Error())
 	} else if found {
-		enabled = v == "1"
+		cfg.Enabled = v == "1"
 	}
-	days := envDays
 	if v, found, err := s.store.GetSetting(ctx, trialDaysKey); err != nil {
 		s.logger.Error("load trial days setting failed", "err", err.Error())
 	} else if found {
 		if n, perr := strconv.Atoi(v); perr == nil && n >= 1 {
-			days = n
+			cfg.Days = n
 		}
 	}
-	if days < 1 {
-		days = 1
+	cfg.TrafficLimitGB = s.loadNonNegativeTrialSetting(ctx, trialTrafficLimitGBKey, cfg.TrafficLimitGB)
+	cfg.HwidDeviceLimit = s.loadNonNegativeTrialSetting(ctx, trialHwidLimitKey, cfg.HwidDeviceLimit)
+	if v, found, err := s.store.GetSetting(ctx, trialSquadUUIDKey); err != nil {
+		s.logger.Error("load trial squad setting failed", "err", err.Error())
+	} else if found {
+		cfg.SquadUUID = strings.TrimSpace(v)
+	}
+	if cfg.Days < 1 {
+		cfg.Days = 1
+	}
+	if cfg.TrafficLimitGB < 0 {
+		cfg.TrafficLimitGB = 0
+	}
+	if cfg.HwidDeviceLimit < 0 {
+		cfg.HwidDeviceLimit = 0
 	}
 	s.mu.Lock()
-	s.trialEnabled = enabled
-	s.trialDays = days
+	s.trialConfigValue = cfg
 	s.mu.Unlock()
 }
 
-// trialConfig returns whether the free trial is enabled and its length in days.
-func (s *Service) trialConfig() (enabled bool, days int) {
+func (s *Service) loadNonNegativeTrialSetting(ctx context.Context, key string, fallback int) int {
+	v, found, err := s.store.GetSetting(ctx, key)
+	if err != nil {
+		s.logger.Error("load trial setting failed", "key", key, "err", err.Error())
+		return fallback
+	}
+	if !found {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return fallback
+	}
+	return n
+}
+
+// trialConfig returns a snapshot safe to use throughout one claim attempt.
+func (s *Service) trialConfig() TrialConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.trialEnabled, s.trialDays
+	return s.trialConfigValue
 }
 
-// setTrialEnabled persists the free-trial on/off flag and refreshes the cache.
-func (s *Service) setTrialEnabled(ctx context.Context, on bool) error {
-	if err := s.store.UpsertSetting(ctx, trialEnabledKey, boolSetting(on)); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	s.trialEnabled = on
-	s.mu.Unlock()
-	return nil
+// setTrialConfig validates and atomically persists all free-trial settings.
+func (s *Service) setTrialConfig(ctx context.Context, cfg TrialConfig) error {
+	return s.persistTrialConfig(ctx, cfg, true)
 }
 
-// setTrialDays validates and persists the trial length, refreshing the cache.
-func (s *Service) setTrialDays(ctx context.Context, days int) error {
-	if days < 1 {
+func (s *Service) persistTrialConfig(ctx context.Context, cfg TrialConfig, validateSquad bool) error {
+	cfg.SquadUUID = strings.TrimSpace(cfg.SquadUUID)
+	if cfg.Days < 1 || cfg.TrafficLimitGB < 0 || cfg.HwidDeviceLimit < 0 {
 		return ErrBadInput
 	}
-	if err := s.store.UpsertSetting(ctx, trialDaysKey, strconv.Itoa(days)); err != nil {
+	if validateSquad && cfg.SquadUUID != "" {
+		if s.squads == nil {
+			return ErrPanelUnavailable
+		}
+		squads, err := s.squads.GetInternalSquads(ctx)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrPanelUnavailable, err)
+		}
+		found := false
+		for _, squad := range squads {
+			if squad.UUID == cfg.SquadUUID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return ErrBadInput
+		}
+	}
+	if err := s.store.UpsertSettings(ctx, map[string]string{
+		trialEnabledKey:        boolSetting(cfg.Enabled),
+		trialDaysKey:           strconv.Itoa(cfg.Days),
+		trialTrafficLimitGBKey: strconv.Itoa(cfg.TrafficLimitGB),
+		trialHwidLimitKey:      strconv.Itoa(cfg.HwidDeviceLimit),
+		trialSquadUUIDKey:      cfg.SquadUUID,
+	}); err != nil {
 		return err
 	}
 	s.mu.Lock()
-	s.trialDays = days
+	s.trialConfigValue = cfg
 	s.mu.Unlock()
 	return nil
+}
+
+func (s *Service) setTrialEnabled(ctx context.Context, on bool) error {
+	cfg := s.trialConfig()
+	cfg.Enabled = on
+	return s.persistTrialConfig(ctx, cfg, false)
+}
+
+func (s *Service) setTrialDays(ctx context.Context, days int) error {
+	cfg := s.trialConfig()
+	cfg.Days = days
+	return s.persistTrialConfig(ctx, cfg, false)
+}
+
+func (s *Service) setTrialTrafficLimit(ctx context.Context, limitGB int) error {
+	cfg := s.trialConfig()
+	cfg.TrafficLimitGB = limitGB
+	return s.persistTrialConfig(ctx, cfg, false)
+}
+
+func (s *Service) setTrialHwidLimit(ctx context.Context, limit int) error {
+	cfg := s.trialConfig()
+	cfg.HwidDeviceLimit = limit
+	return s.persistTrialConfig(ctx, cfg, false)
+}
+
+func (s *Service) setTrialSquad(ctx context.Context, uuid string) error {
+	cfg := s.trialConfig()
+	cfg.SquadUUID = uuid
+	return s.setTrialConfig(ctx, cfg)
 }
 
 // InitReferral loads the persisted referral settings into the in-memory cache,

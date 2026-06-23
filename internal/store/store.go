@@ -137,7 +137,11 @@ func New(path string) (*Store, error) {
 	}
 	if err := ensurePaymentRequestColumns(db); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("migrate payer columns: %w", err)
+		return nil, fmt.Errorf("migrate payment request columns: %w", err)
+	}
+	if err := ensurePaymentRequestIndexes(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate payment request indexes: %w", err)
 	}
 	return &Store{db: db}, nil
 }
@@ -204,4 +208,14 @@ func ensurePaymentRequestColumns(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+func ensurePaymentRequestIndexes(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_payment_requests_created_at ON payment_requests(created_at);
+		CREATE INDEX IF NOT EXISTS idx_payment_requests_status_resolved ON payment_requests(status, confirmed_at);
+		CREATE INDEX IF NOT EXISTS idx_payment_requests_provider ON payment_requests(provider);
+		CREATE INDEX IF NOT EXISTS idx_payment_requests_provider_txn ON payment_requests(provider_txn_id);
+	`)
+	return err
 }
