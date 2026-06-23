@@ -45,6 +45,7 @@ type Cabinet interface {
 type Admin interface {
 	AdminPanelData(ctx context.Context, telegramID int64) (*payments.WebAdminPanel, error)
 	AdminStatsData(ctx context.Context, telegramID int64) (*payments.WebAdminStats, error)
+	AdminProxyHealth(ctx context.Context, telegramID int64) (*payments.WebProxyHealth, error)
 	AdminPaymentReport(ctx context.Context, telegramID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error)
 	AdminSetTariff(ctx context.Context, telegramID int64, months, price int) error
 	AdminDeleteTariff(ctx context.Context, telegramID int64, months int) error
@@ -117,6 +118,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
 	mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
+	mux.HandleFunc("GET /api/admin/proxy-health", s.handleAdminProxyHealth)
 	mux.HandleFunc("GET /api/admin/payments", s.handleAdminPayments)
 	mux.HandleFunc("GET /api/admin/support", s.handleAdminSupport)
 	mux.HandleFunc("POST /api/admin/support/thread", s.handleAdminSupportThread)
@@ -551,6 +553,19 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
+}
+
+func (s *Server) handleAdminProxyHealth(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	health, err := s.admin.AdminProxyHealth(r.Context(), userID)
+	if err != nil {
+		s.writeAdminError(w, "proxy health", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, health)
 }
 
 func (s *Server) handleAdminPayments(w http.ResponseWriter, r *http.Request) {

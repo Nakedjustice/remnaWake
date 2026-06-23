@@ -67,6 +67,25 @@ services:
   #   networks:
   #     - autoupdate
 
+  # Optional Xray Checker proxy monitoring: install.sh can write this service to
+  # docker-compose.override.yml when enabled. It probes connectivity through each
+  # proxy in XRAY_CHECKER_SUB_URL and exposes /metrics on port 2112; the bot polls
+  # it (XRAY_CHECKER_URL=http://xray-checker:2112) to show proxy health to admins
+  # and DM them on down/recovery. Both containers share this compose project's
+  # default network, so no published port is needed for the bot to reach it.
+  # xray-checker:
+  #   image: kutovoys/xray-checker:latest
+  #   pull_policy: always
+  #   container_name: remnaWake-xray-checker
+  #   restart: unless-stopped
+  #   environment:
+  #     SUBSCRIPTION_URL: "${XRAY_CHECKER_SUB_URL}"
+  #     PROXY_CHECK_METHOD: "${XRAY_CHECKER_METHOD}"
+  #     METRICS_PROTECTED: "true"
+  #     METRICS_USERNAME: "${XRAY_CHECKER_USERNAME}"
+  #     METRICS_PASSWORD: "${XRAY_CHECKER_PASSWORD}"
+  #     METRICS_PORT: "2112"
+
 # Uncomment alongside the watchtower service above to let the bot reach it by
 # name on an isolated internal network.
 # networks:

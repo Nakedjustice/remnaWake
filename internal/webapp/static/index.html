@@ -456,6 +456,16 @@ const EN = {
   'Админ': 'Admin',
   'Поддержка': 'Support',
   '📊 Статистика': '📊 Statistics',
+  'Состояние прокси': 'Proxy health',
+  'Мониторинг прокси не настроен.': 'Proxy monitoring is not configured.',
+  'Прокси': 'Proxies',
+  'Узлы': 'Nodes',
+  'Доступно': 'Up',
+  'Недоступно': 'Down',
+  'Прокси не найдены.': 'No proxies found.',
+  'мс': 'ms',
+  'нет связи': 'no connection',
+  'прокси': 'proxy',
   'Пользователи панели': 'Panel users',
   'Активные': 'Active',
   'Истекают в ближайшие 7 дней': 'Expiring within 7 days',
@@ -2483,14 +2493,18 @@ function renderAdminHome() {
   shell.appendChild(adminNavSection(t('Тарифы и оплата'), [
     { icon: '₽', label: t('Тарифы и реквизиты'), action: showAdminBilling },
   ]));
-  shell.appendChild(adminNavSection(t('Управление'), [
+  const manageItems = [
     { icon: '↗', label: t('Статистика'), action: showAdminStats },
     { icon: '≡', label: t('Настройки'), action: showAdminSettings },
     { icon: '◎', label: t('Управление пользователями'), action: showUserAdmin },
     { icon: '◇', label: t('Активные подарочные коды'), action: showAdminGiftCodes },
     { icon: '◉', label: t('Рассылка'), action: showAdminBroadcast },
     { icon: '□', label: t('Чат поддержки'), action: showAdminSupport },
-  ]));
+  ];
+  if (data.proxy_monitoring) {
+    manageItems.push({ icon: '🩺', label: t('Состояние прокси'), action: showAdminProxyHealth });
+  }
+  shell.appendChild(adminNavSection(t('Управление'), manageItems));
   appEl.appendChild(shell);
 
   statusEl.hidden = true;
@@ -2570,6 +2584,45 @@ async function showAdminStats() {
     const warning = el('div', 'admin-card admin-empty', t('Статистика пользователей временно недоступна.'));
     appEl.appendChild(warning);
   }
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+async function showAdminProxyHealth() {
+  currentRender = showAdminProxyHealth;
+  let health;
+  try {
+    health = await api('/api/admin/proxy-health');
+  } catch (e) {
+    tg.showAlert(e.message);
+    return;
+  }
+  appEl.textContent = '';
+  appEl.appendChild(adminPageTop(t('Состояние прокси')));
+
+  if (!health.configured) {
+    appEl.appendChild(el('div', 'admin-card admin-empty', t('Мониторинг прокси не настроен.')));
+    statusEl.hidden = true;
+    appEl.hidden = false;
+    return;
+  }
+
+  appEl.appendChild(paymentStatsCard(t('Прокси'), [
+    [t('Доступно'), health.up],
+    [t('Недоступно'), health.down],
+  ]));
+
+  const proxies = health.proxies || [];
+  if (!proxies.length) {
+    appEl.appendChild(el('div', 'admin-card admin-empty', t('Прокси не найдены.')));
+  } else {
+    const rows = proxies.map((p) => [
+      p.name || p.address || t('прокси'),
+      p.up ? `✅ ${p.latency_ms} ${t('мс')}` : `❌ ${t('нет связи')}`,
+    ]);
+    appEl.appendChild(paymentStatsCard(t('Узлы'), rows));
+  }
+
   statusEl.hidden = true;
   appEl.hidden = false;
 }
