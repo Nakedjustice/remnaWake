@@ -145,4 +145,24 @@ grep -q 'image: ghcr.io/nakedjustice/remnawake-dev:latest' "$REMNAWAKE_DIR/docke
 bash "$ROOT/install.sh" doctor >"$TMP/doctor-dev.log" 2>&1
 ! grep -q 'containrrr/watchtower' "$TMP/doctor-dev.log"
 
+# Reconfigure menu: editing a single section against the first install must
+# change only that section and preserve the inferred override (host proxy port,
+# watchtower and xray-checker sidecars) without re-visiting those sections.
+export REMNAWAKE_DIR="$TMP/app"
+bash "$ROOT/install.sh" menu <<'EOF'
+4
+Asia/Tokyo
+10:30
+S
+n
+Q
+EOF
+
+grep -q '^TZ=Asia/Tokyo$' "$REMNAWAKE_DIR/.env"
+grep -q '^RUN_AT=10:30$' "$REMNAWAKE_DIR/.env"
+grep -q '^TELEGRAM_BOT_TOKEN=123456789:' "$REMNAWAKE_DIR/.env"
+grep -q '127.0.0.1:9090:8080' "$REMNAWAKE_DIR/docker-compose.override.yml"
+grep -q 'image: containrrr/watchtower:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
+grep -q 'image: kutovoys/xray-checker:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
+
 echo "install smoke passed"

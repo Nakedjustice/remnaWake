@@ -58,13 +58,16 @@ remnaWake installer
 
 Usage:
   ./install.sh [configure]
+  ./install.sh menu
   ./install.sh doctor
   ./install.sh update
   ./install.sh backup
   ./install.sh --help
 
 Modes:
-  configure  Interactive setup. Reuses existing .env values as defaults.
+  configure  Interactive setup. On a first install it walks every section in
+             order; when an .env already exists it opens the reconfigure menu.
+  menu       Open the reconfigure menu directly to edit individual sections.
   doctor     Check Docker, compose config, .env keys, ports and update settings.
   update     Back up config, pull the image and restart with Docker Compose.
   backup     Copy .env and compose files into ./backups.
@@ -889,38 +892,35 @@ print_proxy_checklist() {
   fi
 }
 
-configure_mode() {
-  load_defaults
+# ---------------------------------------------------------------------------
+# Configuration sections
+#
+# Each section collects one group of settings into the global variables. They
+# are called in order by run_all_sections() for a fresh/guided install, and
+# individually by the reconfiguration menu (configure_menu). Optional sections
+# keep their own enable/disable prompt so the menu can toggle a feature off.
+# ---------------------------------------------------------------------------
 
-  cat >&2 <<EOF
-${BOLD}remnaWake installer${RESET}
-${DIM}This will collect the settings the bot needs and write them to ./.env.${RESET}
-${DIM}Existing .env values are reused as defaults; backups are kept before rewrites.${RESET}
-
-EOF
-
-  [ -f "$ENV_FILE" ] && backup_file "$ENV_FILE"
-  [ -f "$OVERRIDE_FILE" ] && backup_file "$OVERRIDE_FILE"
-
-  select_release_channel
-  printf '\n' >&2
-
+section_panel() {
   info "-- Remnawave panel -----------------------------------------"
   ask REMNAWAVE_BASE_URL  "Remnawave panel URL (e.g. https://panel.example.com)" "$REMNAWAVE_BASE_URL" v_url
   REMNAWAVE_BASE_URL="${REMNAWAVE_BASE_URL%/}"
   ask REMNAWAVE_API_TOKEN "Remnawave API token (panel -> API tokens)" "$REMNAWAVE_API_TOKEN" "" secret
+}
 
-  printf '\n' >&2
+section_telegram() {
   info "-- Telegram -----------------------------------------------"
   ask TELEGRAM_BOT_TOKEN "Telegram bot token (from @BotFather, e.g. 123456789:AA...)" "$TELEGRAM_BOT_TOKEN" v_bot_token secret
   ask TELEGRAM_ADMIN_ID  "Telegram admin user ID(s), comma-separated; 0 to disable" "$TELEGRAM_ADMIN_ID" v_admin_id
+}
 
-  printf '\n' >&2
+section_schedule() {
   info "-- Schedule -----------------------------------------------"
   ask TZ     "Timezone (IANA name)" "$TZ" v_tz
   ask RUN_AT "Daily run time (HH:MM, local to the timezone above)" "$RUN_AT" v_time_hhmm
+}
 
-  printf '\n' >&2
+section_miniapp() {
   info "-- Telegram Mini App (optional) ---------------------------"
   if ask_yes_no "Enable the Mini App personal cabinet? (needs HTTPS reverse proxy)" "$(nonempty_default "$WEBAPP_URL")"; then
     ask WEBAPP_URL "Public Mini App URL (e.g. https://bot.example.com)" "$WEBAPP_URL" v_https_url
@@ -928,8 +928,9 @@ EOF
   else
     WEBAPP_URL=""
   fi
+}
 
-  printf '\n' >&2
+section_platega() {
   info "-- Platega payment gateway (optional) ---------------------"
   warn "Default is manual P2P. Platega adds online SBP/card payments."
   if ask_yes_no "Configure Platega online payments now?" "$(nonempty_default "$PLATEGA_MERCHANT_ID")"; then
@@ -946,8 +947,9 @@ EOF
     PLATEGA_CURRENCY="RUB"
     PLATEGA_RETURN_URL="https://t.me"
   fi
+}
 
-  printf '\n' >&2
+section_stars() {
   info "-- Telegram Stars (optional) ------------------------------"
   if ask_yes_no "Enable Telegram Stars payments now?" "$(bool_default "$TELEGRAM_STARS_ENABLED")"; then
     TELEGRAM_STARS_ENABLED="true"
@@ -956,8 +958,9 @@ EOF
     TELEGRAM_STARS_ENABLED="false"
     TELEGRAM_STARS_RATE=""
   fi
+}
 
-  printf '\n' >&2
+section_trial() {
   info "-- Free trial (optional) -----------------------------------"
   if ask_yes_no "Enable one-time free trial defaults?" "$(bool_default "$TRIAL_ENABLED")"; then
     TRIAL_ENABLED="true"
@@ -968,8 +971,9 @@ EOF
   else
     TRIAL_ENABLED="false"
   fi
+}
 
-  printf '\n' >&2
+section_referral() {
   info "-- Referral bonus (optional) ------------------------------"
   if ask_yes_no "Enable referral bonus defaults?" "$(bool_default "$REFERRAL_ENABLED")"; then
     REFERRAL_ENABLED="true"
@@ -984,28 +988,34 @@ EOF
   else
     REFERRAL_ENABLED="false"
   fi
+}
 
-  if [ -n "$WEBAPP_URL" ] || [ -n "$PLATEGA_MERCHANT_ID" ]; then
-    printf '\n' >&2
-    info "-- Reverse proxy ------------------------------------------"
-    warn "The Mini App / Platega webhook need the bot web server reachable over HTTPS."
-    if ask_yes_no "Is this bot on the same server as Remnawave, behind its containerised Caddy?" "n"; then
-      ALONGSIDE_REMNAWAVE="yes"
-      HOST_PROXY_ENABLED="no"
-      print_alongside_warning
-      if [ -n "$WEBAPP_URL" ]; then
-        caddy_host="$(printf '%s' "$WEBAPP_URL" | sed -E 's#^https?://##; s#/.*$##')"
-      else
-        ask caddy_host "Public domain for the bot (e.g. bot.example.com)" "" v_domain
-      fi
-    else
-      ALONGSIDE_REMNAWAVE="no"
-      HOST_PROXY_ENABLED="yes"
-      ask WEBAPP_HOST_PORT "Host port for nginx/Caddy to reach the bot on 127.0.0.1" "$WEBAPP_HOST_PORT" v_port
-    fi
+section_proxy() {
+  if [ -z "$WEBAPP_URL" ] && [ -z "$PLATEGA_MERCHANT_ID" ]; then
+    [ "${MENU_MODE:-0}" = "1" ] && warn "Reverse proxy applies only when the Mini App or Platega is enabled (options 5 and 6)."
+    return 0
   fi
+  info "-- Reverse proxy ------------------------------------------"
+  warn "The Mini App / Platega webhook need the bot web server reachable over HTTPS."
+  local alongside_default="n"
+  [ "$ALONGSIDE_REMNAWAVE" = "yes" ] && alongside_default="y"
+  if ask_yes_no "Is this bot on the same server as Remnawave, behind its containerised Caddy?" "$alongside_default"; then
+    ALONGSIDE_REMNAWAVE="yes"
+    HOST_PROXY_ENABLED="no"
+    print_alongside_warning
+    if [ -n "$WEBAPP_URL" ]; then
+      caddy_host="$(printf '%s' "$WEBAPP_URL" | sed -E 's#^https?://##; s#/.*$##')"
+    else
+      ask caddy_host "Public domain for the bot (e.g. bot.example.com)" "$caddy_host" v_domain
+    fi
+  else
+    ALONGSIDE_REMNAWAVE="no"
+    HOST_PROXY_ENABLED="yes"
+    ask WEBAPP_HOST_PORT "Host port for nginx/Caddy to reach the bot on 127.0.0.1" "$WEBAPP_HOST_PORT" v_port
+  fi
+}
 
-  printf '\n' >&2
+section_advanced() {
   if ask_yes_no "Configure advanced options (parse mode, log level, timeout, dry-run, currency, language, win-back)?" "n"; then
     info "-- Advanced -----------------------------------------------"
     ask TELEGRAM_PARSE_MODE "Telegram parse mode (HTML / MarkdownV2)" "$TELEGRAM_PARSE_MODE" ""
@@ -1018,8 +1028,9 @@ EOF
     ask WINBACK_ENABLED     "Send win-back messages to expired users (true/false)" "$WINBACK_ENABLED" v_bool
     ask WINBACK_DAYS        "Days after expiry to send win-back (comma-separated, e.g. 1,3)" "$WINBACK_DAYS" v_days_list
   fi
+}
 
-  printf '\n' >&2
+section_autoupdate() {
   if ask_yes_no "Enable auto-update notifications (DM admins when a new bot version is released)?" "$(bool_default "$AUTOUPDATE_ENABLED")"; then
     AUTOUPDATE_ENABLED="true"
     ask AUTOUPDATE_IMAGE "Image to check for updates" "$AUTOUPDATE_IMAGE" ""
@@ -1037,8 +1048,9 @@ EOF
     WATCHTOWER_URL=""
     WATCHTOWER_TOKEN=""
   fi
+}
 
-  printf '\n' >&2
+section_xray() {
   info "-- Xray Checker proxy monitoring (optional) ---------------"
   warn "Runs a kutovoys/xray-checker sidecar that probes each proxy and reports"
   warn "health. The bot shows it in /admin and DMs you when a proxy goes down."
@@ -1056,6 +1068,46 @@ EOF
     XRAY_CHECKER_USERNAME=""
     XRAY_CHECKER_PASSWORD=""
   fi
+}
+
+# Walk every section in the canonical order. Used for first-time and scripted
+# (non-interactive) installs. section_proxy self-skips when neither the Mini App
+# nor Platega is enabled, so its prompts only appear when relevant.
+run_all_sections() {
+  select_release_channel
+  printf '\n' >&2
+  section_panel
+  printf '\n' >&2
+  section_telegram
+  printf '\n' >&2
+  section_schedule
+  printf '\n' >&2
+  section_miniapp
+  printf '\n' >&2
+  section_platega
+  printf '\n' >&2
+  section_stars
+  printf '\n' >&2
+  section_trial
+  printf '\n' >&2
+  section_referral
+  if [ -n "$WEBAPP_URL" ] || [ -n "$PLATEGA_MERCHANT_ID" ]; then
+    printf '\n' >&2
+    section_proxy
+  fi
+  printf '\n' >&2
+  section_advanced
+  printf '\n' >&2
+  section_autoupdate
+  printf '\n' >&2
+  section_xray
+}
+
+# Write the .env / compose files from the current globals, then offer to start.
+# Backs up any existing files first so a rewrite is always recoverable.
+apply_config() {
+  [ -f "$ENV_FILE" ] && backup_file "$ENV_FILE"
+  [ -f "$OVERRIDE_FILE" ] && backup_file "$OVERRIDE_FILE"
 
   ensure_compose_file
   write_env_file
@@ -1094,6 +1146,189 @@ EOF
   else
     ok "Skipped startup. When ready, run: $compose up -d"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# Reconfiguration menu
+#
+# Shown for interactive runs when an .env already exists, so a single setting
+# can be changed without walking every prompt. Edits stay in memory until the
+# user saves; saving runs apply_config (which writes files and offers to start).
+# ---------------------------------------------------------------------------
+
+masked_or_unset() {
+  [ -n "$1" ] && mask "$1" || printf '<not set>'
+}
+
+# Recover the reverse-proxy mode from the existing override so saving from the
+# menu without re-visiting that section preserves the current wiring.
+infer_proxy_state() {
+  ALONGSIDE_REMNAWAVE="no"
+  HOST_PROXY_ENABLED="no"
+  caddy_host=""
+  [ -f "$OVERRIDE_FILE" ] || return 0
+  if grep -q 'remnawave-network' "$OVERRIDE_FILE" 2>/dev/null; then
+    ALONGSIDE_REMNAWAVE="yes"
+    [ -n "$WEBAPP_URL" ] && caddy_host="$(printf '%s' "$WEBAPP_URL" | sed -E 's#^https?://##; s#/.*$##')"
+  fi
+  if grep -Eq '127\.0\.0\.1:[0-9]+:8080' "$OVERRIDE_FILE" 2>/dev/null; then
+    HOST_PROXY_ENABLED="yes"
+  fi
+}
+
+menu_proxy_summary() {
+  if [ "$ALONGSIDE_REMNAWAVE" = "yes" ]; then
+    printf 'alongside Remnawave (Caddy -> remnaWake-bot:8080)'
+  elif [ "$HOST_PROXY_ENABLED" = "yes" ]; then
+    printf '127.0.0.1:%s -> container:8080' "$WEBAPP_HOST_PORT"
+  elif [ -n "$WEBAPP_URL" ] || [ -n "$PLATEGA_MERCHANT_ID" ]; then
+    printf 'not configured yet'
+  else
+    printf 'n/a (enable Mini App or Platega first)'
+  fi
+}
+
+print_menu() {
+  local platega stars trial referral autoupdate xray proxy panel bot adv dirty_note
+  platega="disabled (P2P only)"
+  [ -n "$PLATEGA_MERCHANT_ID" ] && platega="enabled ($PLATEGA_METHOD, $PLATEGA_CURRENCY)"
+  stars="disabled"
+  [ "$TELEGRAM_STARS_ENABLED" = "true" ] && stars="enabled (rate $TELEGRAM_STARS_RATE)"
+  trial="disabled"
+  [ "$TRIAL_ENABLED" = "true" ] && trial="enabled (${TRIAL_DAYS}d, ${TRIAL_TRAFFIC_LIMIT_GB}GB, ${TRIAL_HWID_DEVICE_LIMIT} device)"
+  referral="disabled"
+  [ "$REFERRAL_ENABLED" = "true" ] && referral="enabled (inviter +${REFERRAL_INVITER_BONUS_DAYS}d, invitee +${REFERRAL_INVITEE_BONUS_DAYS}d)"
+  autoupdate="disabled"
+  if [ "$AUTOUPDATE_ENABLED" = "true" ]; then
+    autoupdate="notify-only (every $AUTOUPDATE_CHECK_INTERVAL)"
+    [ -n "$WATCHTOWER_URL" ] && autoupdate="one-tap (every $AUTOUPDATE_CHECK_INTERVAL)"
+  fi
+  xray="disabled"
+  [ -n "$XRAY_CHECKER_URL" ] && xray="enabled (poll $XRAY_CHECKER_POLL_INTERVAL)"
+  proxy="$(menu_proxy_summary)"
+  panel="${REMNAWAVE_BASE_URL:-<not set>} (token $(masked_or_unset "$REMNAWAVE_API_TOKEN"))"
+  bot="token $(masked_or_unset "$TELEGRAM_BOT_TOKEN"), admin(s) $TELEGRAM_ADMIN_ID"
+  adv="parse $TELEGRAM_PARSE_MODE, log $LOG_LEVEL, http $HTTP_TIMEOUT, $CURRENCY/$BOT_LANG, win-back $WINBACK_ENABLED"
+  dirty_note=""
+  [ "$CONFIG_DIRTY" = "1" ] && dirty_note=" ${YELLOW}(unsaved changes)${RESET}"
+
+  cat >&2 <<EOF
+
+${BOLD}remnaWake configuration menu${RESET}
+${DIM}Pick a number to edit that section. Changes are held until you Save.${RESET}
+
+  ${BOLD} 1${RESET}) Release channel    ${DIM}${REMNAWAKE_CHANNEL}${RESET}
+  ${BOLD} 2${RESET}) Remnawave panel    ${DIM}${panel}${RESET}
+  ${BOLD} 3${RESET}) Telegram bot       ${DIM}${bot}${RESET}
+  ${BOLD} 4${RESET}) Schedule           ${DIM}${TZ} at ${RUN_AT}${RESET}
+  ${BOLD} 5${RESET}) Mini App           ${DIM}${WEBAPP_URL:-disabled}${RESET}
+  ${BOLD} 6${RESET}) Platega payments   ${DIM}${platega}${RESET}
+  ${BOLD} 7${RESET}) Telegram Stars     ${DIM}${stars}${RESET}
+  ${BOLD} 8${RESET}) Free trial         ${DIM}${trial}${RESET}
+  ${BOLD} 9${RESET}) Referral bonus     ${DIM}${referral}${RESET}
+  ${BOLD}10${RESET}) Reverse proxy      ${DIM}${proxy}${RESET}
+  ${BOLD}11${RESET}) Advanced options   ${DIM}${adv}${RESET}
+  ${BOLD}12${RESET}) Auto-update        ${DIM}${autoupdate}${RESET}
+  ${BOLD}13${RESET}) Xray Checker       ${DIM}${xray}${RESET}
+
+  ${BOLD} A${RESET}) Reconfigure everything (guided run-through)
+  ${BOLD} S${RESET}) Save and apply changes
+  ${BOLD} Q${RESET}) Quit${dirty_note}
+EOF
+}
+
+# True (0) when the required keys are present, otherwise prints what is missing.
+menu_required_ok() {
+  local missing=0
+  [ -n "$REMNAWAVE_BASE_URL" ]   || { err "  -> Missing: Remnawave panel URL (option 2)"; missing=1; }
+  [ -n "$REMNAWAVE_API_TOKEN" ]  || { err "  -> Missing: Remnawave API token (option 2)"; missing=1; }
+  [ -n "$TELEGRAM_BOT_TOKEN" ]   || { err "  -> Missing: Telegram bot token (option 3)"; missing=1; }
+  [ "$missing" -eq 0 ]
+}
+
+menu_save() {
+  if ! menu_required_ok; then
+    err "Cannot save until the required values above are set."
+    return 1
+  fi
+  apply_config
+  CONFIG_DIRTY=0
+  ok "Saved. Pick another option to keep editing, or Q to quit."
+}
+
+menu_quit() {
+  if [ "$CONFIG_DIRTY" = "1" ]; then
+    if ask_yes_no "You have unsaved changes. Save them before quitting?" "y"; then
+      menu_save || return 1
+    else
+      warn "Quit without saving; .env left unchanged."
+    fi
+  fi
+  return 0
+}
+
+configure_menu() {
+  MENU_MODE=1
+  CONFIG_DIRTY=0
+  infer_proxy_state
+
+  cat >&2 <<EOF
+${BOLD}remnaWake configuration${RESET}
+${DIM}An existing .env was found. Reconfigure individual sections from the menu;${RESET}
+${DIM}nothing is written until you choose Save.${RESET}
+EOF
+
+  local choice
+  while true; do
+    print_menu
+    printf '%s' "${BOLD}Choose an option: ${RESET}" >&2
+    read -r choice || choice="Q"
+    choice="$(printf '%s' "$choice" | tr -d '[:space:]')"
+    case "$choice" in
+      1)  select_release_channel; CONFIG_DIRTY=1 ;;
+      2)  section_panel;     CONFIG_DIRTY=1 ;;
+      3)  section_telegram;  CONFIG_DIRTY=1 ;;
+      4)  section_schedule;  CONFIG_DIRTY=1 ;;
+      5)  section_miniapp;   CONFIG_DIRTY=1 ;;
+      6)  section_platega;   CONFIG_DIRTY=1 ;;
+      7)  section_stars;     CONFIG_DIRTY=1 ;;
+      8)  section_trial;     CONFIG_DIRTY=1 ;;
+      9)  section_referral;  CONFIG_DIRTY=1 ;;
+      10) section_proxy;     CONFIG_DIRTY=1 ;;
+      11) section_advanced;  CONFIG_DIRTY=1 ;;
+      12) section_autoupdate; CONFIG_DIRTY=1 ;;
+      13) section_xray;      CONFIG_DIRTY=1 ;;
+      a|A) run_all_sections; CONFIG_DIRTY=1 ;;
+      s|S) menu_save || true ;;
+      q|Q) if menu_quit; then return 0; fi ;;
+      "")  : ;;
+      *)   warn "Unknown option: $choice" ;;
+    esac
+  done
+}
+
+configure_mode() {
+  load_defaults
+
+  if [ -t 0 ] && [ -f "$ENV_FILE" ]; then
+    configure_menu
+    return $?
+  fi
+
+  cat >&2 <<EOF
+${BOLD}remnaWake installer${RESET}
+${DIM}This will collect the settings the bot needs and write them to ./.env.${RESET}
+${DIM}Existing .env values are reused as defaults; backups are kept before rewrites.${RESET}
+
+EOF
+
+  run_all_sections
+  apply_config
+}
+
+menu_mode() {
+  load_defaults
+  configure_menu
 }
 
 port_in_use() {
@@ -1249,6 +1484,9 @@ main() {
   case "$mode" in
     configure|config|"")
       configure_mode
+      ;;
+    menu|reconfigure)
+      menu_mode
       ;;
     doctor|check)
       doctor_mode
