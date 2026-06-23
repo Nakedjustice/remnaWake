@@ -335,6 +335,7 @@ func userBotCommands() []tgbot.BotCommand {
 	return []tgbot.BotCommand{
 		{Command: "me", Description: i18n.T("Личный кабинет")},
 		{Command: "menu", Description: i18n.T("Открыть меню")},
+		{Command: "trial", Description: i18n.T("Активировать пробный период")},
 		{Command: "tariff", Description: i18n.T("Посмотреть тарифы")},
 		{Command: "gift", Description: i18n.T("Подарить подписку")},
 		{Command: "mygifts", Description: i18n.T("Мои подарочные подписки")},
