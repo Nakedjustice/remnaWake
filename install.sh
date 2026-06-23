@@ -755,14 +755,30 @@ detect_compose() {
   fi
 }
 
+service_image() {
+  local file="$1" service="$2"
+  [ -f "$file" ] || return 1
+  awk -v svc="$service" '
+    { sub(/\r$/, "") }
+    $0 == "services:" { in_services=1; next }
+    in_services && $0 ~ /^[^ ]/ { in_services=0 }
+    in_services && $0 == "  " svc ":" { in_service=1; next }
+    in_service && $0 ~ /^  [^ ].*:/ { in_service=0 }
+    in_service && $0 ~ /^    image:[[:space:]]*/ {
+      sub(/^    image:[[:space:]]*/, "")
+      gsub(/"/, "")
+      print
+      exit
+    }
+  ' "$file"
+}
+
 compose_image() {
-  [ -f "$COMPOSE_FILE" ] || return 1
-  sed -n 's/^[[:space:]]*image:[[:space:]]*//p' "$COMPOSE_FILE" | head -n 1 | tr -d '"'
+  service_image "$COMPOSE_FILE" bot
 }
 
 override_image() {
-  [ -f "$OVERRIDE_FILE" ] || return 1
-  sed -n 's/^[[:space:]]*image:[[:space:]]*//p' "$OVERRIDE_FILE" | head -n 1 | tr -d '"'
+  service_image "$OVERRIDE_FILE" bot
 }
 
 mask() {
