@@ -331,6 +331,10 @@ type Service struct {
 	starsEnabled bool // protected by mu
 	starsRate    int  // protected by mu
 
+	// xrayChecker is wired once at startup via SetXrayChecker when an
+	// xray-checker sidecar is configured; nil = proxy monitoring unavailable.
+	xrayChecker XrayChecker // protected by mu
+
 	// resolvedSquadUUID caches a successful by-name fallback lookup of the
 	// default squad, so user creation doesn't hit the panel's squad listing
 	// every time while no squad is explicitly selected. Protected by mu;

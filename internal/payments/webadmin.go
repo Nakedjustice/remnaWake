@@ -102,6 +102,9 @@ type WebAdminPanel struct {
 	ReferralEnabled      bool   `json:"referral_enabled"`
 	ReferralInviterDays  int    `json:"referral_inviter_days"`
 	ReferralInviteeDays  int    `json:"referral_invitee_days"`
+	// ProxyMonitoring is true when an xray-checker sidecar is wired in, so the
+	// Mini App can show the proxy-health entry.
+	ProxyMonitoring bool `json:"proxy_monitoring"`
 }
 
 // WebSquad is one panel internal squad offered in the mini app default-squad
@@ -163,6 +166,7 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	out.TrialHwidDeviceLimit = trial.HwidDeviceLimit
 	out.TrialSquadUUID = trial.SquadUUID
 	out.ReferralEnabled, out.ReferralInviterDays, out.ReferralInviteeDays = s.referralConfig()
+	out.ProxyMonitoring = s.xrayCheckerConfigured()
 
 	buyers, err := s.store.ListGiftBuyers(ctx)
 	if err != nil {
