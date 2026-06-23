@@ -25,6 +25,7 @@ func TestInstallScriptV2Contract(t *testing.T) {
 		`AUTOUPDATE_IMAGE="$(env_default AUTOUPDATE_IMAGE "$DEFAULT_DEPLOY_IMAGE")"`,
 		"docker-compose.override.yml",
 		"watchtower:",
+		`service_image "$OVERRIDE_FILE" bot`,
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("install.sh is missing %q", want)
@@ -48,6 +49,7 @@ func TestInstallSmokeScriptCoversSelectedPortAndUpdate(t *testing.T) {
 		"REFERRAL_ENABLED=true",
 		"bash \"$ROOT/install.sh\" doctor",
 		"bash \"$ROOT/install.sh\" update",
+		"! grep -q 'containrrr/watchtower'",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("smoke script is missing %q", want)
