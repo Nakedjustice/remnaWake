@@ -457,7 +457,8 @@ curl -fsSL https://raw.githubusercontent.com/Nakedjustice/remnaWake/main/install
 Команды обслуживания:
 
 ```bash
-./install.sh configure   # безопасно перезапустить мастер настройки
+./install.sh configure   # первая установка проходит все разделы; при наличии .env открывает меню
+./install.sh menu        # сразу открыть меню перенастройки и изменить один раздел
 ./install.sh doctor      # проверить Docker, .env, compose config, порты и обновления
 ./install.sh update      # сделать бэкап, скачать образ и перезапустить
 ./install.sh backup      # скопировать .env и compose-файлы в ./backups

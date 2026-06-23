@@ -476,7 +476,8 @@ Compose plugin — no `git` needed.
 Maintenance helpers:
 
 ```bash
-./install.sh configure   # rerun the wizard safely
+./install.sh configure   # first install walks every section; reopens the menu if .env exists
+./install.sh menu        # jump straight to the reconfigure menu to edit one section
 ./install.sh doctor      # check Docker, .env, compose config, ports and updates
 ./install.sh update      # back up config, pull the image and restart
 ./install.sh backup      # copy .env and compose files into ./backups
