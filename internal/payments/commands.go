@@ -253,6 +253,12 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 			{Text: i18n.T("💳 Способы оплаты"), CallbackData: "adm:providers"},
 		})
 	}
+	// Proxy health is only shown when an xray-checker sidecar is wired in.
+	if s.xrayCheckerConfigured() {
+		rows = append(rows, []tg.InlineKeyboardButton{
+			{Text: i18n.T("🩺 Состояние прокси"), CallbackData: "adm:checker"},
+		})
+	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, i18n.T("Меню администратора"),
 		&tg.InlineKeyboardMarkup{InlineKeyboard: rows})
 }

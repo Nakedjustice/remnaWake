@@ -35,6 +35,10 @@ extends the subscription by the chosen number of months.
   App cabinet.
 - 📊 **Stats** (`/stats`) — panel users, 30-day payments & revenue, gifts,
   invites.
+- 🩺 **Proxy monitoring** (optional) — bundles
+  [xray-checker](https://github.com/kutovoys/xray-checker) as a sidecar; admins
+  see per-proxy health in `/admin` and the Mini App and get a DM when a proxy
+  goes down or recovers (`XRAY_CHECKER_URL`).
 - 🖥 **Telegram Mini App** — web version of the cabinet (set `WEBAPP_URL`).
 - 🗃 **Reliable** — every notification deduplicated in SQLite (no double-sends
   across restarts), failed sends retried next run, Telegram `429` auto-retried.
@@ -243,6 +247,32 @@ The generated Watchtower service uses `containrrr/watchtower:latest` with
 `pull_policy: always` and `DOCKER_API_VERSION=1.40`. If an older install logs
 `client version 1.25 is too old`, rerun `./install.sh configure`, or refresh the
 sidecar with `docker compose pull watchtower` and `docker compose up -d watchtower`.
+
+## 🩺 Xray Checker proxy monitoring (optional)
+
+Bundles [xray-checker](https://github.com/kutovoys/xray-checker) as an optional
+companion container so admins can see whether the proxies their users connect
+through are actually working. The sidecar probes connectivity through every
+VLESS/VMess/Trojan/Shadowsocks config in a subscription and exposes the result
+on its Prometheus `/metrics` endpoint (port `2112`).
+
+`install.sh configure` can enable it: it asks for the subscription URL to
+monitor, generates basic-auth credentials, sets `XRAY_CHECKER_URL=http://xray-checker:2112`,
+and writes the `xray-checker` service into `docker-compose.override.yml`. Both
+containers share the compose project's default network, so the bot reaches the
+checker by name — no published port is required.
+
+With `XRAY_CHECKER_URL` set the bot:
+
+- adds a **🩺 Состояние прокси** button to the `/admin` menu and a **Proxy
+  health** page to the Mini App admin panel, listing each proxy as ✅ up (with
+  latency) or ❌ down;
+- polls the checker every `XRAY_CHECKER_POLL_INTERVAL` (default `2m`) and DMs
+  every admin when a proxy goes **down** or **recovers** (deduped across
+  restarts, so enabling the feature never alerts for already-down proxies).
+
+The bot only consumes the checker's metrics — it does not re-implement proxy
+probing. Leave `XRAY_CHECKER_URL` empty to keep the feature off (the default).
 
 ## 🖥 Telegram Mini App
 

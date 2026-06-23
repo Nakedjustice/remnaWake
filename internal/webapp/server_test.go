@@ -163,11 +163,12 @@ type adminCall struct {
 }
 
 type fakeAdmin struct {
-	panel  *payments.WebAdminPanel
-	stats  *payments.WebAdminStats
-	report *payments.WebPaymentReport
-	err    error
-	calls  []adminCall
+	panel       *payments.WebAdminPanel
+	stats       *payments.WebAdminStats
+	report      *payments.WebPaymentReport
+	proxyHealth *payments.WebProxyHealth
+	err         error
+	calls       []adminCall
 }
 
 func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.WebAdminPanel, error) {
@@ -177,6 +178,10 @@ func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.Web
 func (f *fakeAdmin) AdminStatsData(_ context.Context, tgID int64) (*payments.WebAdminStats, error) {
 	f.calls = append(f.calls, adminCall{Name: "stats", A: tgID})
 	return f.stats, f.err
+}
+func (f *fakeAdmin) AdminProxyHealth(_ context.Context, tgID int64) (*payments.WebProxyHealth, error) {
+	f.calls = append(f.calls, adminCall{Name: "proxy-health", A: tgID})
+	return f.proxyHealth, f.err
 }
 func (f *fakeAdmin) AdminPaymentReport(_ context.Context, tgID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error) {
 	f.calls = append(f.calls, adminCall{Name: "payments", A: tgID, B: int64(filter.Page), Text: fmt.Sprintf("%d:%s:%s:%s", filter.Days, filter.Status, filter.Provider, filter.Query)})

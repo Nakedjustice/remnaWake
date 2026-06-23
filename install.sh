@@ -168,6 +168,9 @@ known_env_key() {
     AUTOUPDATE_ENABLED|AUTOUPDATE_IMAGE|AUTOUPDATE_CHECK_INTERVAL|WATCHTOWER_URL|WATCHTOWER_TOKEN)
       return 0
       ;;
+    XRAY_CHECKER_URL|XRAY_CHECKER_USERNAME|XRAY_CHECKER_PASSWORD|XRAY_CHECKER_POLL_INTERVAL|XRAY_CHECKER_SUB_URL|XRAY_CHECKER_METHOD)
+      return 0
+      ;;
     *)
       return 1
       ;;
@@ -535,6 +538,13 @@ load_defaults() {
   WATCHTOWER_URL="$(env_default WATCHTOWER_URL "")"
   WATCHTOWER_TOKEN="$(env_default WATCHTOWER_TOKEN "")"
 
+  XRAY_CHECKER_URL="$(env_default XRAY_CHECKER_URL "")"
+  XRAY_CHECKER_USERNAME="$(env_default XRAY_CHECKER_USERNAME "")"
+  XRAY_CHECKER_PASSWORD="$(env_default XRAY_CHECKER_PASSWORD "")"
+  XRAY_CHECKER_POLL_INTERVAL="$(env_default XRAY_CHECKER_POLL_INTERVAL "2m")"
+  XRAY_CHECKER_SUB_URL="$(env_default XRAY_CHECKER_SUB_URL "")"
+  XRAY_CHECKER_METHOD="$(env_default XRAY_CHECKER_METHOD "ip")"
+
   ALONGSIDE_REMNAWAVE="no"
   HOST_PROXY_ENABLED="no"
   caddy_host=""
@@ -640,6 +650,16 @@ AUTOUPDATE_IMAGE=$AUTOUPDATE_IMAGE
 AUTOUPDATE_CHECK_INTERVAL=$AUTOUPDATE_CHECK_INTERVAL
 WATCHTOWER_URL=$WATCHTOWER_URL
 WATCHTOWER_TOKEN=$WATCHTOWER_TOKEN
+
+# Xray Checker proxy monitoring (optional): the bot polls a kutovoys/xray-checker
+# sidecar and DMs admins when a proxy goes down or recovers. XRAY_CHECKER_URL
+# empty = disabled. XRAY_CHECKER_SUB_URL is the subscription the sidecar probes.
+XRAY_CHECKER_URL=$XRAY_CHECKER_URL
+XRAY_CHECKER_USERNAME=$XRAY_CHECKER_USERNAME
+XRAY_CHECKER_PASSWORD=$XRAY_CHECKER_PASSWORD
+XRAY_CHECKER_POLL_INTERVAL=$XRAY_CHECKER_POLL_INTERVAL
+XRAY_CHECKER_SUB_URL=$XRAY_CHECKER_SUB_URL
+XRAY_CHECKER_METHOD=$XRAY_CHECKER_METHOD
 EOF
 
   if [ -n "$preserved" ]; then
@@ -704,6 +724,29 @@ write_override_file() {
       printf '      - /var/run/docker.sock:/var/run/docker.sock\n'
       printf '    networks:\n'
       printf '      - autoupdate\n'
+    fi
+    if [ -n "$XRAY_CHECKER_SUB_URL" ]; then
+      printf '\n'
+      printf '  xray-checker:\n'
+      printf '    image: kutovoys/xray-checker:latest\n'
+      printf '    pull_policy: always\n'
+      printf '    container_name: remnaWake-xray-checker\n'
+      printf '    restart: unless-stopped\n'
+      printf '    environment:\n'
+      printf '      SUBSCRIPTION_URL: "${XRAY_CHECKER_SUB_URL}"\n'
+      printf '      PROXY_CHECK_METHOD: "${XRAY_CHECKER_METHOD}"\n'
+      printf '      METRICS_PROTECTED: "true"\n'
+      printf '      METRICS_USERNAME: "${XRAY_CHECKER_USERNAME}"\n'
+      printf '      METRICS_PASSWORD: "${XRAY_CHECKER_PASSWORD}"\n'
+      printf '      METRICS_PORT: "2112"\n'
+      # When the bot has custom networks (watchtower / alongside-remnawave) it is
+      # no longer on the compose default network, so the checker must join the
+      # same network(s) for the bot to reach xray-checker:2112.
+      if [ "$need_remnawave_network" = "yes" ] || [ "$need_autoupdate_network" = "yes" ]; then
+        printf '    networks:\n'
+        [ "$need_remnawave_network" = "yes" ] && printf '      - remnawave-network\n'
+        [ "$need_autoupdate_network" = "yes" ] && printf '      - autoupdate\n'
+      fi
     fi
     if [ "$need_remnawave_network" = "yes" ] || [ "$need_autoupdate_network" = "yes" ]; then
       printf '\nnetworks:\n'
@@ -791,7 +834,8 @@ mask() {
 
 print_summary() {
   local platega_summary="disabled (P2P only)" stars_summary="disabled" trial_summary="disabled" referral_summary="disabled"
-  local web_host_summary="not published"
+  local web_host_summary="not published" xray_checker_summary="disabled"
+  [ -n "$XRAY_CHECKER_URL" ] && xray_checker_summary="enabled (poll $XRAY_CHECKER_POLL_INTERVAL)"
   [ -n "$PLATEGA_MERCHANT_ID" ] && platega_summary="enabled ($PLATEGA_METHOD, $PLATEGA_CURRENCY)"
   [ "$TELEGRAM_STARS_ENABLED" = "true" ] && stars_summary="enabled (rate $TELEGRAM_STARS_RATE)"
   [ "$TRIAL_ENABLED" = "true" ] && trial_summary="enabled (${TRIAL_DAYS}d, ${TRIAL_TRAFFIC_LIMIT_GB}GB, ${TRIAL_HWID_DEVICE_LIMIT} device limit)"
@@ -818,6 +862,7 @@ ${BOLD}Summary${RESET}
   Trial              : $trial_summary
   Referral           : $referral_summary
   Auto-update        : $AUTOUPDATE_ENABLED
+  Xray Checker       : $xray_checker_summary
 
 EOF
 }
@@ -991,6 +1036,25 @@ EOF
     AUTOUPDATE_ENABLED="false"
     WATCHTOWER_URL=""
     WATCHTOWER_TOKEN=""
+  fi
+
+  printf '\n' >&2
+  info "-- Xray Checker proxy monitoring (optional) ---------------"
+  warn "Runs a kutovoys/xray-checker sidecar that probes each proxy and reports"
+  warn "health. The bot shows it in /admin and DMs you when a proxy goes down."
+  if ask_yes_no "Enable Xray Checker proxy monitoring?" "$(nonempty_default "$XRAY_CHECKER_URL")"; then
+    ask XRAY_CHECKER_SUB_URL "Subscription URL for the checker to monitor" "$XRAY_CHECKER_SUB_URL" v_url
+    XRAY_CHECKER_URL="http://xray-checker:2112"
+    XRAY_CHECKER_METHOD="${XRAY_CHECKER_METHOD:-ip}"
+    [ -n "$XRAY_CHECKER_USERNAME" ] || XRAY_CHECKER_USERNAME="metrics"
+    [ -n "$XRAY_CHECKER_PASSWORD" ] || XRAY_CHECKER_PASSWORD="$(generate_token)"
+    ask XRAY_CHECKER_POLL_INTERVAL "Poll interval (Go duration, e.g. 2m)" "$XRAY_CHECKER_POLL_INTERVAL" v_duration
+    info "Xray Checker enabled. docker-compose.override.yml will include the sidecar."
+  else
+    XRAY_CHECKER_URL=""
+    XRAY_CHECKER_SUB_URL=""
+    XRAY_CHECKER_USERNAME=""
+    XRAY_CHECKER_PASSWORD=""
   fi
 
   ensure_compose_file

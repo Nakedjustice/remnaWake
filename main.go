@@ -21,6 +21,7 @@ import (
 	"github.com/Nakedjustice/remnaWake/internal/store"
 	tgbot "github.com/Nakedjustice/remnaWake/internal/telegram"
 	"github.com/Nakedjustice/remnaWake/internal/webapp"
+	"github.com/Nakedjustice/remnaWake/internal/xraychecker"
 )
 
 func main() {
@@ -120,6 +121,15 @@ func main() {
 				"interval", cfg.AutoUpdate.CheckInterval.String(),
 				"watchtower", cfg.AutoUpdate.WatchtowerConfigured())
 			go checker.Run(rootCtx)
+		}
+
+		if cfg.XrayChecker.Enabled() {
+			xc := xraychecker.NewClient(cfg.XrayChecker.URL, cfg.XrayChecker.Username, cfg.XrayChecker.Password, cfg.HTTP.Timeout)
+			pay.SetXrayChecker(xrayCheckerAdapter{xc})
+			mon := xraychecker.NewMonitor(xc, db, pay, cfg.XrayChecker.PollInterval, logger)
+			logger.Info("xray checker enabled", "url", cfg.XrayChecker.URL,
+				"interval", cfg.XrayChecker.PollInterval.String())
+			go mon.Run(rootCtx)
 		}
 	}
 
@@ -470,6 +480,26 @@ func (g plategaGateway) GetTransaction(ctx context.Context, id string) (string, 
 		return "", err
 	}
 	return tx.Status, nil
+}
+
+// xrayCheckerAdapter adapts *xraychecker.Client to payments.XrayChecker,
+// converting xraychecker.ProxyStatus to the payments-local ProxyStatus so the
+// payments package stays decoupled from the xraychecker package.
+type xrayCheckerAdapter struct{ c *xraychecker.Client }
+
+func (a xrayCheckerAdapter) Status(ctx context.Context) ([]payments.ProxyStatus, error) {
+	statuses, err := a.c.Status(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]payments.ProxyStatus, 0, len(statuses))
+	for _, p := range statuses {
+		out = append(out, payments.ProxyStatus{
+			Name: p.Name, Protocol: p.Protocol, Address: p.Address, SubName: p.SubName,
+			Up: p.Up, LatencyMs: p.LatencyMs,
+		})
+	}
+	return out, nil
 }
 
 func toSubscriber(u remnawave.User) payments.Subscriber {

@@ -369,6 +369,71 @@ func TestLoadAdminIDInvalidToken(t *testing.T) {
 	}
 }
 
+func TestLoadXrayCheckerDisabledByDefault(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.XrayChecker.Enabled() {
+		t.Fatal("XrayChecker should be disabled without XRAY_CHECKER_URL")
+	}
+}
+
+func TestLoadXrayCheckerEnabled(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("XRAY_CHECKER_URL", "http://xray-checker:2112/")
+	t.Setenv("XRAY_CHECKER_USERNAME", " metrics ")
+	t.Setenv("XRAY_CHECKER_PASSWORD", "secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.XrayChecker.Enabled() {
+		t.Fatal("XrayChecker should be enabled with XRAY_CHECKER_URL")
+	}
+	if cfg.XrayChecker.URL != "http://xray-checker:2112" {
+		t.Fatalf("URL = %q, want trimmed without trailing slash", cfg.XrayChecker.URL)
+	}
+	if cfg.XrayChecker.Username != "metrics" {
+		t.Fatalf("Username = %q, want trimmed", cfg.XrayChecker.Username)
+	}
+	if cfg.XrayChecker.PollInterval != 2*time.Minute {
+		t.Fatalf("PollInterval = %v, want 2m default", cfg.XrayChecker.PollInterval)
+	}
+}
+
+func TestLoadXrayCheckerRejectsBadURL(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("XRAY_CHECKER_URL", "xray-checker:2112")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "XRAY_CHECKER_URL") {
+		t.Fatalf("error = %v, want mention of XRAY_CHECKER_URL", err)
+	}
+}
+
+func TestLoadXrayCheckerRejectsBadInterval(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("XRAY_CHECKER_URL", "http://xray-checker:2112")
+	t.Setenv("XRAY_CHECKER_POLL_INTERVAL", "nope")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "XRAY_CHECKER_POLL_INTERVAL") {
+		t.Fatalf("error = %v, want mention of XRAY_CHECKER_POLL_INTERVAL", err)
+	}
+}
+
 func TestLoadStarsRequiresPositiveRate(t *testing.T) {
 	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
 	t.Setenv("REMNAWAVE_API_TOKEN", "tok")

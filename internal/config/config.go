@@ -14,23 +14,24 @@ import (
 )
 
 type Config struct {
-	Remnawave  RemnawaveConfig
-	Telegram   TelegramConfig
-	Scheduler  SchedulerConfig
-	HTTP       HTTPConfig
-	WebApp     WebAppConfig
-	Winback    WinbackConfig
-	Platega    PlategaConfig
-	Stars      StarsConfig
-	Trial      TrialConfig
-	Referral   ReferralConfig
-	AutoUpdate AutoUpdateConfig
-	Lang       i18n.Lang
-	LogLevel   slog.Level
-	DryRun     bool
-	RunOnStart bool
-	DBPath     string
-	Currency   string
+	Remnawave   RemnawaveConfig
+	Telegram    TelegramConfig
+	Scheduler   SchedulerConfig
+	HTTP        HTTPConfig
+	WebApp      WebAppConfig
+	Winback     WinbackConfig
+	Platega     PlategaConfig
+	Stars       StarsConfig
+	Trial       TrialConfig
+	Referral    ReferralConfig
+	AutoUpdate  AutoUpdateConfig
+	XrayChecker XrayCheckerConfig
+	Lang        i18n.Lang
+	LogLevel    slog.Level
+	DryRun      bool
+	RunOnStart  bool
+	DBPath      string
+	Currency    string
 }
 
 type RemnawaveConfig struct {
@@ -143,6 +144,23 @@ func (a AutoUpdateConfig) WatchtowerConfigured() bool {
 	return a.WatchtowerURL != ""
 }
 
+// XrayCheckerConfig configures the optional integration with a kutovoys/xray-checker
+// sidecar. The bot polls the checker's Prometheus /metrics endpoint to show
+// per-proxy health to admins and DMs them when a proxy goes down or recovers.
+// The checker runs as a separate container; the bot only needs its URL and,
+// when /metrics is basic-auth protected, the credentials.
+type XrayCheckerConfig struct {
+	URL          string        // base URL of the xray-checker (e.g. http://xray-checker:2112)
+	Username     string        // basic-auth user for /metrics (empty = no auth)
+	Password     string        // basic-auth password for /metrics
+	PollInterval time.Duration // how often to poll for status changes
+}
+
+// Enabled reports whether the xray-checker integration should be started.
+func (x XrayCheckerConfig) Enabled() bool {
+	return x.URL != ""
+}
+
 // MethodCode maps the configured Method to a Platega payment-method code.
 func (p PlategaConfig) MethodCode() (int, error) {
 	switch strings.ToLower(strings.TrimSpace(p.Method)) {
@@ -221,6 +239,11 @@ func Load() (*Config, error) {
 			WatchtowerURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("WATCHTOWER_URL")), "/"),
 			WatchtowerToken: strings.TrimSpace(os.Getenv("WATCHTOWER_TOKEN")),
 		},
+		XrayChecker: XrayCheckerConfig{
+			URL:      strings.TrimRight(strings.TrimSpace(os.Getenv("XRAY_CHECKER_URL")), "/"),
+			Username: strings.TrimSpace(os.Getenv("XRAY_CHECKER_USERNAME")),
+			Password: os.Getenv("XRAY_CHECKER_PASSWORD"),
+		},
 		Lang:       lang,
 		LogLevel:   parseLogLevel(getenv("LOG_LEVEL", "info")),
 		DryRun:     getenvBool("DRY_RUN", false),
@@ -242,6 +265,13 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid AUTOUPDATE_CHECK_INTERVAL: %w", err)
 	}
 	cfg.AutoUpdate.CheckInterval = iv
+
+	pollInterval := getenv("XRAY_CHECKER_POLL_INTERVAL", "2m")
+	pi, err := time.ParseDuration(pollInterval)
+	if err != nil {
+		return nil, fmt.Errorf("invalid XRAY_CHECKER_POLL_INTERVAL: %w", err)
+	}
+	cfg.XrayChecker.PollInterval = pi
 
 	if rate := strings.TrimSpace(os.Getenv("TELEGRAM_STARS_RATE")); rate != "" {
 		r, err := strconv.Atoi(rate)
@@ -316,6 +346,14 @@ func (c *Config) validate() error {
 		}
 		if c.AutoUpdate.Image == "" {
 			return errors.New("AUTOUPDATE_IMAGE is required when AUTOUPDATE_ENABLED is true")
+		}
+	}
+	if c.XrayChecker.Enabled() {
+		if u, err := url.Parse(c.XrayChecker.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("invalid XRAY_CHECKER_URL (expected an http(s) URL): %q", c.XrayChecker.URL)
+		}
+		if c.XrayChecker.PollInterval <= 0 {
+			return fmt.Errorf("XRAY_CHECKER_POLL_INTERVAL must be positive: %v", c.XrayChecker.PollInterval)
 		}
 	}
 	return nil
