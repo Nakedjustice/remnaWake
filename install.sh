@@ -451,7 +451,8 @@ print_caddy_manual() {
   warn ""
   warn "    https://${caddy_host} {"
   if [ "$CHECKER_PUBLIC_ENABLED" = "yes" ] && [ -n "$XRAY_CHECKER_BASE_PATH" ]; then
-    warn "        handle ${XRAY_CHECKER_BASE_PATH}* {"
+    warn "        redir ${XRAY_CHECKER_BASE_PATH} ${XRAY_CHECKER_BASE_PATH}/"
+    warn "        handle ${XRAY_CHECKER_BASE_PATH}/* {"
     warn "            reverse_proxy remnaWake-xray-checker:2112"
     warn "        }"
   fi
@@ -807,39 +808,84 @@ write_override_file() {
   ok "Wrote installer-managed docker-compose.override.yml"
 }
 
+# checker_route_wanted reports whether a same-domain dashboard route should be
+# wired into Caddy (exposure on AND served under a sub-path).
+checker_route_wanted() {
+  [ "$CHECKER_PUBLIC_ENABLED" = "yes" ] && [ -n "$XRAY_CHECKER_BASE_PATH" ]
+}
+
+# caddy_checker_block prints the dashboard route lines (4-space indented). The
+# sidecar serves the dashboard at "<base>/" and 301-redirects the bare path, and
+# the base path is preserved upstream (handle, not handle_path), so it must match
+# the sidecar's METRICS_BASE_PATH.
+caddy_checker_block() {
+  printf '    redir %s %s/\n' "$XRAY_CHECKER_BASE_PATH" "$XRAY_CHECKER_BASE_PATH"
+  printf '    handle %s/* {\n        reverse_proxy remnaWake-xray-checker:2112\n    }\n' "$XRAY_CHECKER_BASE_PATH"
+}
+
+# inject_caddy_checker_route inserts the dashboard route just inside the existing
+# "https://<caddy_host> {" site block. Returns non-zero (leaving the file
+# untouched) if that opening line cannot be found, so the caller can fall back to
+# printing manual instructions.
+inject_caddy_checker_route() {
+  local cf="$1" tmp
+  tmp="$(mktemp "$cf.XXXXXX")" || return 1
+  if awk -v host="$caddy_host" -v base="$XRAY_CHECKER_BASE_PATH" '
+    { print }
+    !done && index($0, "https://" host) > 0 && $0 ~ /\{[ \t]*$/ {
+      print "    redir " base " " base "/"
+      print "    handle " base "/* {"
+      print "        reverse_proxy remnaWake-xray-checker:2112"
+      print "    }"
+      done = 1
+    }
+    END { if (!done) exit 3 }
+  ' "$cf" >"$tmp"; then
+    backup_file "$cf"
+    mv "$tmp" "$cf"
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
 wire_caddy_if_needed() {
   if [ "$ALONGSIDE_REMNAWAVE" != "yes" ] || [ -z "$caddy_host" ]; then
     return 0
   fi
   CADDYFILE="${REMNAWAVE_CADDYFILE:-/opt/remnawave/caddy/Caddyfile}"
-  if [ -f "$CADDYFILE" ] && [ -w "$CADDYFILE" ]; then
-    if grep -q 'reverse_proxy remnaWake-bot:8080' "$CADDYFILE"; then
-      ok "Caddyfile already proxies remnaWake-bot:8080; left unchanged."
-      if [ "$CHECKER_PUBLIC_ENABLED" = "yes" ] && [ -n "$XRAY_CHECKER_BASE_PATH" ] &&
-        ! grep -q 'reverse_proxy remnaWake-xray-checker:2112' "$CADDYFILE"; then
-        warn "Add a checker route inside the existing $caddy_host site, before reverse_proxy remnaWake-bot:8080:"
-        warn "    handle ${XRAY_CHECKER_BASE_PATH}* {"
-        warn "        reverse_proxy remnaWake-xray-checker:2112"
-        warn "    }"
-      fi
-    elif ask_yes_no "Append a Caddy site for $caddy_host to $CADDYFILE?" "y"; then
-      backup_file "$CADDYFILE"
-      {
-        printf '\nhttps://%s {\n' "$caddy_host"
-        if [ "$CHECKER_PUBLIC_ENABLED" = "yes" ] && [ -n "$XRAY_CHECKER_BASE_PATH" ]; then
-          printf '    handle %s* {\n        reverse_proxy remnaWake-xray-checker:2112\n    }\n' "$XRAY_CHECKER_BASE_PATH"
-        fi
-        printf '    reverse_proxy remnaWake-bot:8080\n}\n'
-      } >>"$CADDYFILE"
-      ok "Added the bot site to $CADDYFILE."
-      warn "Make sure $caddy_host resolves to this server, then reload Caddy:"
-      warn "  cd \"$(dirname "$CADDYFILE")\" && docker compose restart caddy"
-    else
-      print_caddy_manual
-    fi
-  else
+  if [ ! -f "$CADDYFILE" ] || [ ! -w "$CADDYFILE" ]; then
     warn "Remnawave Caddyfile not found or not writable at $CADDYFILE"
     warn "Override the path with REMNAWAVE_CADDYFILE=/path/to/Caddyfile."
+    print_caddy_manual
+    return 0
+  fi
+  if grep -q 'reverse_proxy remnaWake-bot:8080' "$CADDYFILE"; then
+    ok "Caddyfile already proxies remnaWake-bot:8080; left unchanged."
+    # The bot site already exists, but a fresh dashboard route may still be
+    # needed inside it — inject it rather than only printing instructions.
+    if checker_route_wanted && ! grep -q 'reverse_proxy remnaWake-xray-checker:2112' "$CADDYFILE"; then
+      if inject_caddy_checker_route "$CADDYFILE"; then
+        ok "Added the ${XRAY_CHECKER_BASE_PATH} dashboard route to the existing $caddy_host site."
+        warn "Reload Caddy: cd \"$(dirname "$CADDYFILE")\" && docker compose restart caddy"
+      else
+        warn "Could not edit the $caddy_host site automatically. Add this inside it (before reverse_proxy remnaWake-bot:8080):"
+        caddy_checker_block | while IFS= read -r line; do warn "    $line"; done
+      fi
+    fi
+    return 0
+  fi
+  if ask_yes_no "Append a Caddy site for $caddy_host to $CADDYFILE?" "y"; then
+    backup_file "$CADDYFILE"
+    {
+      printf '\nhttps://%s {\n' "$caddy_host"
+      checker_route_wanted && caddy_checker_block
+      printf '    reverse_proxy remnaWake-bot:8080\n}\n'
+    } >>"$CADDYFILE"
+    ok "Added the bot site to $CADDYFILE."
+    warn "Make sure $caddy_host resolves to this server, then reload Caddy:"
+    warn "  cd \"$(dirname "$CADDYFILE")\" && docker compose restart caddy"
+  else
     print_caddy_manual
   fi
 }
@@ -929,12 +975,14 @@ print_proxy_checklist() {
     warn "  - It is behind the checker's basic auth (XRAY_CHECKER_USERNAME / XRAY_CHECKER_PASSWORD)."
     if [ "$HOST_PROXY_ENABLED" = "yes" ]; then
       if [ -n "$XRAY_CHECKER_BASE_PATH" ]; then
-        warn "  - Route on your nginx/Caddy: ${XRAY_CHECKER_BASE_PATH}/ -> 127.0.0.1:${XRAY_CHECKER_HOST_PORT}${XRAY_CHECKER_BASE_PATH}/"
+        warn "  - nginx (the dashboard lives at ${XRAY_CHECKER_BASE_PATH}/ — bare path 301-redirects):"
+        warn "      location = ${XRAY_CHECKER_BASE_PATH} { return 301 ${XRAY_CHECKER_BASE_PATH}/; }"
+        warn "      location ${XRAY_CHECKER_BASE_PATH}/ { proxy_pass http://127.0.0.1:${XRAY_CHECKER_HOST_PORT}${XRAY_CHECKER_BASE_PATH}/; }"
       else
         warn "  - Point your reverse proxy ${XRAY_CHECKER_PUBLIC_URL} -> 127.0.0.1:${XRAY_CHECKER_HOST_PORT}."
       fi
     elif [ "$ALONGSIDE_REMNAWAVE" = "yes" ]; then
-      warn "  - Caddy route ${XRAY_CHECKER_BASE_PATH:-/}* -> remnaWake-xray-checker:2112 (added to the bot site above)."
+      warn "  - Caddy route ${XRAY_CHECKER_BASE_PATH}/* -> remnaWake-xray-checker:2112 (added to the bot site above)."
     fi
   fi
   if [ -z "$WEBAPP_URL" ] && [ -z "$PLATEGA_MERCHANT_ID" ]; then
@@ -1144,7 +1192,9 @@ section_xray() {
         [ -n "$XRAY_CHECKER_BASE_PATH" ] || XRAY_CHECKER_BASE_PATH="/checker"
         ask XRAY_CHECKER_BASE_PATH "Dashboard path under ${WEBAPP_URL}" "$XRAY_CHECKER_BASE_PATH" v_path
         XRAY_CHECKER_BASE_PATH="${XRAY_CHECKER_BASE_PATH%/}"
-        XRAY_CHECKER_PUBLIC_URL="${WEBAPP_URL%/}${XRAY_CHECKER_BASE_PATH}"
+        # The sidecar serves the dashboard at the base path WITH a trailing slash
+        # (the bare path 301-redirects), so the public URL points at "<base>/".
+        XRAY_CHECKER_PUBLIC_URL="${WEBAPP_URL%/}${XRAY_CHECKER_BASE_PATH}/"
         XRAY_CHECKER_URL="http://xray-checker:2112${XRAY_CHECKER_BASE_PATH}"
         if [ "$HOST_PROXY_ENABLED" = "yes" ]; then
           ask XRAY_CHECKER_HOST_PORT "Host port for your nginx/Caddy to reach the checker on 127.0.0.1" "$XRAY_CHECKER_HOST_PORT" v_port
