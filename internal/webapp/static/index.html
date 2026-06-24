@@ -457,6 +457,7 @@ const EN = {
   'Поддержка': 'Support',
   '📊 Статистика': '📊 Statistics',
   'Состояние прокси': 'Proxy health',
+  '🌐 Открыть полную панель': '🌐 Open full dashboard',
   'Мониторинг прокси не настроен.': 'Proxy monitoring is not configured.',
   'Прокси': 'Proxies',
   'Узлы': 'Nodes',
@@ -2599,6 +2600,17 @@ async function showAdminProxyHealth() {
   }
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Состояние прокси')));
+
+  // The full dashboard link is independent of metrics polling, so offer it even
+  // when the checker is not wired in. The Mini App view is intentionally compact;
+  // this button opens the checker's own roomy web dashboard.
+  if (health.dashboard_url) {
+    const open = el('button', null, t('🌐 Открыть полную панель'));
+    open.onclick = () => tg.openLink(health.dashboard_url);
+    const card = el('div', 'admin-card');
+    card.appendChild(open);
+    appEl.appendChild(card);
+  }
 
   if (!health.configured) {
     appEl.appendChild(el('div', 'admin-card admin-empty', t('Мониторинг прокси не настроен.')));

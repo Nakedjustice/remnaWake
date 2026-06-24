@@ -274,6 +274,41 @@ With `XRAY_CHECKER_URL` set the bot:
 The bot only consumes the checker's metrics — it does not re-implement proxy
 probing. Leave `XRAY_CHECKER_URL` empty to keep the feature off (the default).
 
+### Full web dashboard
+
+The Mini App proxy tab is intentionally compact. xray-checker also ships its
+own roomy web dashboard, and you can let admins open it from the bot or a
+browser by setting **`XRAY_CHECKER_PUBLIC_URL`** to where that dashboard is
+reachable. When set, the bot adds a **🌐 Веб-панель прокси** button to the
+`/admin` menu and the proxy-health card, and an **Open full dashboard** button
+to the Mini App proxy tab. The link is independent of `XRAY_CHECKER_URL`, so it
+works even without metrics polling. Because the dashboard sits behind the same
+basic auth as `/metrics` (`METRICS_PROTECTED=true`), it stays admin-only — a
+browser prompts for the checker credentials, no Telegram login required.
+
+`install.sh configure` automates exposing it. When the checker is enabled it
+asks *"Expose the Xray Checker web dashboard at a public URL?"*:
+
+- **Same domain as the Mini App** (when `WEBAPP_URL` is set): it serves the
+  dashboard under a sub-path (default `/checker`). It sets the sidecar's
+  `METRICS_BASE_PATH`, rewrites `XRAY_CHECKER_URL` to include the prefix (so
+  `/metrics` polling keeps working), and — when the bot runs behind the
+  Remnawave Caddy — adds the route to the Caddy site for you:
+
+  ```caddy
+  https://bot.example.com {
+      handle /checker* {
+          reverse_proxy remnaWake-xray-checker:2112
+      }
+      reverse_proxy remnaWake-bot:8080
+  }
+  ```
+
+  Behind a host-level nginx/Caddy it publishes `127.0.0.1:<port>:2112` and
+  prints the matching `location /checker/` snippet.
+- **Your own domain** (no Mini App): you enter the full public URL and wire your
+  own reverse proxy to the sidecar; the dashboard is served at that host's root.
+
 ## 🖥 Telegram Mini App
 
 When `WEBAPP_URL` is set, the bot serves a Mini App version of the cabinet and

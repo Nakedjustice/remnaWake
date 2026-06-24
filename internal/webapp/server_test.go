@@ -525,6 +525,25 @@ func TestHandleInvite(t *testing.T) {
 	}
 }
 
+func TestHandleAdminProxyHealthCarriesDashboardURL(t *testing.T) {
+	adm := &fakeAdmin{proxyHealth: &payments.WebProxyHealth{Configured: false, DashboardURL: "https://bot.example.com/checker"}}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req := httptest.NewRequest("GET", "/api/admin/proxy-health", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["dashboard_url"] != "https://bot.example.com/checker" {
+		t.Fatalf("dashboard_url = %v, want the configured URL", got["dashboard_url"])
+	}
+}
+
 func TestHandleAdminAuth(t *testing.T) {
 	adm := &fakeAdmin{err: payments.ErrNotAdmin}
 	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)

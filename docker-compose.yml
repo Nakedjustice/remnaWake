@@ -85,6 +85,14 @@ services:
   #     METRICS_USERNAME: "${XRAY_CHECKER_USERNAME}"
   #     METRICS_PASSWORD: "${XRAY_CHECKER_PASSWORD}"
   #     METRICS_PORT: "2112"
+  # To expose the checker's own web dashboard (XRAY_CHECKER_PUBLIC_URL) on the
+  # same domain as the Mini App, serve it under a sub-path: set METRICS_BASE_PATH
+  # and reverse-proxy that prefix to xray-checker:2112. The base path applies to
+  # /metrics too, so XRAY_CHECKER_URL must include it (http://xray-checker:2112/checker).
+  #     METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"
+  # A host-level reverse proxy instead needs a published loopback port:
+  #   ports:
+  #     - "127.0.0.1:2112:2112"
 
 # Uncomment alongside the watchtower service above to let the bot reach it by
 # name on an isolated internal network.

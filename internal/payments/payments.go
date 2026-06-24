@@ -298,6 +298,7 @@ type Service struct {
 
 	botUsername string // protected by mu; empty = unknown, fall back to raw code
 	webAppURL   string // protected by mu; empty = mini app disabled
+	checkerURL  string // protected by mu; public xray-checker dashboard URL, empty = no link
 
 	adminInput map[int64]adminInputState // protected by mu
 	// payMsgs/inviteMsgs/giftMsgs map a request ID to the admin message copies
@@ -916,6 +917,21 @@ func (s *Service) getWebAppURL() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.webAppURL
+}
+
+// SetCheckerURL stores the public URL of the xray-checker web dashboard; when
+// set, admins get a button (in the menu and on the proxy-health card) that opens
+// it, and the Mini App proxy-health tab links to it.
+func (s *Service) SetCheckerURL(url string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.checkerURL = url
+}
+
+func (s *Service) getCheckerURL() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.checkerURL
 }
 
 func (s *Service) getBotUsername() string {

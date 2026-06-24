@@ -174,6 +174,9 @@ known_env_key() {
     XRAY_CHECKER_URL|XRAY_CHECKER_USERNAME|XRAY_CHECKER_PASSWORD|XRAY_CHECKER_POLL_INTERVAL|XRAY_CHECKER_SUB_URL|XRAY_CHECKER_METHOD)
       return 0
       ;;
+    XRAY_CHECKER_PUBLIC_URL|XRAY_CHECKER_BASE_PATH|XRAY_CHECKER_HOST_PORT)
+      return 0
+      ;;
     *)
       return 1
       ;;
@@ -267,6 +270,14 @@ v_https_url() {
   case "$1" in
     https://*) return 0 ;;
     *) err "  -> Telegram Mini Apps require an https:// URL."; return 1 ;;
+  esac
+}
+
+v_path() {
+  case "$1" in
+    *' '*) err "  -> The path cannot contain spaces."; return 1 ;;
+    /*) return 0 ;;
+    *) err "  -> Enter a path beginning with / (e.g. /checker)."; return 1 ;;
   esac
 }
 
@@ -439,6 +450,11 @@ print_caddy_manual() {
   warn "Add this site to your Remnawave Caddyfile (next to the panel entries):"
   warn ""
   warn "    https://${caddy_host} {"
+  if [ "$CHECKER_PUBLIC_ENABLED" = "yes" ] && [ -n "$XRAY_CHECKER_BASE_PATH" ]; then
+    warn "        handle ${XRAY_CHECKER_BASE_PATH}* {"
+    warn "            reverse_proxy remnaWake-xray-checker:2112"
+    warn "        }"
+  fi
   warn "        reverse_proxy remnaWake-bot:8080"
   warn "    }"
   warn ""
@@ -547,9 +563,13 @@ load_defaults() {
   XRAY_CHECKER_POLL_INTERVAL="$(env_default XRAY_CHECKER_POLL_INTERVAL "2m")"
   XRAY_CHECKER_SUB_URL="$(env_default XRAY_CHECKER_SUB_URL "")"
   XRAY_CHECKER_METHOD="$(env_default XRAY_CHECKER_METHOD "ip")"
+  XRAY_CHECKER_PUBLIC_URL="$(env_default XRAY_CHECKER_PUBLIC_URL "")"
+  XRAY_CHECKER_BASE_PATH="$(env_default XRAY_CHECKER_BASE_PATH "")"
+  XRAY_CHECKER_HOST_PORT="$(env_default XRAY_CHECKER_HOST_PORT "2112")"
 
   ALONGSIDE_REMNAWAVE="no"
   HOST_PROXY_ENABLED="no"
+  CHECKER_PUBLIC_ENABLED="no"
   caddy_host=""
 }
 
@@ -663,6 +683,13 @@ XRAY_CHECKER_PASSWORD=$XRAY_CHECKER_PASSWORD
 XRAY_CHECKER_POLL_INTERVAL=$XRAY_CHECKER_POLL_INTERVAL
 XRAY_CHECKER_SUB_URL=$XRAY_CHECKER_SUB_URL
 XRAY_CHECKER_METHOD=$XRAY_CHECKER_METHOD
+# Public URL of the checker's own web dashboard; when set the bot shows admins a
+# button to open it. XRAY_CHECKER_BASE_PATH (e.g. /checker) serves it under the
+# Mini App domain via the sidecar's METRICS_BASE_PATH; empty = served at the host
+# root. XRAY_CHECKER_HOST_PORT is the 127.0.0.1 port published for a host proxy.
+XRAY_CHECKER_PUBLIC_URL=$XRAY_CHECKER_PUBLIC_URL
+XRAY_CHECKER_BASE_PATH=$XRAY_CHECKER_BASE_PATH
+XRAY_CHECKER_HOST_PORT=$XRAY_CHECKER_HOST_PORT
 EOF
 
   if [ -n "$preserved" ]; then
@@ -742,6 +769,17 @@ write_override_file() {
       printf '      METRICS_USERNAME: "${XRAY_CHECKER_USERNAME}"\n'
       printf '      METRICS_PASSWORD: "${XRAY_CHECKER_PASSWORD}"\n'
       printf '      METRICS_PORT: "2112"\n'
+      # A non-empty base path serves the dashboard (and /metrics) under a sub-path
+      # so it can sit on the Mini App domain; the bot's XRAY_CHECKER_URL includes it.
+      if [ "$CHECKER_PUBLIC_ENABLED" = "yes" ] && [ -n "$XRAY_CHECKER_BASE_PATH" ]; then
+        printf '      METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"\n'
+      fi
+      # A host-level reverse proxy reaches the dashboard via a published loopback
+      # port (Caddy/alongside-Remnawave uses the container name instead).
+      if [ "$CHECKER_PUBLIC_ENABLED" = "yes" ] && [ "$HOST_PROXY_ENABLED" = "yes" ]; then
+        printf '    ports:\n'
+        printf '      - "127.0.0.1:%s:2112"\n' "$XRAY_CHECKER_HOST_PORT"
+      fi
       # When the bot has custom networks (watchtower / alongside-remnawave) it is
       # no longer on the compose default network, so the checker must join the
       # same network(s) for the bot to reach xray-checker:2112.
@@ -777,9 +815,22 @@ wire_caddy_if_needed() {
   if [ -f "$CADDYFILE" ] && [ -w "$CADDYFILE" ]; then
     if grep -q 'reverse_proxy remnaWake-bot:8080' "$CADDYFILE"; then
       ok "Caddyfile already proxies remnaWake-bot:8080; left unchanged."
+      if [ "$CHECKER_PUBLIC_ENABLED" = "yes" ] && [ -n "$XRAY_CHECKER_BASE_PATH" ] &&
+        ! grep -q 'reverse_proxy remnaWake-xray-checker:2112' "$CADDYFILE"; then
+        warn "Add a checker route inside the existing $caddy_host site, before reverse_proxy remnaWake-bot:8080:"
+        warn "    handle ${XRAY_CHECKER_BASE_PATH}* {"
+        warn "        reverse_proxy remnaWake-xray-checker:2112"
+        warn "    }"
+      fi
     elif ask_yes_no "Append a Caddy site for $caddy_host to $CADDYFILE?" "y"; then
       backup_file "$CADDYFILE"
-      printf '\nhttps://%s {\n    reverse_proxy remnaWake-bot:8080\n}\n' "$caddy_host" >>"$CADDYFILE"
+      {
+        printf '\nhttps://%s {\n' "$caddy_host"
+        if [ "$CHECKER_PUBLIC_ENABLED" = "yes" ] && [ -n "$XRAY_CHECKER_BASE_PATH" ]; then
+          printf '    handle %s* {\n        reverse_proxy remnaWake-xray-checker:2112\n    }\n' "$XRAY_CHECKER_BASE_PATH"
+        fi
+        printf '    reverse_proxy remnaWake-bot:8080\n}\n'
+      } >>"$CADDYFILE"
       ok "Added the bot site to $CADDYFILE."
       warn "Make sure $caddy_host resolves to this server, then reload Caddy:"
       warn "  cd \"$(dirname "$CADDYFILE")\" && docker compose restart caddy"
@@ -866,11 +917,26 @@ ${BOLD}Summary${RESET}
   Referral           : $referral_summary
   Auto-update        : $AUTOUPDATE_ENABLED
   Xray Checker       : $xray_checker_summary
+  Proxy dashboard    : ${XRAY_CHECKER_PUBLIC_URL:-disabled}
 
 EOF
 }
 
 print_proxy_checklist() {
+  if [ "$CHECKER_PUBLIC_ENABLED" = "yes" ]; then
+    warn "Xray Checker dashboard ($XRAY_CHECKER_PUBLIC_URL):"
+    warn "  - Open it from /admin -> 'Proxy web dashboard', or directly in a browser."
+    warn "  - It is behind the checker's basic auth (XRAY_CHECKER_USERNAME / XRAY_CHECKER_PASSWORD)."
+    if [ "$HOST_PROXY_ENABLED" = "yes" ]; then
+      if [ -n "$XRAY_CHECKER_BASE_PATH" ]; then
+        warn "  - Route on your nginx/Caddy: ${XRAY_CHECKER_BASE_PATH}/ -> 127.0.0.1:${XRAY_CHECKER_HOST_PORT}${XRAY_CHECKER_BASE_PATH}/"
+      else
+        warn "  - Point your reverse proxy ${XRAY_CHECKER_PUBLIC_URL} -> 127.0.0.1:${XRAY_CHECKER_HOST_PORT}."
+      fi
+    elif [ "$ALONGSIDE_REMNAWAVE" = "yes" ]; then
+      warn "  - Caddy route ${XRAY_CHECKER_BASE_PATH:-/}* -> remnaWake-xray-checker:2112 (added to the bot site above)."
+    fi
+  fi
   if [ -z "$WEBAPP_URL" ] && [ -z "$PLATEGA_MERCHANT_ID" ]; then
     return 0
   fi
@@ -1062,11 +1128,50 @@ section_xray() {
     [ -n "$XRAY_CHECKER_PASSWORD" ] || XRAY_CHECKER_PASSWORD="$(generate_token)"
     ask XRAY_CHECKER_POLL_INTERVAL "Poll interval (Go duration, e.g. 2m)" "$XRAY_CHECKER_POLL_INTERVAL" v_duration
     info "Xray Checker enabled. docker-compose.override.yml will include the sidecar."
+
+    # The checker ships its own roomy web dashboard (handier than the compact
+    # Mini App tab). Optionally expose it publicly so admins can open it from the
+    # bot or a browser. With METRICS_PROTECTED=true it sits behind the same basic
+    # auth as /metrics, so it stays admin-only.
+    printf '\n' >&2
+    if ask_yes_no "Expose the Xray Checker web dashboard at a public URL?" "$(nonempty_default "$XRAY_CHECKER_PUBLIC_URL")"; then
+      CHECKER_PUBLIC_ENABLED="yes"
+      if [ -n "$WEBAPP_URL" ]; then
+        # Same domain as the Mini App: serve the dashboard under a sub-path. The
+        # sidecar's METRICS_BASE_PATH relocates every endpoint (dashboard AND
+        # /metrics) under this prefix, so the bot's internal poll URL must include
+        # it too.
+        [ -n "$XRAY_CHECKER_BASE_PATH" ] || XRAY_CHECKER_BASE_PATH="/checker"
+        ask XRAY_CHECKER_BASE_PATH "Dashboard path under ${WEBAPP_URL}" "$XRAY_CHECKER_BASE_PATH" v_path
+        XRAY_CHECKER_BASE_PATH="${XRAY_CHECKER_BASE_PATH%/}"
+        XRAY_CHECKER_PUBLIC_URL="${WEBAPP_URL%/}${XRAY_CHECKER_BASE_PATH}"
+        XRAY_CHECKER_URL="http://xray-checker:2112${XRAY_CHECKER_BASE_PATH}"
+        if [ "$HOST_PROXY_ENABLED" = "yes" ]; then
+          ask XRAY_CHECKER_HOST_PORT "Host port for your nginx/Caddy to reach the checker on 127.0.0.1" "$XRAY_CHECKER_HOST_PORT" v_port
+        fi
+      else
+        # No Mini App: the admin picks their own public URL; the dashboard is
+        # served at that host's root (no base path).
+        ask XRAY_CHECKER_PUBLIC_URL "Public URL for the dashboard (e.g. https://checker.example.com)" "$XRAY_CHECKER_PUBLIC_URL" v_https_url
+        XRAY_CHECKER_PUBLIC_URL="${XRAY_CHECKER_PUBLIC_URL%/}"
+        XRAY_CHECKER_BASE_PATH=""
+        XRAY_CHECKER_URL="http://xray-checker:2112"
+        ask XRAY_CHECKER_HOST_PORT "Host port for your reverse proxy to reach the checker on 127.0.0.1" "$XRAY_CHECKER_HOST_PORT" v_port
+      fi
+      info "Dashboard exposed at: $XRAY_CHECKER_PUBLIC_URL"
+    else
+      CHECKER_PUBLIC_ENABLED="no"
+      XRAY_CHECKER_PUBLIC_URL=""
+      XRAY_CHECKER_BASE_PATH=""
+    fi
   else
     XRAY_CHECKER_URL=""
     XRAY_CHECKER_SUB_URL=""
     XRAY_CHECKER_USERNAME=""
     XRAY_CHECKER_PASSWORD=""
+    CHECKER_PUBLIC_ENABLED="no"
+    XRAY_CHECKER_PUBLIC_URL=""
+    XRAY_CHECKER_BASE_PATH=""
   fi
 }
 

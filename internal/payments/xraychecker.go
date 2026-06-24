@@ -39,11 +39,15 @@ type WebProxyRow struct {
 
 // WebProxyHealth is the proxy-monitoring snapshot shared by the bot report and
 // the Mini App admin panel. Configured is false when no xray-checker is wired in.
+// DashboardURL, when set, is the public URL of the checker's own web dashboard;
+// it is surfaced independently of Configured so the link works even when the bot
+// does not poll /metrics.
 type WebProxyHealth struct {
-	Configured bool          `json:"configured"`
-	Proxies    []WebProxyRow `json:"proxies"`
-	Up         int           `json:"up"`
-	Down       int           `json:"down"`
+	Configured   bool          `json:"configured"`
+	Proxies      []WebProxyRow `json:"proxies"`
+	Up           int           `json:"up"`
+	Down         int           `json:"down"`
+	DashboardURL string        `json:"dashboard_url,omitempty"`
 }
 
 // SetXrayChecker wires the optional xray-checker client. Called once at startup
@@ -77,15 +81,16 @@ func (s *Service) AdminProxyHealth(ctx context.Context, telegramID int64) (*WebP
 
 // proxyHealth fetches and aggregates the current per-proxy status.
 func (s *Service) proxyHealth(ctx context.Context) (*WebProxyHealth, error) {
+	dashboardURL := s.getCheckerURL()
 	checker := s.getXrayChecker()
 	if checker == nil {
-		return &WebProxyHealth{Configured: false}, nil
+		return &WebProxyHealth{Configured: false, DashboardURL: dashboardURL}, nil
 	}
 	statuses, err := checker.Status(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%w: xray checker: %v", ErrPanelUnavailable, err)
 	}
-	out := &WebProxyHealth{Configured: true, Proxies: make([]WebProxyRow, 0, len(statuses))}
+	out := &WebProxyHealth{Configured: true, DashboardURL: dashboardURL, Proxies: make([]WebProxyRow, 0, len(statuses))}
 	for _, p := range statuses {
 		out.Proxies = append(out.Proxies, WebProxyRow{
 			Name: p.Name, Protocol: p.Protocol, Address: p.Address, SubName: p.SubName,
@@ -149,10 +154,15 @@ func proxyLabel(name, protocol, address string) string {
 
 // sendProxyHealth renders the 🩺 proxy-health report in the bot admin menu.
 func (s *Service) sendProxyHealth(ctx context.Context, chatID int64) {
-	backKb := &tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{
-		{{Text: i18n.T("🔄 Обновить"), CallbackData: "adm:checker"}},
-		{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}},
-	}}
+	rows := [][]tg.InlineKeyboardButton{}
+	if url := s.getCheckerURL(); url != "" {
+		rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("🌐 Веб-панель прокси"), URL: url}})
+	}
+	rows = append(rows,
+		[]tg.InlineKeyboardButton{{Text: i18n.T("🔄 Обновить"), CallbackData: "adm:checker"}},
+		[]tg.InlineKeyboardButton{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}},
+	)
+	backKb := &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
 
 	health, err := s.proxyHealth(ctx)
 	if err != nil {

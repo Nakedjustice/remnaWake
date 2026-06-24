@@ -94,6 +94,7 @@ var enPayments = map[string]string{
 	"Нельзя отключить последний способ оплаты.":               "You can't disable the last payment method.",
 	"💳 Способы оплаты":                                        "💳 Payment methods",
 	"🩺 Состояние прокси":                                      "🩺 Proxy health",
+	"🌐 Веб-панель прокси":                                     "🌐 Proxy web dashboard",
 	"🔄 Обновить":                                              "🔄 Refresh",
 	"Не удалось получить состояние прокси.":                   "Failed to fetch proxy health.",
 	"Мониторинг прокси не настроен.":                          "Proxy monitoring is not configured.",

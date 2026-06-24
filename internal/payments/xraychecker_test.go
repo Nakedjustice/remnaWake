@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
 type fakeChecker struct {
@@ -29,6 +31,71 @@ func TestXrayCheckerAdminMenuButtonConditional(t *testing.T) {
 	svc.SendAdminMenu(context.Background(), 1000)
 	if !keyboardData(bot.sent[len(bot.sent)-1].Keyboard)["adm:checker"] {
 		t.Fatal("checker button must appear once configured")
+	}
+}
+
+// hasURLButton reports whether any keyboard button links to url.
+func hasURLButton(kb *tg.InlineKeyboardMarkup, url string) bool {
+	if kb == nil {
+		return false
+	}
+	for _, row := range kb.InlineKeyboard {
+		for _, btn := range row {
+			if btn.URL == url {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestCheckerDashboardButtonConditional(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	const url = "https://bot.example.com/checker"
+
+	svc.SendAdminMenu(context.Background(), 1000)
+	if hasURLButton(bot.sent[len(bot.sent)-1].Keyboard, url) {
+		t.Fatal("dashboard button must be absent when no public URL is set")
+	}
+
+	bot.sent = nil
+	svc.SetCheckerURL(url)
+	svc.SendAdminMenu(context.Background(), 1000)
+	if !hasURLButton(bot.sent[len(bot.sent)-1].Keyboard, url) {
+		t.Fatal("dashboard button must appear once the public URL is set")
+	}
+}
+
+func TestProxyHealthCardLinksToDashboard(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	const url = "https://bot.example.com/checker"
+	svc.SetXrayChecker(&fakeChecker{statuses: []ProxyStatus{{Name: "A", Up: true}}})
+	svc.SetCheckerURL(url)
+
+	if !svc.HandleCallback(context.Background(), cbq(1000, "adm:checker")) {
+		t.Fatal("adm:checker should be handled")
+	}
+	if !hasURLButton(bot.sent[len(bot.sent)-1].Keyboard, url) {
+		t.Fatal("proxy-health card must link to the dashboard when configured")
+	}
+}
+
+func TestProxyHealthIncludesDashboardURL(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	const url = "https://bot.example.com/checker"
+	svc.SetCheckerURL(url)
+
+	// Even with no metrics checker wired in (Configured == false), the dashboard
+	// link is still surfaced so the Mini App can offer it.
+	h, err := svc.AdminProxyHealth(context.Background(), 1000)
+	if err != nil {
+		t.Fatalf("AdminProxyHealth: %v", err)
+	}
+	if h.Configured {
+		t.Fatalf("expected unconfigured snapshot: %+v", h)
+	}
+	if h.DashboardURL != url {
+		t.Fatalf("DashboardURL = %q, want %q", h.DashboardURL, url)
 	}
 }
 
