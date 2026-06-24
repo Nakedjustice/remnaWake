@@ -290,22 +290,27 @@ browser prompts for the checker credentials, no Telegram login required.
 asks *"Expose the Xray Checker web dashboard at a public URL?"*:
 
 - **Same domain as the Mini App** (when `WEBAPP_URL` is set): it serves the
-  dashboard under a sub-path (default `/checker`). It sets the sidecar's
-  `METRICS_BASE_PATH`, rewrites `XRAY_CHECKER_URL` to include the prefix (so
-  `/metrics` polling keeps working), and — when the bot runs behind the
-  Remnawave Caddy — adds the route to the Caddy site for you:
+  dashboard under a sub-path (default `/checker`, so the dashboard is at
+  `…/checker/`). It sets the sidecar's `METRICS_BASE_PATH`, rewrites
+  `XRAY_CHECKER_URL` to include the prefix (so `/metrics` polling keeps working),
+  and — when the bot runs behind the Remnawave Caddy — adds the route to the
+  Caddy site for you (injecting it into an existing bot site if one is already
+  there):
 
   ```caddy
   https://bot.example.com {
-      handle /checker* {
+      redir /checker /checker/
+      handle /checker/* {
           reverse_proxy remnaWake-xray-checker:2112
       }
       reverse_proxy remnaWake-bot:8080
   }
   ```
 
-  Behind a host-level nginx/Caddy it publishes `127.0.0.1:<port>:2112` and
-  prints the matching `location /checker/` snippet.
+  The base path is preserved upstream (so it matches `METRICS_BASE_PATH`), and
+  the bare `/checker` redirects to `/checker/` since that's where the sidecar
+  serves the dashboard. Behind a host-level nginx/Caddy it publishes
+  `127.0.0.1:<port>:2112` and prints the matching `location` + redirect snippet.
 - **Your own domain** (no Mini App): you enter the full public URL and wire your
   own reverse proxy to the sidecar; the dashboard is served at that host's root.
 

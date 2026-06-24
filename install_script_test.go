@@ -60,7 +60,7 @@ func TestInstallSmokeScriptCoversSelectedPortAndUpdate(t *testing.T) {
 		"pull_policy: always",
 		`DOCKER_API_VERSION: "1.40"`,
 		"! grep -q 'containrrr/watchtower'",
-		"^XRAY_CHECKER_PUBLIC_URL=https://bot.example.com/checker$",
+		"^XRAY_CHECKER_PUBLIC_URL=https://bot.example.com/checker/$",
 		`METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"`,
 		"127.0.0.1:2112:2112",
 	} {

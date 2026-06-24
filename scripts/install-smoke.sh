@@ -111,7 +111,7 @@ grep -q 'pull_policy: always' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'DOCKER_API_VERSION: "1.40"' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q '^XRAY_CHECKER_URL=http://xray-checker:2112/checker$' "$REMNAWAKE_DIR/.env"
 grep -q '^XRAY_CHECKER_SUB_URL=https://panel.example.com/sub$' "$REMNAWAKE_DIR/.env"
-grep -q '^XRAY_CHECKER_PUBLIC_URL=https://bot.example.com/checker$' "$REMNAWAKE_DIR/.env"
+grep -q '^XRAY_CHECKER_PUBLIC_URL=https://bot.example.com/checker/$' "$REMNAWAKE_DIR/.env"
 grep -q '^XRAY_CHECKER_BASE_PATH=/checker$' "$REMNAWAKE_DIR/.env"
 grep -q '^  xray-checker:$' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'image: kutovoys/xray-checker:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
@@ -171,5 +171,51 @@ grep -q '^TELEGRAM_BOT_TOKEN=123456789:' "$REMNAWAKE_DIR/.env"
 grep -q '127.0.0.1:9090:8080' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'image: containrrr/watchtower:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'image: kutovoys/xray-checker:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
+
+# Alongside-Remnawave (containerised Caddy) with a PRE-EXISTING bot site: the
+# installer must inject the dashboard route into that site, not just warn. This
+# is the scenario that previously left https://host/checker returning 404.
+export REMNAWAKE_DIR="$TMP/alongapp"
+export REMNAWAVE_CADDYFILE="$TMP/Caddyfile"
+cat >"$REMNAWAVE_CADDYFILE" <<'CADDY'
+https://bot.example.com {
+    reverse_proxy remnaWake-bot:8080
+}
+CADDY
+
+bash "$ROOT/install.sh" configure <<'EOF'
+main
+https://panel.example.com
+remnawave-token
+123456789:AAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+123456
+Europe/Moscow
+09:00
+y
+https://bot.example.com
+n
+n
+n
+n
+y
+n
+n
+y
+https://panel.example.com/sub
+2m
+y
+/checker
+n
+EOF
+
+grep -q '^XRAY_CHECKER_PUBLIC_URL=https://bot.example.com/checker/$' "$REMNAWAKE_DIR/.env"
+grep -q '^XRAY_CHECKER_URL=http://xray-checker:2112/checker$' "$REMNAWAKE_DIR/.env"
+grep -q 'METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"' "$REMNAWAKE_DIR/docker-compose.override.yml"
+# The route was injected into the existing bot site (redirect + trailing-slash handle).
+grep -q 'redir /checker /checker/' "$REMNAWAVE_CADDYFILE"
+grep -q 'handle /checker/\* {' "$REMNAWAVE_CADDYFILE"
+grep -q 'reverse_proxy remnaWake-xray-checker:2112' "$REMNAWAVE_CADDYFILE"
+grep -q 'reverse_proxy remnaWake-bot:8080' "$REMNAWAVE_CADDYFILE"
+unset REMNAWAVE_CADDYFILE
 
 echo "install smoke passed"

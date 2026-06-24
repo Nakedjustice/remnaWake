@@ -290,22 +290,26 @@ basic-auth, что и `/metrics` (`METRICS_PROTECTED=true`): браузер за
 спрашивает *«Expose the Xray Checker web dashboard at a public URL?»*:
 
 - **На том же домене, что и Mini App** (если задан `WEBAPP_URL`): панель отдаётся
-  по под-пути (по умолчанию `/checker`). Установщик задаёт `METRICS_BASE_PATH`
-  sidecar'а, дописывает префикс в `XRAY_CHECKER_URL` (чтобы опрос `/metrics`
-  продолжал работать) и — если бот за Caddy от Remnawave — сам добавляет маршрут в
-  сайт Caddy:
+  по под-пути (по умолчанию `/checker`, то есть панель доступна на `…/checker/`).
+  Установщик задаёт `METRICS_BASE_PATH` sidecar'а, дописывает префикс в
+  `XRAY_CHECKER_URL` (чтобы опрос `/metrics` продолжал работать) и — если бот за
+  Caddy от Remnawave — сам добавляет маршрут в сайт Caddy (встраивая его в уже
+  существующий сайт бота, если он есть):
 
   ```caddy
   https://bot.example.com {
-      handle /checker* {
+      redir /checker /checker/
+      handle /checker/* {
           reverse_proxy remnaWake-xray-checker:2112
       }
       reverse_proxy remnaWake-bot:8080
   }
   ```
 
-  За хостовым nginx/Caddy установщик публикует `127.0.0.1:<порт>:2112` и печатает
-  готовый блок `location /checker/`.
+  Префикс сохраняется на upstream (совпадает с `METRICS_BASE_PATH`), а голый
+  `/checker` редиректится на `/checker/`, потому что именно там sidecar отдаёт
+  панель. За хостовым nginx/Caddy установщик публикует `127.0.0.1:<порт>:2112` и
+  печатает готовый блок `location` с редиректом.
 - **Свой домен** (без Mini App): вы вводите полный публичный URL и сами
   настраиваете реверс-прокси на sidecar; панель отдаётся в корне этого хоста.
 
