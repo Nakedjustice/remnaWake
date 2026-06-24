@@ -131,6 +131,12 @@ func main() {
 				"interval", cfg.XrayChecker.PollInterval.String())
 			go mon.Run(rootCtx)
 		}
+		// The dashboard link is independent of metrics polling: admins can open the
+		// checker's own web UI even when the bot does not poll its /metrics.
+		if cfg.XrayChecker.PublicURL != "" {
+			pay.SetCheckerURL(cfg.XrayChecker.PublicURL)
+			logger.Info("xray checker dashboard link enabled", "url", cfg.XrayChecker.PublicURL)
+		}
 	}
 
 	if cfg.WebApp.Enabled() {

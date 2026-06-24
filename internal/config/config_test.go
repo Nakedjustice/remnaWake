@@ -434,6 +434,47 @@ func TestLoadXrayCheckerRejectsBadInterval(t *testing.T) {
 	}
 }
 
+func TestLoadXrayCheckerPublicURL(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("XRAY_CHECKER_PUBLIC_URL", "https://bot.example.com/checker/")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.XrayChecker.PublicURL != "https://bot.example.com/checker" {
+		t.Fatalf("PublicURL = %q, want trimmed without trailing slash", cfg.XrayChecker.PublicURL)
+	}
+}
+
+func TestLoadXrayCheckerPublicURLEmptyByDefault(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.XrayChecker.PublicURL != "" {
+		t.Fatalf("PublicURL = %q, want empty by default", cfg.XrayChecker.PublicURL)
+	}
+}
+
+func TestLoadXrayCheckerRejectsBadPublicURL(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("XRAY_CHECKER_PUBLIC_URL", "bot.example.com/checker")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "XRAY_CHECKER_PUBLIC_URL") {
+		t.Fatalf("error = %v, want mention of XRAY_CHECKER_PUBLIC_URL", err)
+	}
+}
+
 func TestLoadStarsRequiresPositiveRate(t *testing.T) {
 	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
 	t.Setenv("REMNAWAVE_API_TOKEN", "tok")

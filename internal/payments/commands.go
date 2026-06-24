@@ -259,6 +259,12 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 			{Text: i18n.T("🩺 Состояние прокси"), CallbackData: "adm:checker"},
 		})
 	}
+	// The full web dashboard link is independent of metrics polling.
+	if url := s.getCheckerURL(); url != "" {
+		rows = append(rows, []tg.InlineKeyboardButton{
+			{Text: i18n.T("🌐 Веб-панель прокси"), URL: url},
+		})
+	}
 	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, i18n.T("Меню администратора"),
 		&tg.InlineKeyboardMarkup{InlineKeyboard: rows})
 }

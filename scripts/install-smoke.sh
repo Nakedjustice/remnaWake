@@ -93,6 +93,9 @@ y
 y
 https://panel.example.com/sub
 2m
+y
+/checker
+2112
 n
 EOF
 
@@ -106,10 +109,14 @@ grep -q '^  watchtower:$' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'image: containrrr/watchtower:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'pull_policy: always' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'DOCKER_API_VERSION: "1.40"' "$REMNAWAKE_DIR/docker-compose.override.yml"
-grep -q '^XRAY_CHECKER_URL=http://xray-checker:2112$' "$REMNAWAKE_DIR/.env"
+grep -q '^XRAY_CHECKER_URL=http://xray-checker:2112/checker$' "$REMNAWAKE_DIR/.env"
 grep -q '^XRAY_CHECKER_SUB_URL=https://panel.example.com/sub$' "$REMNAWAKE_DIR/.env"
+grep -q '^XRAY_CHECKER_PUBLIC_URL=https://bot.example.com/checker$' "$REMNAWAKE_DIR/.env"
+grep -q '^XRAY_CHECKER_BASE_PATH=/checker$' "$REMNAWAKE_DIR/.env"
 grep -q '^  xray-checker:$' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'image: kutovoys/xray-checker:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
+grep -q 'METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"' "$REMNAWAKE_DIR/docker-compose.override.yml"
+grep -q '127.0.0.1:2112:2112' "$REMNAWAKE_DIR/docker-compose.override.yml"
 
 bash "$ROOT/install.sh" doctor >"$TMP/doctor-stable.log" 2>&1
 ! grep -q 'containrrr/watchtower' "$TMP/doctor-stable.log"
