@@ -151,6 +151,7 @@ func (a AutoUpdateConfig) WatchtowerConfigured() bool {
 // when /metrics is basic-auth protected, the credentials.
 type XrayCheckerConfig struct {
 	URL          string        // base URL of the xray-checker (e.g. http://xray-checker:2112)
+	PublicURL    string        // public URL of the checker's own web dashboard, opened by admins (empty = no link)
 	Username     string        // basic-auth user for /metrics (empty = no auth)
 	Password     string        // basic-auth password for /metrics
 	PollInterval time.Duration // how often to poll for status changes
@@ -240,9 +241,10 @@ func Load() (*Config, error) {
 			WatchtowerToken: strings.TrimSpace(os.Getenv("WATCHTOWER_TOKEN")),
 		},
 		XrayChecker: XrayCheckerConfig{
-			URL:      strings.TrimRight(strings.TrimSpace(os.Getenv("XRAY_CHECKER_URL")), "/"),
-			Username: strings.TrimSpace(os.Getenv("XRAY_CHECKER_USERNAME")),
-			Password: os.Getenv("XRAY_CHECKER_PASSWORD"),
+			URL:       strings.TrimRight(strings.TrimSpace(os.Getenv("XRAY_CHECKER_URL")), "/"),
+			PublicURL: strings.TrimRight(strings.TrimSpace(os.Getenv("XRAY_CHECKER_PUBLIC_URL")), "/"),
+			Username:  strings.TrimSpace(os.Getenv("XRAY_CHECKER_USERNAME")),
+			Password:  os.Getenv("XRAY_CHECKER_PASSWORD"),
 		},
 		Lang:       lang,
 		LogLevel:   parseLogLevel(getenv("LOG_LEVEL", "info")),
@@ -354,6 +356,12 @@ func (c *Config) validate() error {
 		}
 		if c.XrayChecker.PollInterval <= 0 {
 			return fmt.Errorf("XRAY_CHECKER_POLL_INTERVAL must be positive: %v", c.XrayChecker.PollInterval)
+		}
+	}
+	// The dashboard link is independent of metrics polling, so validate it on its own.
+	if c.XrayChecker.PublicURL != "" {
+		if u, err := url.Parse(c.XrayChecker.PublicURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("invalid XRAY_CHECKER_PUBLIC_URL (expected an http(s) URL): %q", c.XrayChecker.PublicURL)
 		}
 	}
 	return nil
