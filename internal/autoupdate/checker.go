@@ -47,6 +47,9 @@ type Checker struct {
 	mu             sync.RWMutex
 	interval       time.Duration
 	intervalChange chan time.Duration
+
+	checkMu             sync.Mutex
+	baselineInitialized bool
 }
 
 type CheckStatus string
@@ -158,10 +161,30 @@ func (c *Checker) LoadPersistedInterval(ctx context.Context) {
 // CheckNow performs one digest check immediately. When an update is found, it
 // sends the same notification as scheduled checks.
 func (c *Checker) CheckNow(ctx context.Context) (CheckResult, error) {
+	c.checkMu.Lock()
+	defer c.checkMu.Unlock()
+
 	remote, err := c.fetcher.Digest(ctx, c.image)
 	if err != nil {
 		c.logger.Warn("autoupdate: digest check failed", "err", err.Error())
 		return CheckResult{}, err
+	}
+
+	if !c.baselineInitialized {
+		// The persisted baseline belongs to the previous container process.
+		// A successful restart means pull_policy/Watchtower has already selected
+		// the image this process is running, so establish a fresh process
+		// baseline instead of reporting the previous container's digest forever.
+		if err := c.store.UpsertSetting(ctx, settingBaselineDigest, remote); err != nil {
+			c.logger.Error("autoupdate: store baseline failed", "err", err.Error())
+			return CheckResult{}, err
+		}
+		if err := c.store.UpsertSetting(ctx, settingNotifiedDigest, remote); err != nil {
+			c.logger.Error("autoupdate: reset notified digest failed", "err", err.Error())
+			return CheckResult{}, err
+		}
+		c.baselineInitialized = true
+		return CheckResult{Status: CheckStatusBaselineInitialized, Baseline: remote, Remote: remote, FirstRun: true}, nil
 	}
 
 	baseline, found, err := c.store.GetSetting(ctx, settingBaselineDigest)
@@ -170,7 +193,7 @@ func (c *Checker) CheckNow(ctx context.Context) (CheckResult, error) {
 		return CheckResult{}, err
 	}
 	if !found {
-		// First run this process: the running container is already this image.
+		// Recover if the setting was removed while this process was running.
 		if err := c.store.UpsertSetting(ctx, settingBaselineDigest, remote); err != nil {
 			c.logger.Error("autoupdate: store baseline failed", "err", err.Error())
 			return CheckResult{}, err
