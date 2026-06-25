@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/autoupdate"
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/store"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
@@ -172,6 +173,12 @@ type Finder interface {
 	ListAll(ctx context.Context) ([]Subscriber, error)
 }
 
+type UpdateChecker interface {
+	CheckNow(ctx context.Context) (autoupdate.CheckResult, error)
+	Interval() time.Duration
+	SetInterval(ctx context.Context, interval time.Duration) error
+}
+
 type adminInputStep int
 
 const (
@@ -190,6 +197,7 @@ const (
 	adminInputReferralInviter
 	adminInputReferralInvitee
 	adminInputSupportReply
+	adminInputUpdateInterval
 )
 
 type adminInputState struct {
@@ -355,6 +363,7 @@ type Service struct {
 	// callback offset before Watchtower replaces this process. Protected by mu.
 	updateInProgress bool
 	updateDelay      time.Duration
+	updateChecker    UpdateChecker
 
 	// trialConfigValue configures future one-time trial profiles. Protected by mu.
 	trialConfigValue TrialConfig

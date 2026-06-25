@@ -104,7 +104,16 @@ type WebAdminPanel struct {
 	ReferralInviteeDays  int    `json:"referral_invitee_days"`
 	// ProxyMonitoring is true when an xray-checker sidecar is wired in, so the
 	// Mini App can show the proxy-health entry.
-	ProxyMonitoring bool `json:"proxy_monitoring"`
+	ProxyMonitoring      bool   `json:"proxy_monitoring"`
+	AutoUpdateConfigured bool   `json:"autoupdate_configured"`
+	AutoUpdateInterval   string `json:"autoupdate_interval,omitempty"`
+}
+
+type WebUpdateCheckResult struct {
+	Status   string `json:"status"`
+	Message  string `json:"message"`
+	Baseline string `json:"baseline,omitempty"`
+	Remote   string `json:"remote,omitempty"`
 }
 
 // WebSquad is one panel internal squad offered in the mini app default-squad
@@ -167,6 +176,10 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	out.TrialSquadUUID = trial.SquadUUID
 	out.ReferralEnabled, out.ReferralInviterDays, out.ReferralInviteeDays = s.referralConfig()
 	out.ProxyMonitoring = s.xrayCheckerConfigured()
+	if checker := s.updateCheckerLocked(); checker != nil {
+		out.AutoUpdateConfigured = true
+		out.AutoUpdateInterval = checker.Interval().String()
+	}
 
 	buyers, err := s.store.ListGiftBuyers(ctx)
 	if err != nil {
@@ -271,6 +284,41 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	}
 
 	return out, nil
+}
+
+func (s *Service) AdminCheckUpdates(ctx context.Context, telegramID int64) (*WebUpdateCheckResult, error) {
+	if err := s.adminGuard(telegramID); err != nil {
+		return nil, err
+	}
+	checker := s.updateCheckerLocked()
+	if checker == nil {
+		return nil, ErrBadInput
+	}
+	result, err := checker.CheckNow(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &WebUpdateCheckResult{
+		Status:   string(result.Status),
+		Message:  formatUpdateCheckResult(result),
+		Baseline: shortDigest(result.Baseline),
+		Remote:   shortDigest(result.Remote),
+	}, nil
+}
+
+func (s *Service) AdminSetUpdateInterval(ctx context.Context, telegramID int64, raw string) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	interval, err := parseUpdateInterval(raw)
+	if err != nil {
+		return ErrBadInput
+	}
+	checker := s.updateCheckerLocked()
+	if checker == nil {
+		return ErrBadInput
+	}
+	return checker.SetInterval(ctx, interval)
 }
 
 // AdminSetTariff adds or updates a tariff from the mini app admin panel.

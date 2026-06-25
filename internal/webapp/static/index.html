@@ -548,6 +548,14 @@ const EN = {
   '💾 Сохранить реквизиты': '💾 Save details',
   'Текст реквизитов не может быть пустым.': 'Payment details text cannot be empty.',
   '📸 Чек об оплате': '📸 Payment receipt',
+  '🔄 Обновления бота': '🔄 Bot updates',
+  'Автопроверка обновлений не настроена. Включите AUTOUPDATE_ENABLED=true.': 'Auto-update checking is not configured. Set AUTOUPDATE_ENABLED=true.',
+  'Текущий интервал: {interval}': 'Current interval: {interval}',
+  'Введите интервал в минутах, часах или днях: например 15m, 6h или 1d.': 'Enter an interval in minutes, hours, or days: for example 15m, 6h, or 1d.',
+  '🔎 Проверить обновления': '🔎 Check for updates',
+  '💾 Сохранить интервал': '💾 Save interval',
+  'Проверяю обновления…': 'Checking for updates…',
+  'Интервал проверки обновлений сохранён.': 'Update check interval saved.',
   'Включено: перед отправкой заявки пользователь обязан прикрепить чек (фото, скриншот или PDF-файл), админы получают заявку вместе с чеком в Telegram.': 'Enabled: before sending a request the user must attach a receipt (photo, screenshot or PDF), and admins receive the request together with the receipt in Telegram.',
   'Выключено: заявки на оплату отправляются без чека.': 'Disabled: payment requests are sent without a receipt.',
   '🚫 Выключить требование чека': '🚫 Disable receipt requirement',
@@ -2173,6 +2181,42 @@ function renderAdminTrafficReset(data) {
   return card;
 }
 
+function renderAdminUpdates(data) {
+  const card = el('div', 'admin-card');
+  card.appendChild(el('h2', null, t('🔄 Обновления бота')));
+  if (!data.autoupdate_configured) {
+    card.appendChild(el('div', 'hint', t('Автопроверка обновлений не настроена. Включите AUTOUPDATE_ENABLED=true.')));
+    return card;
+  }
+  card.appendChild(el('div', 'hint', t('Текущий интервал: {interval}', { interval: data.autoupdate_interval || '6h' })));
+  const input = Object.assign(el('input'), {
+    type: 'text',
+    value: data.autoupdate_interval || '6h',
+    placeholder: '15m, 6h, 1d',
+  });
+  card.appendChild(input);
+  const save = el('button', null, t('💾 Сохранить интервал'));
+  save.onclick = () => adminAction('/api/admin/updates/interval', { interval: input.value });
+  card.appendChild(save);
+  const check = el('button', 'secondary', t('🔎 Проверить обновления'));
+  check.onclick = async () => {
+    check.disabled = true;
+    check.textContent = t('Проверяю обновления…');
+    try {
+      const res = await api('/api/admin/updates/check', { method: 'POST', body: JSON.stringify({}) });
+      adminData = await api('/api/admin');
+      currentRender();
+      tg.showAlert(res.message || t('Проверяю обновления…'));
+    } catch (e) {
+      check.disabled = false;
+      check.textContent = t('🔎 Проверить обновления');
+      tg.showAlert(e.message);
+    }
+  };
+  card.appendChild(check);
+  return card;
+}
+
 function renderAdminTrial(data) {
   const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('🎁 Пробный период')));
@@ -2498,6 +2542,7 @@ function renderAdminHome() {
     { icon: '↗', label: t('Статистика'), action: showAdminStats },
     { icon: '≡', label: t('Настройки'), action: showAdminSettings },
     { icon: '◎', label: t('Управление пользователями'), action: showUserAdmin },
+    { icon: '↻', label: t('🔄 Обновления бота'), action: showAdminSettings },
     { icon: '◇', label: t('Активные подарочные коды'), action: showAdminGiftCodes },
     { icon: '◉', label: t('Рассылка'), action: showAdminBroadcast },
     { icon: '□', label: t('Чат поддержки'), action: showAdminSupport },
@@ -2863,6 +2908,7 @@ function showAdminSettings() {
   if (provider) appEl.appendChild(provider);
   appEl.appendChild(renderAdminSquad(data));
   appEl.appendChild(renderAdminTrafficReset(data));
+  appEl.appendChild(renderAdminUpdates(data));
   appEl.appendChild(renderAdminTrial(data));
   appEl.appendChild(renderAdminReferral(data));
   statusEl.hidden = true;

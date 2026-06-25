@@ -117,8 +117,10 @@ func main() {
 			checker := autoupdate.NewChecker(
 				autoupdate.NewDigestFetcher(), db, pay,
 				cfg.AutoUpdate.Image, cfg.AutoUpdate.CheckInterval, logger)
+			checker.LoadPersistedInterval(rootCtx)
+			pay.SetUpdateChecker(checker)
 			logger.Info("autoupdate enabled", "image", cfg.AutoUpdate.Image,
-				"interval", cfg.AutoUpdate.CheckInterval.String(),
+				"interval", checker.Interval().String(),
 				"watchtower", cfg.AutoUpdate.WatchtowerConfigured())
 			go checker.Run(rootCtx)
 		}
@@ -342,6 +344,8 @@ func adminBotCommands() []tgbot.BotCommand {
 	return append(userBotCommands(),
 		tgbot.BotCommand{Command: "admin", Description: i18n.T("Панель администратора")},
 		tgbot.BotCommand{Command: "stats", Description: i18n.T("Статистика")},
+		tgbot.BotCommand{Command: "checkupdates", Description: i18n.T("Проверить обновления")},
+		tgbot.BotCommand{Command: "setupdateinterval", Description: i18n.T("Интервал проверки обновлений")},
 	)
 }
 
