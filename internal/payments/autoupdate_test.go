@@ -164,3 +164,21 @@ func TestUpdateDismissClearsButtons(t *testing.T) {
 		t.Fatalf("expected buttons cleared: %+v", bot.edits)
 	}
 }
+
+func TestParseUpdateIntervalSupportsMinutesHoursDays(t *testing.T) {
+	tests := map[string]time.Duration{
+		"15m": 15 * time.Minute,
+		"6h":  6 * time.Hour,
+		"1d":  24 * time.Hour,
+		"2d":  48 * time.Hour,
+	}
+	for raw, want := range tests {
+		got, err := parseUpdateInterval(raw)
+		if err != nil {
+			t.Fatalf("parseUpdateInterval(%q): %v", raw, err)
+		}
+		if got != want {
+			t.Fatalf("parseUpdateInterval(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}

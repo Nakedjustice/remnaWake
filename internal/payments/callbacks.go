@@ -591,6 +591,12 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.startReferralBonusInput(ctx, chatID, adminInputReferralInviter)
 	case cb.Data == "adm:referral:invitee":
 		s.startReferralBonusInput(ctx, chatID, adminInputReferralInvitee)
+	case cb.Data == "adm:upd":
+		s.sendUpdateSettings(ctx, chatID)
+	case cb.Data == "adm:upd:check":
+		s.manualUpdateCheck(ctx, chatID)
+	case cb.Data == "adm:upd:interval":
+		s.startUpdateIntervalInput(ctx, chatID)
 	case cb.Data == "adm:checker":
 		s.sendProxyHealth(ctx, chatID)
 	case cb.Data == "adm:bcast":
