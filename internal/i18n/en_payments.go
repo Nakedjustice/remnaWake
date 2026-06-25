@@ -13,9 +13,11 @@ var enPayments = map[string]string{
 	"🆕 Доступно обновление бота.\n\nТекущая версия: %s\nНовая версия: %s": "🆕 A bot update is available.\n\nCurrent version: %s\nNew version: %s",
 	"🔄 Установить сейчас": "🔄 Install now",
 	"Позже":               "Later",
-	"Автоустановка не настроена. Обновите вручную:\ndocker compose pull && docker compose up -d": "Auto-install is not configured. Update manually:\ndocker compose pull && docker compose up -d",
-	"Обновление запущено, бот скоро перезапустится.":                                             "Update started, the bot will restart shortly.",
-	"Не удалось запустить обновление.":                                                           "Failed to start the update.",
+	"Автоустановка не настроена. Обновите вручную:\ndocker compose pull && docker compose up -d":                                 "Auto-install is not configured. Update manually:\ndocker compose pull && docker compose up -d",
+	"Обновление запущено, бот скоро перезапустится.":                                                                             "Update started, the bot will restart shortly.",
+	"Обновление уже запущено.":                                                                                                   "An update is already in progress.",
+	"Не удалось запустить обновление.":                                                                                           "Failed to start the update.",
+	"Не удалось запустить обновление. Попробуйте снова позже или обновите вручную:\ndocker compose pull && docker compose up -d": "Failed to start the update. Try again later or update manually:\ndocker compose pull && docker compose up -d",
 
 	// Free trial
 	"🎁 Попробовать бесплатно": "🎁 Try for free",
