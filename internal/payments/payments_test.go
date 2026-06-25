@@ -59,13 +59,18 @@ type fakeBot struct {
 	sendErrs map[int64]error
 	// invoiceErr makes SendInvoice / CreateInvoiceLink fail when set.
 	invoiceErr error
+	plainSent  chan sentMsg
 }
 
 func (f *fakeBot) SendPlain(_ context.Context, chatID int64, text string) error {
 	if err := f.sendErrs[chatID]; err != nil {
 		return err
 	}
-	f.sent = append(f.sent, sentMsg{ChatID: chatID, Text: text})
+	msg := sentMsg{ChatID: chatID, Text: text}
+	f.sent = append(f.sent, msg)
+	if f.plainSent != nil {
+		f.plainSent <- msg
+	}
 	return nil
 }
 func (f *fakeBot) SendPlainWithKeyboard(_ context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error) {
