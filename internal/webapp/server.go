@@ -47,6 +47,8 @@ type Admin interface {
 	AdminStatsData(ctx context.Context, telegramID int64) (*payments.WebAdminStats, error)
 	AdminProxyHealth(ctx context.Context, telegramID int64) (*payments.WebProxyHealth, error)
 	AdminPaymentReport(ctx context.Context, telegramID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error)
+	AdminCheckUpdates(ctx context.Context, telegramID int64) (*payments.WebUpdateCheckResult, error)
+	AdminSetUpdateInterval(ctx context.Context, telegramID int64, interval string) error
 	AdminSetTariff(ctx context.Context, telegramID int64, months, price int) error
 	AdminDeleteTariff(ctx context.Context, telegramID int64, months int) error
 	AdminSetRequisites(ctx context.Context, telegramID int64, text string) error
@@ -120,6 +122,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
 	mux.HandleFunc("GET /api/admin/proxy-health", s.handleAdminProxyHealth)
 	mux.HandleFunc("GET /api/admin/payments", s.handleAdminPayments)
+	mux.HandleFunc("POST /api/admin/updates/check", s.handleAdminCheckUpdates)
+	mux.HandleFunc("POST /api/admin/updates/interval", s.handleAdminSetUpdateInterval)
 	mux.HandleFunc("GET /api/admin/support", s.handleAdminSupport)
 	mux.HandleFunc("POST /api/admin/support/thread", s.handleAdminSupportThread)
 	mux.HandleFunc("POST /api/admin/support/send", s.handleAdminSupportSend)
@@ -625,6 +629,38 @@ func validPaymentQuery(days int, status, provider, search string) bool {
 		return false
 	}
 	return provider == "all" || provider == payments.ProviderP2P || provider == payments.ProviderPlatega || provider == payments.ProviderTelegramStars
+}
+
+func (s *Server) handleAdminCheckUpdates(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	result, err := s.admin.AdminCheckUpdates(r.Context(), userID)
+	if err != nil {
+		s.writeAdminError(w, "check updates", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAdminSetUpdateInterval(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Interval string `json:"interval"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetUpdateInterval(r.Context(), userID, req.Interval); err != nil {
+		s.writeAdminError(w, "set update interval", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleAdminSetTariff(w http.ResponseWriter, r *http.Request) {

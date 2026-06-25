@@ -44,6 +44,15 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 	case "/stats":
 		s.sendAdminStats(ctx, chatID)
 		return true
+	case "/checkupdates":
+		s.manualUpdateCheck(ctx, chatID)
+		return true
+	case "/setupdateinterval":
+		if len(fields) == 2 {
+			return s.consumeUpdateInterval(ctx, chatID, fields[1])
+		}
+		s.startUpdateIntervalInput(ctx, chatID)
+		return true
 	default:
 		return false
 	}
@@ -110,6 +119,8 @@ func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 		return s.consumeReferralBonus(ctx, chatID, text, false)
 	case adminInputSupportReply:
 		return s.consumeSupportReply(ctx, chatID, text)
+	case adminInputUpdateInterval:
+		return s.consumeUpdateInterval(ctx, chatID, text)
 	}
 	return false
 }
@@ -244,6 +255,7 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 		{{Text: i18n.T("🔄 Сброс трафика (новые)"), CallbackData: "adm:treset"}},
 		{{Text: i18n.T("🎁 Пробный период"), CallbackData: "adm:trial"}},
 		{{Text: i18n.T("🎉 Реферальная программа"), CallbackData: "adm:referral"}},
+		{{Text: i18n.T("🔄 Обновления бота"), CallbackData: "adm:upd"}},
 		{{Text: i18n.T("📢 Рассылка всем"), CallbackData: "adm:bcast"}},
 	}
 	// The payment-provider picker is only meaningful when at least one automatic

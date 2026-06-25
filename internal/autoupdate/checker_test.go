@@ -3,6 +3,7 @@ package autoupdate
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 type fakeFetcher struct {
@@ -41,7 +42,7 @@ func TestCheckerBaselinesThenNotifiesOnce(t *testing.T) {
 	c := NewChecker(fetch, store, notifier, "img:main", 1, nil)
 
 	// First check: records baseline, no notification.
-	c.checkOnce(ctx)
+	_, _ = c.CheckNow(ctx)
 	if len(notifier.calls) != 0 {
 		t.Fatalf("first check must not notify: %+v", notifier.calls)
 	}
@@ -50,15 +51,15 @@ func TestCheckerBaselinesThenNotifiesOnce(t *testing.T) {
 	}
 
 	// Unchanged: still no notification.
-	c.checkOnce(ctx)
+	_, _ = c.CheckNow(ctx)
 	if len(notifier.calls) != 0 {
 		t.Fatalf("unchanged digest must not notify: %+v", notifier.calls)
 	}
 
 	// New digest: notify exactly once.
 	fetch.digest = "sha256:bbb"
-	c.checkOnce(ctx)
-	c.checkOnce(ctx) // dedup: same new digest must not re-notify
+	_, _ = c.CheckNow(ctx)
+	_, _ = c.CheckNow(ctx) // dedup: same new digest must not re-notify
 	if len(notifier.calls) != 1 {
 		t.Fatalf("expected exactly one notification, got %+v", notifier.calls)
 	}
@@ -68,7 +69,7 @@ func TestCheckerBaselinesThenNotifiesOnce(t *testing.T) {
 
 	// Yet another digest: notify again.
 	fetch.digest = "sha256:ccc"
-	c.checkOnce(ctx)
+	_, _ = c.CheckNow(ctx)
 	if len(notifier.calls) != 2 {
 		t.Fatalf("expected a second notification for a new digest, got %+v", notifier.calls)
 	}
@@ -81,11 +82,40 @@ func TestCheckerSkipsOnFetchError(t *testing.T) {
 	notifier := &recordingNotifier{}
 	c := NewChecker(fetch, store, notifier, "img:main", 1, nil)
 
-	c.checkOnce(ctx)
+	_, _ = c.CheckNow(ctx)
 	if len(notifier.calls) != 0 {
 		t.Fatal("fetch error must not notify")
 	}
 	if _, ok := store[settingBaselineDigest]; ok {
 		t.Fatal("fetch error must not set a baseline")
+	}
+}
+
+func TestCheckerIntervalPersistsAndLoads(t *testing.T) {
+	ctx := context.Background()
+	store := memSettings{}
+	c := NewChecker(&fakeFetcher{digest: "sha256:aaa"}, store, &recordingNotifier{}, "img:main", time.Hour, nil)
+
+	if err := c.SetInterval(ctx, 30*time.Minute); err != nil {
+		t.Fatalf("SetInterval: %v", err)
+	}
+	if c.Interval() != 30*time.Minute {
+		t.Fatalf("Interval = %v, want 30m", c.Interval())
+	}
+	if store[settingCheckInterval] != "30m0s" {
+		t.Fatalf("persisted interval = %q, want 30m0s", store[settingCheckInterval])
+	}
+
+	loaded := NewChecker(&fakeFetcher{digest: "sha256:aaa"}, store, &recordingNotifier{}, "img:main", time.Hour, nil)
+	loaded.LoadPersistedInterval(ctx)
+	if loaded.Interval() != 30*time.Minute {
+		t.Fatalf("loaded Interval = %v, want 30m", loaded.Interval())
+	}
+}
+
+func TestCheckerSetIntervalRejectsNonPositive(t *testing.T) {
+	c := NewChecker(&fakeFetcher{digest: "sha256:aaa"}, memSettings{}, &recordingNotifier{}, "img:main", time.Hour, nil)
+	if err := c.SetInterval(context.Background(), 0); err == nil {
+		t.Fatal("SetInterval(0) must fail")
 	}
 }

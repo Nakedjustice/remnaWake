@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Nakedjustice/remnaWake/internal/autoupdate"
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
@@ -16,6 +17,12 @@ import (
 // startup, before callback polling begins.
 func (s *Service) SetUpdateTrigger(fn func(context.Context) error) {
 	s.updateTrigger = fn
+}
+
+func (s *Service) SetUpdateChecker(checker UpdateChecker) {
+	s.mu.Lock()
+	s.updateChecker = checker
+	s.mu.Unlock()
 }
 
 // shortDigest trims an image digest ("sha256:abcd...") to a readable prefix.
@@ -32,6 +39,109 @@ func updateKeyboard() *tg.InlineKeyboardMarkup {
 		{{Text: i18n.T("🔄 Установить сейчас"), CallbackData: "upd:install"}},
 		{{Text: i18n.T("Позже"), CallbackData: "upd:dismiss"}},
 	}}
+}
+
+func parseUpdateInterval(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, fmt.Errorf("empty interval")
+	}
+	if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+		return d, nil
+	}
+	if len(raw) < 2 {
+		return 0, fmt.Errorf("bad interval")
+	}
+	unit := raw[len(raw)-1]
+	n, err := time.ParseDuration(raw[:len(raw)-1] + "h")
+	if err == nil && unit == 'd' && n > 0 {
+		return n * 24, nil
+	}
+	return 0, fmt.Errorf("bad interval")
+}
+
+func formatUpdateCheckResult(r autoupdate.CheckResult) string {
+	switch r.Status {
+	case autoupdate.CheckStatusBaselineInitialized:
+		return fmt.Sprintf(i18n.T("✅ Проверка выполнена. Текущая версия сохранена как базовая: %s"), shortDigest(r.Remote))
+	case autoupdate.CheckStatusUpToDate:
+		return fmt.Sprintf(i18n.T("✅ Обновлений нет. Текущая версия: %s"), shortDigest(r.Remote))
+	case autoupdate.CheckStatusUpdateAvailable:
+		return fmt.Sprintf(i18n.T("🆕 Доступно обновление. Уведомление с кнопками отправлено администраторам.\nТекущая версия: %s\nНовая версия: %s"), shortDigest(r.Baseline), shortDigest(r.Remote))
+	case autoupdate.CheckStatusAlreadyNotified:
+		return fmt.Sprintf(i18n.T("🆕 Обновление уже найдено ранее. Проверьте сообщение с кнопками установки.\nТекущая версия: %s\nНовая версия: %s"), shortDigest(r.Baseline), shortDigest(r.Remote))
+	default:
+		return i18n.T("✅ Проверка обновлений выполнена.")
+	}
+}
+
+func (s *Service) updateCheckerLocked() UpdateChecker {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.updateChecker
+}
+
+func (s *Service) sendUpdateSettings(ctx context.Context, chatID int64) {
+	checker := s.updateCheckerLocked()
+	if checker == nil {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Автопроверка обновлений не настроена. Включите AUTOUPDATE_ENABLED=true."))
+		return
+	}
+	kb := &tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{
+		{{Text: i18n.T("🔎 Проверить сейчас"), CallbackData: "adm:upd:check"}},
+		{{Text: i18n.T("⏱ Изменить интервал"), CallbackData: "adm:upd:interval"}},
+		{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}},
+	}}
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID,
+		fmt.Sprintf(i18n.T("Автопроверка обновлений\n\nТекущий интервал: %s"), checker.Interval().String()), kb)
+}
+
+func (s *Service) startUpdateIntervalInput(ctx context.Context, chatID int64) {
+	s.mu.Lock()
+	state := s.adminInput[chatID]
+	state.step = adminInputUpdateInterval
+	s.adminInput[chatID] = state
+	s.mu.Unlock()
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите интервал проверки обновлений: например 15m, 6h или 1d."))
+}
+
+func (s *Service) consumeUpdateInterval(ctx context.Context, chatID int64, text string) bool {
+	interval, err := parseUpdateInterval(text)
+	if err != nil {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите интервал в минутах, часах или днях. Примеры: 15m, 6h, 1d."))
+		return true
+	}
+	checker := s.updateCheckerLocked()
+	if checker == nil {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Автопроверка обновлений не настроена. Включите AUTOUPDATE_ENABLED=true."))
+		return true
+	}
+	if err := checker.SetInterval(ctx, interval); err != nil {
+		s.logger.Error("autoupdate: set interval failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения интервала проверки обновлений."))
+		return true
+	}
+	s.mu.Lock()
+	delete(s.adminInput, chatID)
+	s.mu.Unlock()
+	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Интервал проверки обновлений сохранён: %s"), interval.String()))
+	return true
+}
+
+func (s *Service) manualUpdateCheck(ctx context.Context, chatID int64) {
+	checker := s.updateCheckerLocked()
+	if checker == nil {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Автопроверка обновлений не настроена. Включите AUTOUPDATE_ENABLED=true."))
+		return
+	}
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Проверяю обновления…"))
+	result, err := checker.CheckNow(ctx)
+	if err != nil {
+		s.logger.Error("autoupdate: manual check failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось проверить обновления. Попробуйте позже."))
+		return
+	}
+	_ = s.bot.SendPlain(ctx, chatID, formatUpdateCheckResult(result))
 }
 
 // NotifyUpdateAvailable DMs every admin that a newer bot image is available,
