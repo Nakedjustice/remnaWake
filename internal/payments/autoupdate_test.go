@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestNotifyUpdateAvailableDMsAdmins(t *testing.T) {
@@ -25,19 +27,37 @@ func TestNotifyUpdateAvailableDMsAdmins(t *testing.T) {
 
 func TestUpdateInstallTriggersWatchtower(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
-	called := 0
-	svc.SetUpdateTrigger(func(ctx context.Context) error { called++; return nil })
+	svc.updateDelay = 10 * time.Millisecond
+	started := make(chan struct{})
+	release := make(chan struct{})
+	svc.SetUpdateTrigger(func(ctx context.Context) error {
+		close(started)
+		<-release
+		return nil
+	})
 
 	if !svc.HandleCallback(context.Background(), cbq(1000, "upd:install")) {
 		t.Fatal("upd:install should be handled")
 	}
-	if called != 1 {
-		t.Fatalf("trigger called %d times, want 1", called)
+	// Telegram is acknowledged and buttons are removed before the asynchronous
+	// Watchtower request starts.
+	if len(bot.answers) != 1 || len(bot.edits) != 1 {
+		t.Fatalf("expected callback answer and button removal first: answers=%v edits=%+v", bot.answers, bot.edits)
 	}
-	// Buttons cleared after a successful trigger.
 	if len(bot.edits) != 1 || bot.edits[0].Keyboard != nil {
 		t.Fatalf("expected buttons cleared: %+v", bot.edits)
 	}
+	select {
+	case <-started:
+		t.Fatal("trigger started before the callback handler returned")
+	default:
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("trigger did not start asynchronously")
+	}
+	close(release)
 }
 
 func TestUpdateInstallRejectsNonAdmin(t *testing.T) {
@@ -78,16 +98,60 @@ func TestUpdateInstallDryRunDoesNotTrigger(t *testing.T) {
 	}
 }
 
+func TestUpdateInstallIgnoresRepeatedTapWhileRunning(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	svc.updateDelay = 10 * time.Millisecond
+	var calls atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	svc.SetUpdateTrigger(func(ctx context.Context) error {
+		if calls.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+		return nil
+	})
+
+	if !svc.HandleCallback(context.Background(), cbq(1000, "upd:install")) {
+		t.Fatal("first upd:install should be handled")
+	}
+	if !svc.HandleCallback(context.Background(), cbq(1000, "upd:install")) {
+		t.Fatal("repeated upd:install should be handled")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("trigger did not start")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("trigger called %d times, want 1", got)
+	}
+	if len(bot.answers) != 2 || bot.answers[1] != "Обновление уже запущено." {
+		t.Fatalf("expected already-running answer: %+v", bot.answers)
+	}
+	close(release)
+}
+
 func TestUpdateInstallReportsTriggerError(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
+	svc.updateDelay = 10 * time.Millisecond
+	bot.plainSent = make(chan sentMsg, 1)
 	svc.SetUpdateTrigger(func(ctx context.Context) error { return errors.New("boom") })
 
 	if !svc.HandleCallback(context.Background(), cbq(1000, "upd:install")) {
 		t.Fatal("upd:install should be handled")
 	}
-	// No keyboard edit on failure; an error toast was answered instead.
-	if len(bot.edits) != 0 {
-		t.Fatalf("buttons should remain on failure: %+v", bot.edits)
+	var failure sentMsg
+	select {
+	case failure = <-bot.plainSent:
+	case <-time.After(time.Second):
+		t.Fatal("admin did not receive asynchronous trigger failure")
+	}
+	if len(bot.edits) != 1 || bot.edits[0].Keyboard != nil {
+		t.Fatalf("buttons should be cleared before triggering: %+v", bot.edits)
+	}
+	if failure.ChatID != 1000 || !strings.Contains(failure.Text, "docker compose pull") {
+		t.Fatalf("unexpected trigger failure message: %+v", failure)
 	}
 }
 

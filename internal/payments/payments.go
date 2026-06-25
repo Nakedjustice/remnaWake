@@ -350,6 +350,11 @@ type Service struct {
 	// now" (typically a Watchtower HTTP-API call). nil = no one-tap install;
 	// the button then shows manual instructions. Wired once at startup.
 	updateTrigger func(context.Context) error
+	// updateInProgress prevents repeated taps from starting overlapping update
+	// checks. updateDelay gives the Telegram polling loop time to acknowledge the
+	// callback offset before Watchtower replaces this process. Protected by mu.
+	updateInProgress bool
+	updateDelay      time.Duration
 
 	// trialConfigValue configures future one-time trial profiles. Protected by mu.
 	trialConfigValue TrialConfig
@@ -419,6 +424,7 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater 
 		dryRun:          dryRun,
 		logger:          logger,
 		now:             time.Now,
+		updateDelay:     time.Second,
 		invites:         make(map[int64]*inviteState),
 		registers:       make(map[int64]*registerState),
 		giftCodes:       make(map[int64]*giftCodeState),
