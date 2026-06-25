@@ -75,6 +75,33 @@ func TestCheckerBaselinesThenNotifiesOnce(t *testing.T) {
 	}
 }
 
+func TestCheckerRestartReplacesPersistedBaseline(t *testing.T) {
+	ctx := context.Background()
+	store := memSettings{
+		settingBaselineDigest: "sha256:old",
+		settingNotifiedDigest: "sha256:latest",
+	}
+	notifier := &recordingNotifier{}
+	c := NewChecker(&fakeFetcher{digest: "sha256:latest"}, store, notifier, "img:main", time.Hour, nil)
+
+	result, err := c.CheckNow(ctx)
+	if err != nil {
+		t.Fatalf("CheckNow: %v", err)
+	}
+	if result.Status != CheckStatusBaselineInitialized {
+		t.Fatalf("status = %q, want %q", result.Status, CheckStatusBaselineInitialized)
+	}
+	if len(notifier.calls) != 0 {
+		t.Fatalf("restart baseline must not notify: %+v", notifier.calls)
+	}
+	if store[settingBaselineDigest] != "sha256:latest" {
+		t.Fatalf("baseline = %q, want sha256:latest", store[settingBaselineDigest])
+	}
+	if store[settingNotifiedDigest] != "sha256:latest" {
+		t.Fatalf("notified digest = %q, want sha256:latest", store[settingNotifiedDigest])
+	}
+}
+
 func TestCheckerSkipsOnFetchError(t *testing.T) {
 	ctx := context.Background()
 	fetch := &fakeFetcher{err: context.DeadlineExceeded}
