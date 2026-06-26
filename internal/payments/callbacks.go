@@ -101,6 +101,8 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleSupportClose(ctx, cb)
 	case strings.HasPrefix(cb.Data, "sup:reply:"):
 		return s.handleSupportReplyStart(ctx, cb)
+	case strings.HasPrefix(cb.Data, "adm:infrapaid:"):
+		return s.handleInfraPaid(ctx, cb)
 	case strings.HasPrefix(cb.Data, "adm:"):
 		return s.handleAdminMenu(ctx, cb)
 	default:

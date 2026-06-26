@@ -302,6 +302,42 @@ func (f *fakeAdmin) AdminBroadcast(_ context.Context, tgID int64, text string) (
 	return &payments.WebBroadcastResult{Sent: 3, Failed: 1}, nil
 }
 
+func (f *fakeAdmin) AdminListInfraServers(_ context.Context, tgID int64) ([]payments.WebInfraServer, error) {
+	f.calls = append(f.calls, adminCall{Name: "list_servers", A: tgID})
+	return nil, f.err
+}
+func (f *fakeAdmin) AdminSaveInfraServer(_ context.Context, tgID int64, in payments.WebInfraServerInput) error {
+	f.calls = append(f.calls, adminCall{Name: "save_server", A: tgID, Text: in.Name})
+	return f.err
+}
+func (f *fakeAdmin) AdminDeleteInfraServer(_ context.Context, tgID, id int64) error {
+	f.calls = append(f.calls, adminCall{Name: "delete_server", A: tgID, B: id})
+	return f.err
+}
+func (f *fakeAdmin) AdminMarkInfraServerPaid(_ context.Context, tgID, id int64) error {
+	f.calls = append(f.calls, adminCall{Name: "paid_server", A: tgID, B: id})
+	return f.err
+}
+func (f *fakeAdmin) AdminListFxRates(_ context.Context, tgID int64) (*payments.WebFxRates, error) {
+	f.calls = append(f.calls, adminCall{Name: "list_fx", A: tgID})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &payments.WebFxRates{}, nil
+}
+func (f *fakeAdmin) AdminSetManualFxRate(_ context.Context, tgID int64, currency string, rate float64) error {
+	f.calls = append(f.calls, adminCall{Name: "set_fx", A: tgID, Text: currency})
+	return f.err
+}
+func (f *fakeAdmin) AdminSetBaseCurrency(_ context.Context, tgID int64, iso string) error {
+	f.calls = append(f.calls, adminCall{Name: "set_base", A: tgID, Text: iso})
+	return f.err
+}
+func (f *fakeAdmin) AdminRefreshFxRates(_ context.Context, tgID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "refresh_fx", A: tgID})
+	return f.err
+}
+
 func (f *fakeAdmin) SupportConversations(_ context.Context, tgID int64) ([]payments.WebSupportConversation, error) {
 	f.calls = append(f.calls, adminCall{Name: "support_conversations", A: tgID})
 	return nil, f.err
