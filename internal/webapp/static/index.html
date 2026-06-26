@@ -722,6 +722,45 @@ const EN = {
   'Завершить': 'Close',
   'Завершить обращение? История будет удалена.': 'Close this conversation? The history will be deleted.',
   'Без имени': 'No name',
+  // Infrastructure monitoring
+  'Инфраструктура': 'Infrastructure',
+  'Серверов': 'Servers',
+  'Расходы в месяц': 'Monthly cost',
+  '/мес': '/mo',
+  '🖥 Серверы': '🖥 Servers',
+  'Серверы не добавлены.': 'No servers added.',
+  'Хостер': 'Host',
+  'Страна': 'Country',
+  'Стоимость': 'Cost',
+  'Оценка в мес.': 'Est. per month',
+  'Следующая оплата': 'Next payment',
+  'не задана': 'not set',
+  '✅ Оплачен': '✅ Paid',
+  '✏️ Изменить': '✏️ Edit',
+  'Удалить сервер «{name}»?': 'Delete server “{name}”?',
+  '✏️ Редактирование сервера': '✏️ Edit server',
+  '➕ Новый сервер': '➕ New server',
+  'Название': 'Name',
+  'CPU, ядра': 'CPU cores',
+  'RAM, МБ': 'RAM, MB',
+  'Период, мес.': 'Period, months',
+  '💾 Сохранить сервер': '💾 Save server',
+  'Введите название сервера.': 'Enter the server name.',
+  'Период должен быть не меньше 1 месяца.': 'Period must be at least 1 month.',
+  'Отмена': 'Cancel',
+  '💱 Валюты и курсы': '💱 Currencies & rates',
+  'Базовая валюта — в неё пересчитываются расходы. Курсы обновляются автоматически; вручную задайте резервный курс.': 'The base currency is what costs are converted into. Rates refresh automatically; you can set a manual fallback rate.',
+  'Базовая валюта (ISO)': 'Base currency (ISO)',
+  '💾 База': '💾 Base',
+  'Код валюты — 3 буквы, напр. USD.': 'Currency code is 3 letters, e.g. USD.',
+  '🔄 Обновить курсы': '🔄 Refresh rates',
+  'Автообновление недоступно — используйте ручные курсы.': 'Auto-refresh unavailable — use manual rates.',
+  '⚠️ Серверов без курса: {n}. Задайте курс, чтобы учесть их в расходах.': '⚠️ Servers without a rate: {n}. Set a rate to include them in costs.',
+  'авто: {rate} ({date})': 'auto: {rate} ({date})',
+  'авто: нет': 'auto: none',
+  ' · вручную: {rate}': ' · manual: {rate}',
+  'Курс': 'Rate',
+  'Введите положительный курс.': 'Enter a positive rate.',
 };
 
 function resolveLang(serverLang) {
@@ -2540,6 +2579,7 @@ function renderAdminHome() {
   ]));
   const manageItems = [
     { icon: '↗', label: t('Статистика'), action: showAdminStats },
+    { icon: '🖥', label: t('Инфраструктура'), action: showAdminServers },
     { icon: '≡', label: t('Настройки'), action: showAdminSettings },
     { icon: '◎', label: t('Управление пользователями'), action: showUserAdmin },
     { icon: '◇', label: t('Активные подарочные коды'), action: showAdminGiftCodes },
@@ -2565,6 +2605,213 @@ function showAdminBilling() {
   appEl.appendChild(renderAdminRequisites(data));
   statusEl.hidden = true;
   appEl.hidden = false;
+}
+
+// infraDraft holds the server currently being edited (null = the add form is blank).
+let infraDraft = null;
+
+function infraInput(props) { return Object.assign(el('input'), props); }
+
+// toISODate converts a "DD.MM.YYYY" label to the "YYYY-MM-DD" an <input type=date> wants.
+function toISODate(s) {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s || '');
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+function round2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
+
+// Infrastructure monitoring: list of rented servers (tap to expand details),
+// an add/edit form, and the FX card. Server-sent labels (price_label,
+// period_cost_label, monthly_base_label, ram_label) stay in BOT_LANG like other
+// server-rendered labels.
+async function showAdminServers() {
+  currentRender = showAdminServers;
+  let servers, fx;
+  try {
+    [servers, fx] = await Promise.all([api('/api/admin/servers'), api('/api/admin/fx')]);
+  } catch (e) { tg.showAlert(e.message); return; }
+  servers = servers || [];
+
+  appEl.textContent = '';
+  appEl.appendChild(adminPageTop(t('Инфраструктура')));
+
+  let totalBase = 0;
+  servers.forEach((s) => { if (s.converted) totalBase += s.monthly_base; });
+  const totalLabel = '≈ ' + Math.round(totalBase) + (fx.base_symbol || '') + t('/мес');
+  appEl.appendChild(paymentStatsCard(t('Инфраструктура'), [
+    [t('Серверов'), servers.length],
+    [t('Расходы в месяц'), totalLabel],
+  ]));
+
+  if (servers.length) {
+    const card = el('div', 'admin-card');
+    card.appendChild(el('h2', null, t('🖥 Серверы')));
+    servers.forEach((srv) => card.appendChild(renderInfraServer(srv)));
+    appEl.appendChild(card);
+  } else {
+    appEl.appendChild(el('div', 'admin-card admin-empty', t('Серверы не добавлены.')));
+  }
+
+  appEl.appendChild(renderInfraForm());
+  appEl.appendChild(renderInfraFx(fx));
+
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+function renderInfraServer(srv) {
+  const box = el('details', 'gift-buyer');
+  const title = `${srv.name}${srv.country ? ' · ' + srv.country : ''} — ${srv.price_label}`;
+  box.appendChild(el('summary', null, title));
+
+  const detail = el('div');
+  detail.style.cssText = 'padding:6px 0';
+  [
+    [t('Хостер'), srv.hoster || '—'],
+    [t('CPU'), srv.cpu_cores ? String(srv.cpu_cores) : '—'],
+    [t('RAM'), srv.ram_label],
+    [t('Стоимость'), srv.period_cost_label],
+    [t('Оценка в мес.'), srv.monthly_base_label],
+    [t('Следующая оплата'), srv.next_due || t('не задана')],
+  ].forEach(([k, v]) => {
+    const row = el('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;gap:12px;padding:3px 0';
+    const key = el('span', null, k); key.style.color = 'var(--hint)';
+    row.appendChild(key);
+    row.appendChild(el('span', null, String(v)));
+    detail.appendChild(row);
+  });
+  box.appendChild(detail);
+
+  const actions = el('div');
+  actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:6px';
+  const paid = el('button', 'secondary', t('✅ Оплачен'));
+  paid.onclick = () => infraPost('/api/admin/server/paid', { id: srv.id });
+  const edit = el('button', 'secondary', t('✏️ Изменить'));
+  edit.onclick = () => { infraDraft = srv; showAdminServers(); window.scrollTo(0, document.body.scrollHeight); };
+  const del = el('button', 'secondary', t('🗑 Удалить'));
+  del.onclick = async () => {
+    if (!(await confirmDialog(t('Удалить сервер «{name}»?', { name: srv.name })))) return;
+    infraPost('/api/admin/server/delete', { id: srv.id });
+  };
+  actions.appendChild(paid);
+  actions.appendChild(edit);
+  actions.appendChild(del);
+  box.appendChild(actions);
+  return box;
+}
+
+// infraPost mutates server/FX state then re-renders the infra screen in place.
+async function infraPost(path, payload) {
+  try {
+    await api(path, { method: 'POST', body: JSON.stringify(payload) });
+    showAdminServers();
+  } catch (e) { tg.showAlert(e.message); }
+}
+
+function renderInfraForm() {
+  const d = infraDraft || {};
+  const card = el('div', 'admin-card');
+  card.appendChild(el('h2', null, d.id ? t('✏️ Редактирование сервера') : t('➕ Новый сервер')));
+
+  const grid = el('div', 'admin-form-grid');
+  const name = infraInput({ placeholder: t('Название'), value: d.name || '' });
+  const hoster = infraInput({ placeholder: t('Хостер'), value: d.hoster || '' });
+  const country = infraInput({ placeholder: t('Страна'), value: d.country || '' });
+  const cpu = infraInput({ type: 'number', min: '0', placeholder: t('CPU, ядра'), value: d.cpu_cores || '' });
+  const ram = infraInput({ type: 'number', min: '0', placeholder: t('RAM, МБ'), value: d.ram_mb || '' });
+  const price = infraInput({ type: 'number', min: '0', placeholder: t('Цена'), value: d.price != null ? d.price : '' });
+  const currency = el('select');
+  ['USD', 'EUR', 'RUB', 'KZT', 'UAH', 'GBP', 'TRY', 'PLN', 'INR'].forEach((c) => {
+    const o = el('option', null, c);
+    o.value = c;
+    if ((d.currency || 'USD') === c) o.selected = true;
+    currency.appendChild(o);
+  });
+  const period = infraInput({ type: 'number', min: '1', placeholder: t('Период, мес.'), value: d.period_months || 1 });
+  const due = infraInput({ type: 'date', value: toISODate(d.next_due) });
+  [name, hoster, country, cpu, ram, price, currency, period, due].forEach((x) => grid.appendChild(x));
+  card.appendChild(grid);
+
+  const save = el('button', null, t('💾 Сохранить сервер'));
+  save.onclick = async () => {
+    const payload = {
+      id: d.id || 0,
+      name: name.value.trim(),
+      hoster: hoster.value.trim(),
+      country: country.value.trim(),
+      cpu_cores: parseInt(cpu.value, 10) || 0,
+      ram_mb: parseInt(ram.value, 10) || 0,
+      price: parseInt(price.value, 10) || 0,
+      currency: currency.value,
+      period_months: parseInt(period.value, 10) || 0,
+      next_due: due.value || '',
+      notes: d.notes || '',
+    };
+    if (!payload.name) { tg.showAlert(t('Введите название сервера.')); return; }
+    if (!(payload.period_months >= 1)) { tg.showAlert(t('Период должен быть не меньше 1 месяца.')); return; }
+    try {
+      await api('/api/admin/server', { method: 'POST', body: JSON.stringify(payload) });
+      infraDraft = null;
+      showAdminServers();
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  card.appendChild(save);
+  if (d.id) {
+    const cancel = el('button', 'secondary', t('Отмена'));
+    cancel.onclick = () => { infraDraft = null; showAdminServers(); };
+    card.appendChild(cancel);
+  }
+  return card;
+}
+
+function renderInfraFx(fx) {
+  const card = el('div', 'admin-card');
+  card.appendChild(el('h2', null, t('💱 Валюты и курсы')));
+  card.appendChild(el('div', 'hint', t('Базовая валюта — в неё пересчитываются расходы. Курсы обновляются автоматически; вручную задайте резервный курс.')));
+
+  const baseRow = el('div', 'admin-form-grid');
+  const base = infraInput({ placeholder: t('Базовая валюта (ISO)'), value: fx.base_currency || '' });
+  baseRow.appendChild(base);
+  const saveBase = el('button', null, t('💾 База'));
+  saveBase.onclick = () => {
+    const v = (base.value || '').trim().toUpperCase();
+    if (v.length !== 3) { tg.showAlert(t('Код валюты — 3 буквы, напр. USD.')); return; }
+    infraPost('/api/admin/fx/base', { currency: v });
+  };
+  baseRow.appendChild(saveBase);
+  card.appendChild(baseRow);
+
+  const refresh = el('button', 'secondary', t('🔄 Обновить курсы'));
+  refresh.onclick = () => infraPost('/api/admin/fx/refresh', {});
+  card.appendChild(refresh);
+  if (!fx.auto_available) {
+    card.appendChild(el('div', 'hint', t('Автообновление недоступно — используйте ручные курсы.')));
+  }
+  if (fx.unconverted > 0) {
+    card.appendChild(el('div', 'hint', t('⚠️ Серверов без курса: {n}. Задайте курс, чтобы учесть их в расходах.', { n: fx.unconverted })));
+  }
+
+  (fx.rates || []).forEach((r) => {
+    const row = el('div', 'admin-list-row');
+    const copy = el('div', 'admin-list-copy');
+    copy.appendChild(el('div', 'admin-list-title', `1 ${r.currency} → ${fx.base_symbol || fx.base_currency}`));
+    let meta = r.has_auto ? t('авто: {rate} ({date})', { rate: round2(r.auto_rate), date: r.auto_date || '—' }) : t('авто: нет');
+    if (r.has_manual) meta += t(' · вручную: {rate}', { rate: round2(r.manual_rate) });
+    copy.appendChild(el('div', 'admin-list-meta', meta));
+    row.appendChild(copy);
+    const rate = infraInput({ type: 'number', step: '0.0001', min: '0', placeholder: t('Курс') });
+    rate.style.maxWidth = '110px';
+    row.appendChild(rate);
+    const set = el('button', 'secondary', 'OK');
+    set.onclick = () => {
+      const v = parseFloat(rate.value);
+      if (!(v > 0)) { tg.showAlert(t('Введите положительный курс.')); return; }
+      infraPost('/api/admin/fx/manual', { currency: r.currency, rate: v });
+    };
+    row.appendChild(set);
+    card.appendChild(row);
+  });
+  return card;
 }
 
 // Admin sub-views: each renders the back bar plus the relevant existing
@@ -2605,6 +2852,12 @@ async function showAdminStats() {
     [t('Ожидают подтверждения'), analytics.pending],
     [t('Конверсия'), `${analytics.conversion_rate}%`],
   ]));
+  if (stats && stats.infra_servers !== undefined) {
+    appEl.appendChild(paymentStatsCard(t('Инфраструктура'), [
+      [t('Серверов'), stats.infra_servers],
+      [t('Расходы в месяц'), stats.infra_monthly_cost_label],
+    ]));
+  }
   appEl.appendChild(renderPaymentChart(analytics, report.days));
   appEl.appendChild(renderPaymentProviders(analytics.providers || []));
   appEl.appendChild(renderPaymentHistory(report));

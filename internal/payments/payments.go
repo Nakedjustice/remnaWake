@@ -374,6 +374,11 @@ type Service struct {
 	referralEnabled     bool
 	referralInviterDays int
 	referralInviteeDays int
+
+	// forex fetches live FX rates for infrastructure-cost conversion; wired once
+	// at startup via SetForex. nil = auto-fetch disabled (manual rates only).
+	// Protected by mu.
+	forex RateFetcher
 }
 
 // requisitesKey is the settings-table key under which payment requisites text

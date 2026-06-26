@@ -12,6 +12,7 @@ import (
 
 	"github.com/Nakedjustice/remnaWake/internal/autoupdate"
 	"github.com/Nakedjustice/remnaWake/internal/config"
+	"github.com/Nakedjustice/remnaWake/internal/forex"
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/notify"
 	"github.com/Nakedjustice/remnaWake/internal/payments"
@@ -66,6 +67,9 @@ func main() {
 	defer db.Close()
 
 	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwUpdater{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, rwCreator{rwClient}, cfg.Telegram.AdminIDs, cfg.Currency, cfg.DryRun, logger)
+	// Live FX rates power infrastructure-cost conversion; best-effort, with
+	// admin-entered manual rates as the fallback when the source is unreachable.
+	pay.SetForex(forex.NewClient())
 	if cfg.Platega.Enabled() {
 		method, _ := cfg.Platega.MethodCode() // already validated in config.Load
 		plClient := platega.New(cfg.Platega.MerchantID, cfg.Platega.Secret, cfg.HTTP.Timeout)
@@ -176,10 +180,15 @@ func main() {
 
 	job := scheduler.New(func(ctx context.Context) {
 		_ = svc.Run(ctx)
+		// Refresh FX rates regardless of dry-run (read-only, best-effort).
+		if err := pay.RefreshInfraFxRates(ctx); err != nil {
+			logger.Warn("infra fx refresh failed", "err", err.Error())
+		}
 		if cfg.DryRun {
-			logger.Info("gift cleanup skipped (dry run)")
+			logger.Info("infra reminders and gift cleanup skipped (dry run)")
 			return
 		}
+		pay.RunInfraPaymentReminders(ctx)
 		if n, err := db.DeleteResolvedGiftCodes(ctx); err != nil {
 			logger.Error("gift cleanup failed", "err", err.Error())
 		} else if n > 0 {

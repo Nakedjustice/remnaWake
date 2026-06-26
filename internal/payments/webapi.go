@@ -14,10 +14,11 @@ import (
 // Errors returned by the mini app API methods, mapped to HTTP statuses by the
 // webapp handler.
 var (
-	ErrNotLinked        = errors.New("telegram id is not linked to any profile")
-	ErrProfileUnknown   = errors.New("profile does not belong to this user")
-	ErrTariffUnknown    = errors.New("tariff not found")
-	ErrPaymentsDisabled = errors.New("payment flow is disabled (no admin configured)")
+	ErrNotLinked          = errors.New("telegram id is not linked to any profile")
+	ErrProfileUnknown     = errors.New("profile does not belong to this user")
+	ErrTariffUnknown      = errors.New("tariff not found")
+	ErrInfraServerUnknown = errors.New("infra server not found")
+	ErrPaymentsDisabled   = errors.New("payment flow is disabled (no admin configured)")
 	// ErrScreenshotRequired: the renew request was not created because the
 	// admin requires a payment screenshot; the user was asked to attach it in
 	// the bot chat.

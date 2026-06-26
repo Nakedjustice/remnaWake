@@ -1,0 +1,234 @@
+package payments
+
+import (
+	"context"
+	"errors"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/Nakedjustice/remnaWake/internal/store"
+	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
+)
+
+type fakeRateFetcher struct {
+	rates map[string]float64
+	base  string
+	err   error
+	calls int
+}
+
+func (f *fakeRateFetcher) FetchRates(_ context.Context, base string, symbols []string) (map[string]float64, error) {
+	f.calls++
+	f.base = base
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := map[string]float64{}
+	for _, s := range symbols {
+		if r, ok := f.rates[s]; ok {
+			out[s] = r
+		}
+	}
+	return out, nil
+}
+
+func TestInfraAdminGuard(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	ctx := context.Background()
+
+	checks := map[string]error{}
+	_, err := svc.AdminListInfraServers(ctx, userTG)
+	checks["list"] = err
+	checks["save"] = svc.AdminSaveInfraServer(ctx, userTG, WebInfraServerInput{Name: "x", Currency: "USD", PeriodMonths: 1})
+	checks["delete"] = svc.AdminDeleteInfraServer(ctx, userTG, 1)
+	checks["paid"] = svc.AdminMarkInfraServerPaid(ctx, userTG, 1)
+	_, err = svc.AdminListFxRates(ctx, userTG)
+	checks["fx"] = err
+	checks["manual"] = svc.AdminSetManualFxRate(ctx, userTG, "USD", 90)
+	checks["base"] = svc.AdminSetBaseCurrency(ctx, userTG, "USD")
+	checks["refresh"] = svc.AdminRefreshFxRates(ctx, userTG)
+	for name, err := range checks {
+		if !errors.Is(err, ErrNotAdmin) {
+			t.Errorf("%s: err = %v, want ErrNotAdmin", name, err)
+		}
+	}
+}
+
+func TestInfraServerLifecycleAndConversion(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	ctx := context.Background()
+	svc.now = func() time.Time { return time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC) }
+
+	// Manual USD rate; base is RUB (derived from the "₽" service currency).
+	if err := svc.AdminSetManualFxRate(ctx, adminTG, "USD", 90); err != nil {
+		t.Fatalf("manual rate: %v", err)
+	}
+	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+		Name: "edge", Hoster: "Hetzner", Country: "DE", CPUCores: 4, RAMMB: 8192,
+		Price: 30, Currency: "usd", PeriodMonths: 3, NextDue: "2026-06-17",
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	list, err := svc.AdminListInfraServers(ctx, adminTG)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list: %d err %v", len(list), err)
+	}
+	srv := list[0]
+	if srv.PriceLabel != "$30" || srv.PeriodCostLabel != "$30 / 3 мес." || srv.RAMLabel != "8 ГБ" {
+		t.Fatalf("labels: %+v", srv)
+	}
+	// $30 / 3mo = $10/mo * 90 = 900₽/mo.
+	if !srv.Converted || srv.MonthlyBaseLabel != "≈ 900₽/мес" {
+		t.Fatalf("converted: %+v", srv)
+	}
+	if srv.DueStatus != "soon" { // due 17th, now 15th, within the 3-day lead
+		t.Fatalf("due status: %q", srv.DueStatus)
+	}
+
+	// Mark paid advances the due date by the 3-month period.
+	if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, srv.ID); err != nil {
+		t.Fatalf("paid: %v", err)
+	}
+	list, _ = svc.AdminListInfraServers(ctx, adminTG)
+	if list[0].NextDue != "17.09.2026" {
+		t.Fatalf("advanced due: %q", list[0].NextDue)
+	}
+
+	// The cost surfaces in the stats payload.
+	stats, err := svc.AdminStatsData(ctx, adminTG)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if stats.InfraServers != 1 || stats.InfraMonthlyCostLabel != "≈ 900₽/мес" || stats.InfraUnconverted != 0 {
+		t.Fatalf("stats: %+v", stats)
+	}
+
+	// Validation + delete.
+	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{Name: "", Currency: "USD", PeriodMonths: 1}); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("empty name: %v", err)
+	}
+	if err := svc.AdminDeleteInfraServer(ctx, adminTG, srv.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if err := svc.AdminDeleteInfraServer(ctx, adminTG, srv.ID); !errors.Is(err, ErrInfraServerUnknown) {
+		t.Fatalf("delete missing: %v", err)
+	}
+}
+
+func TestInfraFxAutoPreferredAndUnconverted(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	ctx := context.Background()
+	svc.now = func() time.Time { return time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC) }
+
+	// EUR server with no rate yet → unconverted.
+	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+		Name: "eu", Price: 10, Currency: "EUR", PeriodMonths: 1,
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	list, _ := svc.AdminListInfraServers(ctx, adminTG)
+	if list[0].Converted || list[0].MonthlyBaseLabel != "≈ — (нет курса)" {
+		t.Fatalf("expected unconverted: %+v", list[0])
+	}
+	fx, err := svc.AdminListFxRates(ctx, adminTG)
+	if err != nil || fx.BaseCurrency != "RUB" || fx.Unconverted != 1 {
+		t.Fatalf("fx overview: %+v err %v", fx, err)
+	}
+
+	// Manual fallback makes it convertible.
+	if err := svc.AdminSetManualFxRate(ctx, adminTG, "EUR", 100); err != nil {
+		t.Fatalf("manual: %v", err)
+	}
+	// A fetched auto rate then wins over the manual fallback.
+	fetcher := &fakeRateFetcher{rates: map[string]float64{"EUR": 105}}
+	svc.SetForex(fetcher)
+	if err := svc.RefreshInfraFxRates(ctx); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if fetcher.calls != 1 || fetcher.base != "RUB" {
+		t.Fatalf("fetch calls=%d base=%q", fetcher.calls, fetcher.base)
+	}
+	list, _ = svc.AdminListInfraServers(ctx, adminTG)
+	// 10 EUR/mo * 105 = 1050₽.
+	if list[0].MonthlyBaseLabel != "≈ 1050₽/мес" {
+		t.Fatalf("auto-converted: %+v", list[0])
+	}
+}
+
+func TestInfraPaymentReminders(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	id, err := st.CreateInfraServer(ctx, store.InfraServer{
+		Name: "edge", Hoster: "Hetzner", Price: 5, Currency: "USD", PeriodMonths: 1,
+		NextDueAt: time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC), // due in 2 days
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	svc.RunInfraPaymentReminders(ctx)
+	if got := sentTo(bot, adminTG); len(got) != 1 {
+		t.Fatalf("pre-due reminders = %d, want 1", len(got))
+	}
+	// Re-running the same day must not repeat the pre-due nudge.
+	svc.RunInfraPaymentReminders(ctx)
+	if got := sentTo(bot, adminTG); len(got) != 1 {
+		t.Fatalf("after rerun = %d, want 1 (no repeat)", len(got))
+	}
+	if srv, _ := st.GetInfraServer(ctx, id); srv.RemindedStage != 1 {
+		t.Fatalf("stage = %d, want 1", srv.RemindedStage)
+	}
+
+	// Once overdue, a second reminder is sent (stage 2), then no more.
+	now = time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
+	svc.RunInfraPaymentReminders(ctx)
+	svc.RunInfraPaymentReminders(ctx)
+	got := sentTo(bot, adminTG)
+	if len(got) != 2 {
+		t.Fatalf("overdue reminders = %d, want 2 total", len(got))
+	}
+	if srv, _ := st.GetInfraServer(ctx, id); srv.RemindedStage != 2 {
+		t.Fatalf("stage = %d, want 2", srv.RemindedStage)
+	}
+	last := got[len(got)-1]
+	if last.Keyboard == nil || last.Keyboard.InlineKeyboard[0][0].CallbackData != "adm:infrapaid:"+strconv.FormatInt(id, 10) {
+		t.Fatalf("missing paid button: %+v", last.Keyboard)
+	}
+}
+
+func TestHandleInfraPaidCallback(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	svc.now = func() time.Time { return time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC) }
+	id, _ := st.CreateInfraServer(ctx, store.InfraServer{
+		Name: "edge", Price: 5, Currency: "USD", PeriodMonths: 1,
+		NextDueAt: time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC),
+	})
+
+	cb := &tg.CallbackQuery{
+		ID: "cb1", From: tg.User{ID: adminTG}, Data: "adm:infrapaid:" + strconv.FormatInt(id, 10),
+		Message: &tg.Message{MessageID: 7, Chat: tg.Chat{ID: adminTG}},
+	}
+	if !svc.HandleCallback(ctx, cb) {
+		t.Fatal("callback not handled")
+	}
+	srv, _ := st.GetInfraServer(ctx, id)
+	if !srv.NextDueAt.Equal(time.Date(2026, 7, 17, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("due not advanced: %v", srv.NextDueAt)
+	}
+
+	// A non-admin tap changes nothing.
+	cb2 := &tg.CallbackQuery{ID: "cb2", From: tg.User{ID: userTG}, Data: "adm:infrapaid:" + strconv.FormatInt(id, 10)}
+	if !svc.HandleCallback(ctx, cb2) {
+		t.Fatal("callback not handled")
+	}
+	srv2, _ := st.GetInfraServer(ctx, id)
+	if !srv2.NextDueAt.Equal(srv.NextDueAt) {
+		t.Fatalf("non-admin changed due date: %v", srv2.NextDueAt)
+	}
+}
