@@ -70,6 +70,14 @@ type Admin interface {
 	AdminApproveInviteRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminRejectInviteRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminBroadcast(ctx context.Context, telegramID int64, text string) (*payments.WebBroadcastResult, error)
+	AdminListInfraServers(ctx context.Context, telegramID int64) ([]payments.WebInfraServer, error)
+	AdminSaveInfraServer(ctx context.Context, telegramID int64, in payments.WebInfraServerInput) error
+	AdminDeleteInfraServer(ctx context.Context, telegramID, id int64) error
+	AdminMarkInfraServerPaid(ctx context.Context, telegramID, id int64) error
+	AdminListFxRates(ctx context.Context, telegramID int64) (*payments.WebFxRates, error)
+	AdminSetManualFxRate(ctx context.Context, telegramID int64, currency string, rate float64) error
+	AdminSetBaseCurrency(ctx context.Context, telegramID int64, iso string) error
+	AdminRefreshFxRates(ctx context.Context, telegramID int64) error
 	SupportConversations(ctx context.Context, telegramID int64) ([]payments.WebSupportConversation, error)
 	SupportThreadAdmin(ctx context.Context, telegramID, targetUserID int64) (*payments.WebSupport, error)
 	SupportSendAdmin(ctx context.Context, telegramID, targetUserID int64, text string) error
@@ -144,6 +152,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/user/find", s.handleAdminFindUser)
 	mux.HandleFunc("POST /api/admin/user/update", s.handleAdminUpdateUser)
 	mux.HandleFunc("POST /api/admin/broadcast", s.handleAdminBroadcast)
+	mux.HandleFunc("GET /api/admin/servers", s.handleAdminListServers)
+	mux.HandleFunc("POST /api/admin/server", s.handleAdminSaveServer)
+	mux.HandleFunc("POST /api/admin/server/delete", s.adminIDAction("delete server", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminDeleteInfraServer(ctx, tgID, id)
+	}))
+	mux.HandleFunc("POST /api/admin/server/paid", s.adminIDAction("mark server paid", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminMarkInfraServerPaid(ctx, tgID, id)
+	}))
+	mux.HandleFunc("GET /api/admin/fx", s.handleAdminListFx)
+	mux.HandleFunc("POST /api/admin/fx/manual", s.handleAdminSetManualFx)
+	mux.HandleFunc("POST /api/admin/fx/base", s.handleAdminSetBaseCurrency)
+	mux.HandleFunc("POST /api/admin/fx/refresh", s.handleAdminRefreshFx)
 	mux.HandleFunc("POST /api/admin/gift/revoke", s.adminIDAction("revoke gift", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminRevokeGiftCode(ctx, tgID, id)
 	}))
@@ -517,7 +537,8 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 		writeJSONError(w, http.StatusForbidden, "доступ запрещён")
 	case errors.Is(err, payments.ErrBadInput):
 		writeJSONError(w, http.StatusBadRequest, "некорректные данные")
-	case errors.Is(err, payments.ErrTariffUnknown), errors.Is(err, payments.ErrRequestNotFound):
+	case errors.Is(err, payments.ErrTariffUnknown), errors.Is(err, payments.ErrRequestNotFound),
+		errors.Is(err, payments.ErrInfraServerUnknown):
 		writeJSONError(w, http.StatusNotFound, "не найдено")
 	case errors.Is(err, payments.ErrRequestResolved):
 		writeJSONError(w, http.StatusConflict, "уже обработано")
@@ -697,6 +718,100 @@ func (s *Server) handleAdminDeleteTariff(w http.ResponseWriter, r *http.Request)
 	}
 	if err := s.admin.AdminDeleteTariff(r.Context(), userID, req.Months); err != nil {
 		s.writeAdminError(w, "delete tariff", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminListServers(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	servers, err := s.admin.AdminListInfraServers(r.Context(), userID)
+	if err != nil {
+		s.writeAdminError(w, "list servers", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, servers)
+}
+
+func (s *Server) handleAdminSaveServer(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var in payments.WebInfraServerInput
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSaveInfraServer(r.Context(), userID, in); err != nil {
+		s.writeAdminError(w, "save server", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminListFx(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	rates, err := s.admin.AdminListFxRates(r.Context(), userID)
+	if err != nil {
+		s.writeAdminError(w, "list fx", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rates)
+}
+
+func (s *Server) handleAdminSetManualFx(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Currency string  `json:"currency"`
+		Rate     float64 `json:"rate"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetManualFxRate(r.Context(), userID, req.Currency, req.Rate); err != nil {
+		s.writeAdminError(w, "set fx rate", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminSetBaseCurrency(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Currency string `json:"currency"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetBaseCurrency(r.Context(), userID, req.Currency); err != nil {
+		s.writeAdminError(w, "set base currency", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminRefreshFx(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	if err := s.admin.AdminRefreshFxRates(r.Context(), userID); err != nil {
+		s.writeAdminError(w, "refresh fx", userID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

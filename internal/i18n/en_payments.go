@@ -463,4 +463,21 @@ var enPayments = map[string]string{
 	"Введите ответ пользователю следующим сообщением (или /cancel для отмены):": "Type your reply to the user in the next message (or /cancel to abort):",
 	"Не удалось отправить ответ.":                                               "Could not send the reply.",
 	"✅ Ответ отправлен.":                                                        "✅ Reply sent.",
+
+	// Infrastructure monitoring
+	"/мес":            "/mo",
+	"ГБ":              "GB",
+	"МБ":              "MB",
+	"%s / %d мес.":    "%s / %d mo.",
+	"≈ — (нет курса)": "≈ — (no rate)",
+	"⚠️ Просрочена оплата сервера «%s».\nХостер: %s\nСумма: %s\nСрок оплаты был: %s": "⚠️ Payment overdue for server “%s”.\nHost: %s\nAmount: %s\nWas due: %s",
+	"🔔 Скоро оплата сервера «%s».\nХостер: %s\nСумма: %s\nОплатить до: %s":           "🔔 Payment due soon for server “%s”.\nHost: %s\nAmount: %s\nPay by: %s",
+	"✅ Отметить оплаченным":            "✅ Mark as paid",
+	"Не удалось распознать сервер.":    "Could not identify the server.",
+	"Не удалось обновить сервер.":      "Could not update the server.",
+	"✅ Платёж отмечен, дата продлена.": "✅ Payment recorded, date advanced.",
+	"\n\nИнфраструктура:\n":            "\n\nInfrastructure:\n",
+	"• серверов: %d\n":                 "• servers: %d\n",
+	"• расходы в месяц: %s":            "• monthly cost: %s",
+	"\n• без курса: %d":                "\n• without a rate: %d",
 }

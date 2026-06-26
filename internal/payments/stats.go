@@ -30,6 +30,12 @@ type WebAdminStats struct {
 	GiftsIssued          int    `json:"gifts_issued"`
 	GiftsActivated       int    `json:"gifts_activated"`
 	InvitesPending       int    `json:"invites_pending"`
+	// Infrastructure cost, converted into the service currency. InfraUnconverted
+	// counts servers whose currency has no available FX rate.
+	InfraServers          int     `json:"infra_servers"`
+	InfraMonthlyCost      float64 `json:"infra_monthly_cost"`
+	InfraMonthlyCostLabel string  `json:"infra_monthly_cost_label"`
+	InfraUnconverted      int     `json:"infra_unconverted"`
 }
 
 // AdminStatsData returns the admin statistics snapshot for the Mini App and
@@ -75,6 +81,23 @@ func (s *Service) AdminStatsData(ctx context.Context, telegramID int64) (*WebAdm
 	out.GiftsIssued = st.GiftsByStatus["issued"]
 	out.GiftsActivated = st.GiftsByStatus["activated"]
 	out.InvitesPending = st.InvitesPending
+
+	base := s.baseCurrencyISO(ctx)
+	servers, err := s.store.ListInfraServers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list infra servers: %w", err)
+	}
+	out.InfraServers = len(servers)
+	var monthly float64
+	for i := range servers {
+		if m, ok := s.serverMonthlyBase(ctx, base, &servers[i]); ok {
+			monthly += m
+		} else {
+			out.InfraUnconverted++
+		}
+	}
+	out.InfraMonthlyCost = monthly
+	out.InfraMonthlyCostLabel = s.baseMonthlyLabel(monthly)
 	return out, nil
 }
 
@@ -110,6 +133,12 @@ func (s *Service) sendAdminStats(ctx context.Context, chatID int64) {
 	b.WriteString(fmt.Sprintf(i18n.T("• активированы: %d\n"), st.GiftsActivated))
 	b.WriteString(i18n.T("\nПриглашения:\n"))
 	b.WriteString(fmt.Sprintf(i18n.T("• ожидают одобрения: %d"), st.InvitesPending))
+	b.WriteString(i18n.T("\n\nИнфраструктура:\n"))
+	b.WriteString(fmt.Sprintf(i18n.T("• серверов: %d\n"), st.InfraServers))
+	b.WriteString(fmt.Sprintf(i18n.T("• расходы в месяц: %s"), st.InfraMonthlyCostLabel))
+	if st.InfraUnconverted > 0 {
+		b.WriteString(fmt.Sprintf(i18n.T("\n• без курса: %d"), st.InfraUnconverted))
+	}
 
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{

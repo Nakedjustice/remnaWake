@@ -117,6 +117,29 @@ CREATE TABLE IF NOT EXISTS referrals (
   credited_at          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_telegram_id);
+CREATE TABLE IF NOT EXISTS infra_servers (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  name           TEXT NOT NULL,
+  hoster         TEXT NOT NULL DEFAULT '',
+  country        TEXT NOT NULL DEFAULT '',
+  cpu_cores      INTEGER NOT NULL DEFAULT 0,
+  ram_mb         INTEGER NOT NULL DEFAULT 0,
+  price          INTEGER NOT NULL DEFAULT 0,
+  currency       TEXT NOT NULL DEFAULT 'USD',
+  period_months  INTEGER NOT NULL DEFAULT 1,
+  next_due_at    TEXT,
+  reminded_stage INTEGER NOT NULL DEFAULT 0,
+  notes          TEXT NOT NULL DEFAULT '',
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fx_rates (
+  currency        TEXT PRIMARY KEY,
+  auto_rate       REAL,
+  auto_updated_at TEXT,
+  manual_rate     REAL,
+  updated_at      TEXT NOT NULL
+);
 `
 
 // New opens (creating if needed) the SQLite database at path and applies migrations.
