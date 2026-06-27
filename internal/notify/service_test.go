@@ -256,26 +256,37 @@ func TestDaysUntil(t *testing.T) {
 		want int
 	}{
 		{
-			// User scenario: Remnawave shows "3 days" on June 7 for expiry June 11.
-			// expireAt is midnight MSK (stored as UTC); diff = 3d 7h 50m → 3.
-			name: "3d7h remaining rounds down to 3",
-			now:  time.Date(2026, 6, 7, 16, 10, 0, 0, msk),
-			exp:  time.Date(2026, 6, 10, 21, 0, 0, 0, time.UTC), // 2026-06-11 00:00 MSK
-			want: 3,
+			// The reported bug: the Remnawave panel rounds a partial day up, so a
+			// subscription with 7 days and a few hours left shows "8 days" there.
+			// daysUntil must round up too, or the reminder reads "7" against the
+			// panel's "8" — and fires a day early.
+			name: "7d8h rounds up to 8 (panel parity)",
+			now:  time.Date(2026, 6, 6, 9, 0, 0, 0, msk),
+			exp:  time.Date(2026, 6, 13, 17, 0, 0, 0, msk),
+			want: 8,
 		},
 		{
-			// Exactly 7 days: on-the-hour trigger.
+			// User scenario: Remnawave shows "4 days" on June 7 for expiry June 11.
+			// expireAt is midnight MSK (stored as UTC); diff = 3d 7h 50m → rounds
+			// up to 4.
+			name: "3d7h remaining rounds up to 4",
+			now:  time.Date(2026, 6, 7, 16, 10, 0, 0, msk),
+			exp:  time.Date(2026, 6, 10, 21, 0, 0, 0, time.UTC), // 2026-06-11 00:00 MSK
+			want: 4,
+		},
+		{
+			// Exactly 7 days: a whole number of days needs no rounding.
 			name: "exactly 7 days",
 			now:  time.Date(2026, 6, 6, 9, 0, 0, 0, msk),
 			exp:  time.Date(2026, 6, 13, 9, 0, 0, 0, msk),
 			want: 7,
 		},
 		{
-			// 6d 23h — falls short of 7, should be 6.
-			name: "6h23h rounds to 6 not 7",
+			// 6d 23h — a seventh day is still running, so it rounds up to 7.
+			name: "6d23h rounds up to 7",
 			now:  time.Date(2026, 6, 6, 9, 0, 0, 0, msk),
 			exp:  time.Date(2026, 6, 13, 8, 0, 0, 0, msk),
-			want: 6,
+			want: 7,
 		},
 		{
 			// UTC expiry, now in MSK — zone difference should not matter.
@@ -328,5 +339,68 @@ func TestDaysSince(t *testing.T) {
 				t.Fatalf("daysSince = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestRunSkipsOutsideSendWindow(t *testing.T) {
+	// alice sits at the 7-day milestone at both the off-hour restart and the
+	// scheduled run, so any delivery difference is down to the send window.
+	expiry := time.Date(2026, 6, 18, 0, 9, 0, 0, time.UTC) // off-hour + 7d
+	users := []remnawave.User{
+		rwUser(1, "alice", remnawave.StatusActive, expiry, 100),
+	}
+	svc, snd, _ := newRunService(t, users, nil)
+	svc.SetSendWindow(time.UTC, 9, 0, time.Hour) // deliver only during the 09:00 hour
+
+	// A RUN_ON_START sweep after a 00:09 restart must send nothing and, crucially,
+	// leave the dedup store untouched.
+	offHour := time.Date(2026, 6, 11, 0, 9, 0, 0, time.UTC)
+	svc.now = func() time.Time { return offHour }
+	if err := svc.Run(context.Background()); err != nil {
+		t.Fatalf("off-hour run: %v", err)
+	}
+	if len(snd.sent) != 0 {
+		t.Fatalf("off-hour run must not send: %+v", snd.sent)
+	}
+
+	// The scheduled 09:00 run then delivers, proving the off-hour run wrote no mark.
+	svc.now = func() time.Time { return runNow } // 2026-06-11 09:00 UTC
+	if err := svc.Run(context.Background()); err != nil {
+		t.Fatalf("in-window run: %v", err)
+	}
+	if len(snd.sent) != 1 || snd.sent[0].chatID != 100 {
+		t.Fatalf("in-window run should deliver to alice, got %+v", snd.sent)
+	}
+}
+
+func TestWithinDailyWindow(t *testing.T) {
+	msk := time.FixedZone("MSK", 3*60*60)
+	at := func(h, m int) time.Time { return time.Date(2026, 6, 11, h, m, 0, 0, msk) }
+
+	tests := []struct {
+		name string
+		now  time.Time
+		want bool
+	}{
+		{"at run_at", at(9, 0), true},
+		{"mid window", at(9, 30), true},
+		{"last minute of window", at(9, 59), true},
+		{"window end is exclusive", at(10, 0), false},
+		{"off-hour restart", at(0, 9), false},
+		{"just before run_at", at(8, 59), false},
+		// Same instant as 09:30 MSK expressed in UTC still lands in the MSK window.
+		{"foreign-zone instant inside window", time.Date(2026, 6, 11, 6, 30, 0, 0, time.UTC), true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := withinDailyWindow(tc.now, msk, 9, 0, time.Hour); got != tc.want {
+				t.Fatalf("withinDailyWindow = %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	// A window straddling midnight must still match the early-morning side.
+	if !withinDailyWindow(at(0, 9).AddDate(0, 0, 1), msk, 23, 30, time.Hour) {
+		t.Fatal("expected 00:09 to fall in the previous day's 23:30 window")
 	}
 }

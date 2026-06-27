@@ -261,12 +261,20 @@ func subStatusLabel(status string) string {
 	return status
 }
 
+// daysLeft reports the whole days remaining until exp, rounding any partial day
+// up so the /me cabinet and the Mini App agree with the Remnawave panel (which
+// shows e.g. "8 days" while 7 days and some hours remain) and with the expiry
+// reminder. Returns 0 once exp is reached.
 func daysLeft(now, exp time.Time) int {
 	diff := exp.Sub(now)
 	if diff <= 0 {
 		return 0
 	}
-	return int(diff / (24 * time.Hour))
+	days := int(diff / (24 * time.Hour))
+	if diff%(24*time.Hour) != 0 {
+		days++
+	}
+	return days
 }
 
 func pluralRu(n int, one, few, many string) string {

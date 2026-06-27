@@ -450,7 +450,7 @@ docker compose restart caddy    # в каталоге caddy
 | `LOG_LEVEL`              | нет         | `info`            | `debug` / `info` / `warn` / `error`                              |
 | `HTTP_TIMEOUT`           | нет         | `15s`             | Таймаут HTTP-запросов (Go duration)                              |
 | `DRY_RUN`                | нет         | `false`           | Писать в лог, не отправлять в Telegram                           |
-| `RUN_ON_START`           | нет         | `true`            | Выполнить задачу сразу при старте                                |
+| `RUN_ON_START`           | нет         | `true`            | Выполнить задачу при старте; напоминания всё равно шлются только в течение часа `RUN_AT` |
 | `DB_PATH`                | нет         | `/data/bot.db`    | Путь к файлу базы данных SQLite                                  |
 | `CURRENCY`               | нет         | `₽`               | Обозначение валюты рядом с ценами тарифов                        |
 | `WEBAPP_URL`             | нет         | —                 | Публичный HTTPS-адрес мини-приложения (пусто = выключено)        |
