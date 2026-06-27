@@ -93,6 +93,18 @@ func main() {
 		winbackDays = cfg.Winback.Days
 	}
 	svc := notify.NewService(rwClient, bot, pay, db, db, logger, cfg.DryRun, winbackDays)
+	// Reminders may only go out around RUN_AT. Otherwise a RUN_ON_START sweep
+	// after an off-hour restart pages everyone at the restart time (e.g. 00:09)
+	// instead of the configured hour. TZ and RUN_AT are already validated in
+	// config.Load, so these parses succeed; on the off chance they don't, the
+	// window stays unset (always-send) rather than blocking reminders entirely.
+	if loc, err := time.LoadLocation(cfg.Scheduler.Timezone); err != nil {
+		logger.Warn("send window not set: bad timezone", "err", err.Error())
+	} else if runAt, err := time.Parse("15:04", cfg.Scheduler.RunAt); err != nil {
+		logger.Warn("send window not set: bad run_at", "err", err.Error())
+	} else {
+		svc.SetSendWindow(loc, runAt.Hour(), runAt.Minute(), time.Hour)
+	}
 
 	rootCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

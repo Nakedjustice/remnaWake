@@ -451,7 +451,7 @@ docker compose restart caddy    # in your caddy directory
 | `LOG_LEVEL`            | no       | `info`           | `debug` / `info` / `warn` / `error`                          |
 | `HTTP_TIMEOUT`         | no       | `15s`            | HTTP request timeout (Go duration)                           |
 | `DRY_RUN`              | no       | `false`          | Log instead of sending to Telegram                           |
-| `RUN_ON_START`         | no       | `true`           | Run the job immediately on start                             |
+| `RUN_ON_START`         | no       | `true`           | Run the job on start; reminders are still only sent within the `RUN_AT` hour |
 | `DB_PATH`              | no       | `/data/bot.db`   | SQLite database file path                                    |
 | `CURRENCY`             | no       | `₽`              | Currency label shown next to tariff prices                   |
 | `WEBAPP_URL`           | no       | —                | Public HTTPS URL of the Mini App (empty = off)               |
