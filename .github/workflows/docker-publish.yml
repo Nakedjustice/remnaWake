@@ -6,25 +6,28 @@ name: Docker
 # documentation.
 
 on:
-  schedule:
-    - cron: '40 0 * * *'
   push:
     branches: [ "main", "dev" ]
     # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
-  pull_request:
-    branches: [ "main", "dev" ]
+  # Build (without publishing) only once a PR is approved, instead of on
+  # every push to the PR. The job below is gated on the review being an
+  # approval.
+  pull_request_review:
+    types: [ submitted ]
 
 env:
   # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
   # main/tags publish <account>/<repo>; dev publishes the separate
-  # <account>/<repo>-dev package. Pull requests build but never push.
-  IMAGE_NAME: ${{ (github.ref_name == 'dev' || github.base_ref == 'dev') && format('{0}-dev', github.repository) || github.repository }}
+  # <account>/<repo>-dev package. Approval builds build but never push.
+  IMAGE_NAME: ${{ (github.ref_name == 'dev' || github.event.pull_request.base.ref == 'dev') && format('{0}-dev', github.repository) || github.repository }}
 
 
 jobs:
   build:
+    # Run on pushes/tags, or when a PR review is submitted as an approval.
+    if: github.event_name == 'push' || github.event.review.state == 'approved'
 
     runs-on: ubuntu-latest
     permissions:
@@ -37,11 +40,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # On approval builds, check out the PR's head commit rather than the
+          # base branch (the default for pull_request_review events).
+          ref: ${{ github.event_name == 'pull_request_review' && github.event.pull_request.head.sha || github.sha }}
 
       # Install the cosign tool except on PR
       # https://github.com/sigstore/cosign-installer
       - name: Install cosign
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push'
         uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 #v3.5.0
         with:
           cosign-release: 'v2.2.4'
@@ -55,7 +62,7 @@ jobs:
       # Login against a Docker registry except on PR
       # https://github.com/docker/login-action
       - name: Log into registry ${{ env.REGISTRY }}
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push'
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -71,10 +78,9 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=schedule,pattern=nightly
+            type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request_review' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}
 
       # Build and push Docker image with Buildx (don't push on PR)
@@ -84,7 +90,7 @@ jobs:
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -96,7 +102,7 @@ jobs:
       # transparency data even for private images, pass --force to cosign below.
       # https://github.com/sigstore/cosign
       - name: Sign the published Docker image
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name == 'push' }}
         env:
           # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
           TAGS: ${{ steps.meta.outputs.tags }}
