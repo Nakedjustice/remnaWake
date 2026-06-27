@@ -2975,15 +2975,37 @@ async function showAdminProxyHealth() {
   if (!proxies.length) {
     appEl.appendChild(el('div', 'admin-card admin-empty', t('Прокси не найдены.')));
   } else {
-    const rows = proxies.map((p) => [
-      p.name || p.address || t('прокси'),
-      p.up ? `✅ ${p.latency_ms} ${t('мс')}` : `❌ ${t('нет связи')}`,
-    ]);
-    appEl.appendChild(paymentStatsCard(t('Узлы'), rows));
+    const card = el('div', 'admin-card');
+    card.appendChild(el('h2', null, t('Узлы')));
+    card.appendChild(el('div', 'hint', t('Выключите переключатель, чтобы не получать уведомления о доступности сервера.')));
+    proxies.forEach((p) => {
+      const item = el('div', 'toggle-item');
+      const txt = el('div', 'ti-text');
+      txt.appendChild(el('div', 'ti-label', p.name || p.address || t('прокси')));
+      txt.appendChild(el('div', 'ti-desc', p.up ? `✅ ${p.latency_ms} ${t('мс')}` : `❌ ${t('нет связи')}`));
+      item.appendChild(txt);
+      const muted = !!p.notifications_muted;
+      const sw = el('button', 'switch' + (muted ? '' : ' on')); // on = notifications enabled
+      sw.appendChild(el('span', 'knob'));
+      sw.onclick = () => setProxyNotif(p, !muted);
+      item.appendChild(sw);
+      card.appendChild(item);
+    });
+    appEl.appendChild(card);
   }
 
   statusEl.hidden = true;
   appEl.hidden = false;
+}
+
+// setProxyNotif mutes/unmutes one server's up/down alerts (globally, for all
+// admins), then re-renders the proxy-health view in place.
+async function setProxyNotif(p, muted) {
+  try {
+    await api('/api/admin/proxy-notification', { method: 'POST',
+      body: JSON.stringify({ name: p.name, address: p.address, sub_name: p.sub_name, muted }) });
+    showAdminProxyHealth();
+  } catch (e) { tg.showAlert(e.message); }
 }
 
 function paymentStatsCard(title, rows) {

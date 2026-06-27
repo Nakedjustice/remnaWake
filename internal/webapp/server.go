@@ -46,6 +46,7 @@ type Admin interface {
 	AdminPanelData(ctx context.Context, telegramID int64) (*payments.WebAdminPanel, error)
 	AdminStatsData(ctx context.Context, telegramID int64) (*payments.WebAdminStats, error)
 	AdminProxyHealth(ctx context.Context, telegramID int64) (*payments.WebProxyHealth, error)
+	AdminSetProxyNotification(ctx context.Context, telegramID int64, name, address, subName string, muted bool) error
 	AdminPaymentReport(ctx context.Context, telegramID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error)
 	AdminCheckUpdates(ctx context.Context, telegramID int64) (*payments.WebUpdateCheckResult, error)
 	AdminSetUpdateInterval(ctx context.Context, telegramID int64, interval string) error
@@ -131,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
 	mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
 	mux.HandleFunc("GET /api/admin/proxy-health", s.handleAdminProxyHealth)
+	mux.HandleFunc("POST /api/admin/proxy-notification", s.handleAdminSetProxyNotification)
 	mux.HandleFunc("GET /api/admin/payments", s.handleAdminPayments)
 	mux.HandleFunc("POST /api/admin/updates/check", s.handleAdminCheckUpdates)
 	mux.HandleFunc("POST /api/admin/updates/interval", s.handleAdminSetUpdateInterval)
@@ -604,6 +606,28 @@ func (s *Server) handleAdminProxyHealth(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, health)
+}
+
+func (s *Server) handleAdminSetProxyNotification(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Name    string `json:"name"`
+		Address string `json:"address"`
+		SubName string `json:"sub_name"`
+		Muted   bool   `json:"muted"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetProxyNotification(r.Context(), userID, req.Name, req.Address, req.SubName, req.Muted); err != nil {
+		s.writeAdminError(w, "proxy notification", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleAdminPayments(w http.ResponseWriter, r *http.Request) {
