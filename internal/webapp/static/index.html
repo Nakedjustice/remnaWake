@@ -61,9 +61,11 @@
   .seg-btn {
     width: auto; margin: 0; border: 0; cursor: pointer;
     padding: 6px 13px; border-radius: 999px; font-size: 13px; font-weight: 700;
-    background: transparent; color: var(--hint); transition: all .15s; font-family: inherit;
+    background: transparent; color: var(--hint); font-family: inherit;
+    box-shadow: none;
+    transition: transform .18s cubic-bezier(.2,.8,.2,1), background-color .18s, color .18s, box-shadow .18s;
   }
-  .seg-btn.active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
+  .seg-btn.active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); transform: translateY(-1px); }
 
   /* ---- Cards ---- */
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 16px; margin-bottom: 12px; }
@@ -78,14 +80,23 @@
 
   /* ---- Buttons ---- */
   button {
-    display: block; width: 100%; border: 0; border-radius: 14px;
+    position: relative; display: block; width: 100%; border: 0; border-radius: 14px;
     padding: 13px 14px; margin-top: 10px; font-size: 15px; font-weight: 700;
     background: var(--accent); color: var(--accent-text); cursor: pointer;
-    font-family: inherit; transition: filter .15s, opacity .15s;
+    font-family: inherit;
+    box-shadow: 0 8px 18px rgba(124, 92, 255, 0.18);
+    transition: transform .14s cubic-bezier(.2,.8,.2,1), filter .14s, opacity .15s, box-shadow .15s, background-color .15s, border-color .15s;
   }
-  button:active { filter: brightness(0.92); }
-  button.secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
-  button:disabled { opacity: .55; cursor: default; }
+  button:active:not(:disabled) { transform: translateY(1px) scale(.985); filter: brightness(0.96); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22); }
+  button.secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+  button:disabled { opacity: .55; cursor: default; box-shadow: none; transform: none; }
+  button.is-loading { color: transparent !important; pointer-events: none; }
+  button.is-loading::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px;
+    margin: -9px 0 0 -9px; border-radius: 50%; border: 2px solid currentColor;
+    border-right-color: transparent; color: var(--accent-text); animation: spin .7s linear infinite;
+  }
+  button.secondary.is-loading::after { color: var(--text); }
 
   .btn-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
   .btn-grid button { flex: 1 1 calc(50% - 4px); width: auto; margin-top: 0; }
@@ -95,7 +106,7 @@
   .pill {
     display: inline-flex; align-items: center; gap: 7px; width: auto; margin: 0;
     padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
-    background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border); box-shadow: none;
   }
   .pill.accent { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-bd); }
   .pill svg { width: 15px; height: 15px; }
@@ -158,9 +169,17 @@
   .tariffs button {
     flex: 1 1 calc(50% - 4px); width: auto; margin-top: 0; padding: 14px 10px;
     background: var(--surface-2); color: var(--text); border: 1.5px solid var(--border);
-    border-radius: 16px; text-align: left; font-weight: 700;
+    border-radius: 16px; text-align: left; font-weight: 700; box-shadow: none;
   }
   .tariffs button.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+  .renew-context { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 8px 0 14px; padding: 12px;
+    border: 1px solid var(--border); border-radius: 15px; background: var(--surface-2); }
+  .renew-context .label { color: var(--hint); font-size: 12px; font-weight: 700; }
+  .renew-context .value { font-weight: 800; text-align: right; }
+  .payment-step { margin-top: 12px; padding: 13px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-2); }
+  .payment-step-title { font-size: 14px; font-weight: 800; }
+  .payment-step .hint { margin-top: 4px; }
+  .payment-step .tariffs { margin-top: 10px; }
 
   /* ---- Toggle switches ---- */
   .toggle-item { display: flex; align-items: center; justify-content: space-between; gap: 14px;
@@ -170,9 +189,12 @@
   .toggle-item .ti-label { font-size: 15px; font-weight: 700; }
   .toggle-item .ti-desc { font-size: 12.5px; color: var(--hint); margin-top: 3px; line-height: 1.45; }
   .switch { width: 46px; height: 28px; border-radius: 999px; padding: 3px; display: flex; align-items: center;
-    cursor: pointer; transition: all .2s; flex: none; justify-content: flex-start; background: var(--track); border: 0; margin: 0; }
-  .switch.on { justify-content: flex-end; background: var(--accent); }
-  .switch .knob { width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
+    cursor: pointer; flex: none; justify-content: flex-start; background: var(--track); border: 0; margin: 0; box-shadow: none;
+    transition: background-color .22s ease, transform .14s cubic-bezier(.2,.8,.2,1); }
+  .switch.on { background: var(--accent); }
+  .switch .knob { width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transform: translateX(0); transition: transform .22s cubic-bezier(.2,.8,.2,1); }
+  .switch.on .knob { transform: translateX(18px); }
 
   /* ---- Back bar ---- */
   .backbar { display: flex; align-items: center; gap: 6px; margin: 0 0 14px; }
@@ -194,6 +216,20 @@
   .conv .badge { background: var(--accent); color: var(--accent-text); border-radius: 999px; padding: 1px 9px; font-size: 12px; }
 
   #status { text-align: center; color: var(--hint); padding: 40px 8px; font-size: 15px; }
+  .skeleton-stack { display: grid; gap: 12px; padding-bottom: 8px; }
+  .skeleton-card { padding: 16px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .sk { position: relative; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.08); }
+  .sk::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.12), transparent); animation: shimmer 1.15s infinite; }
+  .sk-line { height: 13px; margin-top: 10px; }
+  .sk-line:first-child { margin-top: 0; }
+  .sk-title { width: 56%; height: 18px; }
+  .sk-short { width: 34%; }
+  .sk-wide { width: 100%; }
+  .sk-avatar { width: 58px; height: 58px; border-radius: 18px; flex: none; }
+  .sk-row { display: flex; align-items: center; gap: 14px; }
+  .sk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .sk-tile { height: 78px; border-radius: 16px; }
 
   input, textarea, select {
     width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px;
@@ -240,7 +276,7 @@
   .admin-nav { overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
   .admin-nav-row { display: flex; width: 100%; min-height: 58px; align-items: center; gap: 12px; margin: 0;
     padding: 14px 16px; border: 0; border-radius: 0; border-top: 1px solid var(--border);
-    background: transparent; color: var(--text); text-align: left; }
+    background: transparent; color: var(--text); text-align: left; box-shadow: none; }
   .admin-nav-row:first-child { border-top: 0; }
   .admin-nav-row:active { background: var(--surface-2); }
   .admin-nav-icon { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 10px;
@@ -273,12 +309,13 @@
     color: var(--tone-active); font-size: 11px; font-weight: 800; }
   .admin-status.inactive { background: rgba(255,69,58,.13); color: var(--tone-expired); }
   .admin-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-  .admin-stat { min-height: 92px; padding: 15px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .admin-stat { min-height: 92px; padding: 15px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.025); }
   .admin-stat-value { margin-top: 7px; font-size: 23px; font-weight: 800; letter-spacing: -.03em; }
   .admin-stat-label { color: var(--hint); font-size: 11px; font-weight: 700; line-height: 1.35; }
   .payment-range { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 5px; margin-bottom: 14px;
     border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
-  .payment-range button { margin: 0; padding: 9px 8px; border-radius: 11px; background: transparent; color: var(--hint); }
+  .payment-range button { margin: 0; padding: 9px 8px; border-radius: 11px; background: transparent; color: var(--hint); box-shadow: none; }
   .payment-range button.active { background: var(--accent-soft); color: var(--accent); }
   .payment-chart { padding: 15px; overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
   .payment-chart-bars { display: flex; height: 142px; align-items: flex-end; gap: 4px; overflow-x: auto; padding: 10px 1px 4px; }
@@ -320,6 +357,11 @@
   .admin-card textarea { min-height: 120px; }
   .admin-support-avatar { display: grid; width: 40px; height: 40px; flex: none; place-items: center;
     border-radius: 13px; background: var(--accent-soft); color: var(--accent); font-weight: 800; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes shimmer { 100% { transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
+  }
   @media (max-width: 360px) {
     body { padding-inline: 12px; }
     .validity { padding-inline: 15px; }
@@ -367,6 +409,11 @@ const EN = {
   'Личный кабинет': 'My account',
   'Мой профиль': 'My Profile',
   'Загрузка…': 'Loading…',
+  'Загружаем кабинет…': 'Loading account…',
+  'Загружаем админ-панель…': 'Loading admin panel…',
+  'Загружаем данные…': 'Loading data…',
+  'Сохранение…': 'Saving…',
+  'Проверяю оплату…': 'Checking payment…',
   'Откройте это приложение из Telegram.': 'Open this app from Telegram.',
   'Ошибка {n}': 'Error {n}',
   'Статус': 'Status',
@@ -406,10 +453,21 @@ const EN = {
   'Реферальная программа сейчас отключена.': 'The referral program is currently disabled.',
   'Продление — выберите период:': 'Renewal — choose a period:',
   'Выберите период подписки': 'Select a subscription period',
+  'Оплата и продление': 'Payment & renewal',
+  'Продлеваем профиль': 'Renewing profile',
+  'Сначала выберите период. Затем откроется доступный способ оплаты или заявка администратору.': 'Choose a period first. Then the available payment method or admin request will open.',
+  'Профиль': 'Profile',
+  'Период': 'Period',
   '{months} мес.': '{months} mo.',
   '{months} мес. — {price}': '{months} mo. — {price}',
   '💳 Оплатить / продлить': '💳 Pay / renew',
   'Оплатить и продлить': 'Pay & renew',
+  'Выберите способ оплаты': 'Choose a payment method',
+  'Доступно несколько способов оплаты. Выберите удобный вариант.': 'Several payment methods are available. Choose the one that works best.',
+  'Прикрепите чек': 'Attach a receipt',
+  'Администратор подтвердит оплату после получения чека.': 'An admin will confirm payment after receiving the receipt.',
+  'Проверка оплаты': 'Payment check',
+  'Если оплата уже завершена, проверьте статус здесь.': 'If payment is complete, check the status here.',
   'Отправка…': 'Sending…',
   '📸 Прикрепите чек': '📸 Attach receipt',
   'Фото JPEG/PNG до 10 МБ; PDF, WebP или HEIC до 50 МБ.': 'JPEG/PNG up to 10 MB; PDF, WebP or HEIC up to 50 MB.',
@@ -823,6 +881,82 @@ function el(tag, cls, text) {
   return e;
 }
 
+function activeButton() {
+  return document.activeElement instanceof HTMLButtonElement ? document.activeElement : null;
+}
+
+function setButtonLoading(button, loading, label) {
+  if (!button) return;
+  if (loading) {
+    if (button.dataset.loading === '1') return;
+    button.dataset.loading = '1';
+    button.dataset.normalHtml = button.innerHTML;
+    button.dataset.wasDisabled = button.disabled ? '1' : '0';
+    if (label && !button.classList.contains('switch')) button.textContent = label;
+    button.disabled = true;
+    button.classList.add('is-loading');
+    button.setAttribute('aria-busy', 'true');
+    return;
+  }
+  button.classList.remove('is-loading');
+  button.removeAttribute('aria-busy');
+  if (button.dataset.normalHtml !== undefined) button.innerHTML = button.dataset.normalHtml;
+  button.disabled = button.dataset.wasDisabled === '1';
+  delete button.dataset.loading;
+  delete button.dataset.normalHtml;
+  delete button.dataset.wasDisabled;
+}
+
+async function withButtonLoading(button, loadingLabel, action) {
+  if (button && button.dataset.loading === '1') return undefined;
+  setButtonLoading(button, true, loadingLabel);
+  try {
+    return await action();
+  } finally {
+    if (button && button.isConnected) setButtonLoading(button, false);
+  }
+}
+
+function renderSkeleton(kind) {
+  const stack = el('div', 'skeleton-stack');
+  const card = () => {
+    const c = el('div', 'skeleton-card');
+    c.appendChild(el('div', 'sk sk-title'));
+    c.appendChild(el('div', 'sk sk-line sk-wide'));
+    c.appendChild(el('div', 'sk sk-line'));
+    return c;
+  };
+  if (kind === 'cabinet') {
+    const profile = el('div', 'skeleton-card');
+    const row = el('div', 'sk-row');
+    row.appendChild(el('div', 'sk sk-avatar'));
+    const copy = el('div');
+    copy.style.flex = '1';
+    copy.appendChild(el('div', 'sk sk-title'));
+    copy.appendChild(el('div', 'sk sk-line sk-short'));
+    row.appendChild(copy);
+    profile.appendChild(row);
+    const grid = el('div', 'sk-grid');
+    grid.appendChild(el('div', 'sk sk-tile'));
+    grid.appendChild(el('div', 'sk sk-tile'));
+    profile.appendChild(grid);
+    stack.appendChild(profile);
+    stack.appendChild(card());
+    return stack;
+  }
+  const count = kind === 'stats' ? 4 : 3;
+  for (let i = 0; i < count; i++) stack.appendChild(card());
+  return stack;
+}
+
+function showLoadingView(kind, title, topFactory) {
+  appEl.textContent = '';
+  if (title) appEl.appendChild((topFactory || subPageTop)(title));
+  appEl.appendChild(renderSkeleton(kind));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
 // svg builds an inline icon from a path string (stroke-based, currentColor).
 function svg(paths) {
   const ns = 'http://www.w3.org/2000/svg';
@@ -1025,9 +1159,19 @@ function renderProfile(p, data) {
 // profile, keeping renewal and payment checks scoped to the same subscription.
 function renderRenew(target, data) {
   const wrap = el('div', 'card');
-  wrap.appendChild(el('h2', null, t('Выберите период подписки')));
+  wrap.appendChild(el('h2', null, t('Оплата и продление')));
+  wrap.appendChild(el('div', 'hint', t('Сначала выберите период. Затем откроется доступный способ оплаты или заявка администратору.')));
 
   let months = 0;
+  const context = el('div', 'renew-context');
+  context.appendChild(el('div', 'label', t('Профиль')));
+  context.appendChild(el('div', 'value', profileDisplayName(target)));
+  context.appendChild(el('div', 'label', t('Период')));
+  const periodValue = el('div', 'value', '—');
+  context.appendChild(periodValue);
+  wrap.appendChild(context);
+
+  const pay = el('button', null, t('Оплатить и продлить'));
   const tariffs = data.tariffs || [];
   if (tariffs.length) {
     const grid = el('div', 'tariffs');
@@ -1039,6 +1183,7 @@ function renderRenew(target, data) {
         months = tf.months;
         grid.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
         b.classList.add('selected');
+        periodValue.textContent = t('{months} мес.', { months });
         pay.disabled = false;
       };
       grid.appendChild(b);
@@ -1046,14 +1191,22 @@ function renderRenew(target, data) {
     wrap.appendChild(grid);
   } else {
     months = 1;
+    periodValue.textContent = t('{months} мес.', { months });
   }
 
-  const pay = el('button', null, t('Оплатить и продлить'));
   pay.disabled = tariffs.length > 0;
+
+  const choicePanel = el('div', 'payment-step');
+  choicePanel.hidden = true;
+  choicePanel.appendChild(el('div', 'payment-step-title', t('Выберите способ оплаты')));
+  choicePanel.appendChild(el('div', 'hint', t('Доступно несколько способов оплаты. Выберите удобный вариант.')));
   const choiceBox = el('div', 'tariffs');
-  choiceBox.hidden = true;
-  const receiptBox = el('div', 'card');
+  choicePanel.appendChild(choiceBox);
+
+  const receiptBox = el('div', 'payment-step');
   receiptBox.hidden = true;
+  receiptBox.appendChild(el('div', 'payment-step-title', t('Прикрепите чек')));
+  receiptBox.appendChild(el('div', 'hint', t('Администратор подтвердит оплату после получения чека.')));
   receiptBox.appendChild(el('div', 'hint', t('Фото JPEG/PNG до 10 МБ; PDF, WebP или HEIC до 50 МБ.')));
   const receiptFile = Object.assign(el('input'), { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/heic,.pdf,.heic' });
   const receiptNote = Object.assign(el('input'), { type: 'text', placeholder: t('Комментарий (необязательно)') });
@@ -1061,76 +1214,98 @@ function renderRenew(target, data) {
   receiptSend.onclick = async () => {
     if (!receiptFile.files.length) return tg.showAlert(t('📸 Прикрепите чек'));
     const form = new FormData(); form.append('file', receiptFile.files[0]); form.append('note', receiptNote.value.trim());
-    receiptSend.disabled = true;
-    try { await api('/api/receipt', { method: 'POST', body: form }); receiptSend.textContent = t('✅ Чек отправлен'); receiptFile.disabled = true; receiptNote.disabled = true; }
-    catch (e) { receiptSend.disabled = false; tg.showAlert(e.message); }
+    try {
+      await withButtonLoading(receiptSend, t('Отправка…'), () => api('/api/receipt', { method: 'POST', body: form }));
+      receiptSend.textContent = t('✅ Чек отправлен');
+      receiptSend.disabled = true;
+      receiptFile.disabled = true;
+      receiptNote.disabled = true;
+    } catch (e) { tg.showAlert(e.message); }
   };
   receiptBox.appendChild(receiptFile); receiptBox.appendChild(receiptNote); receiptBox.appendChild(receiptSend);
+
   const checkKey = 'platega_request_' + target.remnawave_id;
+  const checkPanel = el('div', 'payment-step');
+  checkPanel.appendChild(el('div', 'payment-step-title', t('Проверка оплаты')));
+  checkPanel.appendChild(el('div', 'hint', t('Если оплата уже завершена, проверьте статус здесь.')));
   const check = el('button', 'secondary', t('🔄 Проверить оплату'));
   const checkPayment = async () => {
     const requestID = Number(localStorage.getItem(checkKey)); if (!requestID) return;
-    check.disabled = true;
     try {
-      const res = await api('/api/platega/check', { method: 'POST', body: JSON.stringify({ request_id: requestID }) });
-      if (res.status === 'confirmed') { localStorage.removeItem(checkKey); check.textContent = t('✅ Оплата подтверждена, подписка продлена.'); cabinetData = await api('/api/me'); }
+      const res = await withButtonLoading(check, t('Проверяю оплату…'), () =>
+        api('/api/platega/check', { method: 'POST', body: JSON.stringify({ request_id: requestID }) }));
+      if (res.status === 'confirmed') { localStorage.removeItem(checkKey); check.textContent = t('✅ Оплата подтверждена, подписка продлена.'); check.disabled = true; cabinetData = await api('/api/me'); }
       else if (res.status === 'rejected') { localStorage.removeItem(checkKey); check.textContent = t('Платёж отклонён.'); }
-      else { check.disabled = false; tg.showAlert(t('Оплата ещё не подтверждена.')); }
-    } catch (e) { check.disabled = false; tg.showAlert(e.message); }
+      else { tg.showAlert(t('Оплата ещё не подтверждена.')); }
+    } catch (e) { tg.showAlert(e.message); }
   };
   check.onclick = checkPayment;
-  check.hidden = !localStorage.getItem(checkKey);
+  checkPanel.appendChild(check);
+  checkPanel.hidden = !localStorage.getItem(checkKey);
   const resetPay = () => { pay.disabled = false; pay.textContent = t('💳 Оплатить / продлить'); };
-  const doRenew = async (provider) => {
-    choiceBox.hidden = true;
-    choiceBox.innerHTML = '';
+  const doRenew = async (provider, triggerButton) => {
+    choicePanel.hidden = true;
+    choiceBox.textContent = '';
+    receiptBox.hidden = true;
     pay.disabled = true;
-    pay.textContent = t('Отправка…');
+    const loadingButton = triggerButton || pay;
+    setButtonLoading(loadingButton, true, t('Отправка…'));
+    let res;
+    let err;
     try {
       const body = { remnawave_id: target.remnawave_id, months };
       if (provider) body.provider = provider;
-      const res = await api('/api/renew', { method: 'POST', body: JSON.stringify(body) });
-      if (res.status === 'choose_provider') {
-        resetPay();
-        (res.providers || []).forEach(id => {
-          const b = el('button', 'secondary', providerLabel(id));
-          b.onclick = () => doRenew(id);
-          choiceBox.appendChild(b);
-        });
-        choiceBox.hidden = false;
-      } else if (res.status === 'awaiting_screenshot') {
-        pay.textContent = t('📸 Прикрепите чек');
-        receiptBox.hidden = false;
-      } else if (res.status === 'platega' && res.payment_url) {
-        pay.textContent = t('💳 Открываем оплату…');
-        if (res.request_id) { localStorage.setItem(checkKey, String(res.request_id)); check.hidden = false; }
-        tg.openLink(res.payment_url);
-        tg.showAlert(t('Откроется страница оплаты. После оплаты подписка продлится автоматически.'));
-        resetPay();
-      } else if (res.status === 'telegram_stars' && res.invoice_url) {
-        pay.textContent = t('⭐ Открываем оплату…');
-        tg.openInvoice(res.invoice_url, (st) => {
-          if (st === 'paid') {
-            pay.textContent = t('✅ Оплачено');
-            tg.showAlert(t('Оплата прошла! Подписка продлена.'));
-          } else {
-            resetPay();
-          }
-        });
-      } else {
-        pay.textContent = t('✅ Заявка отправлена');
-        tg.showAlert(t('Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.'));
-      }
+      res = await api('/api/renew', { method: 'POST', body: JSON.stringify(body) });
     } catch (e) {
+      err = e;
+    } finally {
+      if (loadingButton.isConnected) setButtonLoading(loadingButton, false);
+    }
+    if (err) {
       resetPay();
-      tg.showAlert(e.message);
+      tg.showAlert(err.message);
+      return;
+    }
+    if (res.status === 'choose_provider') {
+      resetPay();
+      (res.providers || []).forEach(id => {
+        const b = el('button', 'secondary', providerLabel(id));
+        b.onclick = () => doRenew(id, b);
+        choiceBox.appendChild(b);
+      });
+      choicePanel.hidden = false;
+    } else if (res.status === 'awaiting_screenshot') {
+      pay.textContent = t('📸 Прикрепите чек');
+      pay.disabled = true;
+      receiptBox.hidden = false;
+    } else if (res.status === 'platega' && res.payment_url) {
+      pay.textContent = t('💳 Открываем оплату…');
+      if (res.request_id) { localStorage.setItem(checkKey, String(res.request_id)); checkPanel.hidden = false; }
+      tg.openLink(res.payment_url);
+      tg.showAlert(t('Откроется страница оплаты. После оплаты подписка продлится автоматически.'));
+      resetPay();
+    } else if (res.status === 'telegram_stars' && res.invoice_url) {
+      pay.textContent = t('⭐ Открываем оплату…');
+      tg.openInvoice(res.invoice_url, (st) => {
+        if (st === 'paid') {
+          pay.textContent = t('✅ Оплачено');
+          pay.disabled = true;
+          tg.showAlert(t('Оплата прошла! Подписка продлена.'));
+        } else {
+          resetPay();
+        }
+      });
+    } else {
+      pay.textContent = t('✅ Заявка отправлена');
+      pay.disabled = true;
+      tg.showAlert(t('Заявка отправлена администратору. После оплаты и подтверждения подписка будет продлена.'));
     }
   };
   pay.onclick = () => doRenew('');
   wrap.appendChild(pay);
-  wrap.appendChild(choiceBox);
+  wrap.appendChild(choicePanel);
   wrap.appendChild(receiptBox);
-  wrap.appendChild(check);
+  wrap.appendChild(checkPanel);
   return wrap;
 }
 
@@ -1170,17 +1345,13 @@ function renderGiftBuy(data) {
   send.disabled = true;
   send.onclick = async () => {
     if (!(await confirmDialog(t('Оформить подарочную подписку на {months} мес.?', { months })))) return;
-    send.disabled = true;
-    send.textContent = t('Отправка…');
     try {
-      await api('/api/gift', { method: 'POST', body: JSON.stringify({ months }) });
-      tg.showAlert(t('Заявка отправлена администратору. После подтверждения оплаты вы получите код и ссылку.'));
-      await showCabinet();
-    } catch (e) {
-      tg.showAlert(e.message);
-      send.disabled = false;
-      send.textContent = t('🎁 Отправить заявку');
-    }
+      await withButtonLoading(send, t('Отправка…'), async () => {
+        await api('/api/gift', { method: 'POST', body: JSON.stringify({ months }) });
+        tg.showAlert(t('Заявка отправлена администратору. После подтверждения оплаты вы получите код и ссылку.'));
+        await showCabinet();
+      });
+    } catch (e) { tg.showAlert(e.message); }
   };
   card.appendChild(send);
   return card;
@@ -1203,17 +1374,14 @@ function renderInvite() {
       return;
     }
     if (!(await confirmDialog(t('Отправить заявку на пользователя «{name}»?', { name })))) return;
-    send.disabled = true;
-    send.textContent = t('Отправка…');
     try {
-      await api('/api/invite', { method: 'POST', body: JSON.stringify({ username: name }) });
-      tg.showAlert(t('Заявка отправлена администратору.'));
-      input.value = '';
-      await showCabinet();
-      return;
+      await withButtonLoading(send, t('Отправка…'), async () => {
+        await api('/api/invite', { method: 'POST', body: JSON.stringify({ username: name }) });
+        tg.showAlert(t('Заявка отправлена администратору.'));
+        input.value = '';
+        await showCabinet();
+      });
     } catch (e) { tg.showAlert(e.message); }
-    send.disabled = false;
-    send.textContent = t('👥 Отправить заявку');
   };
   card.appendChild(send);
   return card;
@@ -1277,7 +1445,16 @@ function renderRegistration() {
   const card = el('div', 'card'); card.appendChild(el('h2', null, t('🔗 Привязать профиль')));
   const input = Object.assign(el('input'), { type: 'text', placeholder: t('Имя профиля или ссылка') }); card.appendChild(input);
   const btn = el('button', null, t('🔗 Привязать профиль'));
-  btn.onclick = async () => { btn.disabled = true; try { await api('/api/register', { method: 'POST', body: JSON.stringify({ query: input.value.trim() }) }); cabinetData = await api('/api/me'); tg.showAlert(t('✅ Профиль привязан')); showHome(); } catch(e) { btn.disabled = false; tg.showAlert(e.message); } };
+  btn.onclick = async () => {
+    try {
+      await withButtonLoading(btn, t('Отправка…'), async () => {
+        await api('/api/register', { method: 'POST', body: JSON.stringify({ query: input.value.trim() }) });
+        cabinetData = await api('/api/me');
+        tg.showAlert(t('✅ Профиль привязан'));
+        showHome();
+      });
+    } catch(e) { tg.showAlert(e.message); }
+  };
   card.appendChild(btn); return card;
 }
 
@@ -1290,7 +1467,19 @@ function renderGiftRedemption() {
   else { target = Object.assign(el('input'), { type: 'text', placeholder: t('Имя пользователя') }); }
   card.appendChild(target);
   const btn = el('button', null, t('🎁 Активировать'));
-  btn.onclick = async () => { const body = { code: code.value.trim() }; if (profiles.length) body.remnawave_id = Number(target.value); else body.username = target.value.trim(); btn.disabled = true; try { await api('/api/gift/redeem', { method: 'POST', body: JSON.stringify(body) }); cabinetData = await api('/api/me'); tg.showAlert(t('✅ Подарок активирован')); showHome(); } catch(e) { btn.disabled = false; tg.showAlert(e.message); } };
+  btn.onclick = async () => {
+    const body = { code: code.value.trim() };
+    if (profiles.length) body.remnawave_id = Number(target.value);
+    else body.username = target.value.trim();
+    try {
+      await withButtonLoading(btn, t('Отправка…'), async () => {
+        await api('/api/gift/redeem', { method: 'POST', body: JSON.stringify(body) });
+        cabinetData = await api('/api/me');
+        tg.showAlert(t('✅ Подарок активирован'));
+        showHome();
+      });
+    } catch(e) { tg.showAlert(e.message); }
+  };
   card.appendChild(btn); return card;
 }
 
@@ -1445,10 +1634,9 @@ function renderTrialClaim(terms) {
   btn.onclick = async () => {
     const username = input.value.trim();
     if (!username) { tg.showAlert(t('Введите имя пользователя.')); return; }
-    btn.disabled = true;
-    btn.textContent = t('Отправка…');
     try {
-      const res = await api('/api/trial', { method: 'POST', body: JSON.stringify({ username }) });
+      const res = await withButtonLoading(btn, t('Отправка…'), () =>
+        api('/api/trial', { method: 'POST', body: JSON.stringify({ username }) }));
       cabinetData = await api('/api/me');
       if (res.pending) {
         tg.showAlert(t('🕓 Заявка на пробный период отправлена администратору. Мы уведомим вас о решении.'));
@@ -1461,8 +1649,6 @@ function renderTrialClaim(terms) {
       showHome();
     } catch (e) {
       tg.showAlert(e.message);
-      btn.disabled = false;
-      btn.textContent = t('🎁 Активировать пробный период');
     }
   };
   card.appendChild(btn);
@@ -1684,9 +1870,16 @@ function confirmDialog(message) {
 // showCabinet (re)loads /api/me and renders the hub. It is the canonical
 // "go to the account home" action used after mutations and from the admin panel.
 async function showCabinet() {
+  showLoadingView('cabinet');
   try {
     cabinetData = await api('/api/me');
-  } catch (e) { tg.showAlert(e.message); return; }
+  } catch (e) {
+    appEl.hidden = true;
+    statusEl.hidden = false;
+    statusEl.textContent = '⚠️ ' + e.message;
+    tg.showAlert(e.message);
+    return;
+  }
   showHome();
 }
 
@@ -1697,6 +1890,7 @@ let adminPaymentFilters = { days: 30, status: 'all', provider: 'all', query: '',
 
 // showAdmin (re)loads /api/admin and renders the admin hub.
 async function showAdmin() {
+  showLoadingView('admin', t('⚙️ Админ-панель'), title => adminPageTop(title, showCabinet));
   try {
     adminData = await api('/api/admin');
   } catch (e) { tg.showAlert(e.message); return; }
@@ -1878,21 +2072,31 @@ async function refreshAdminThread(box, userId) {
 // the cached panel data and re-renders the current admin view in place.
 async function adminAction(path, payload, message) {
   if (message && !(await confirmDialog(message))) return;
+  const button = activeButton();
+  setButtonLoading(button, true, t('Сохранение…'));
   try {
     await api(path, { method: 'POST', body: JSON.stringify(payload) });
     adminData = await api('/api/admin');
     currentRender();
-  } catch (e) { tg.showAlert(e.message); }
+  } catch (e) {
+    setButtonLoading(button, false);
+    tg.showAlert(e.message);
+  }
 }
 
 // cabinetAction is the user-side mirror of adminAction: post a mutation, refresh
 // the cached /api/me payload and re-render the current cabinet view in place.
 async function cabinetAction(path, payload) {
+  const button = activeButton();
+  setButtonLoading(button, true, t('Сохранение…'));
   try {
     await api(path, { method: 'POST', body: JSON.stringify(payload) });
     cabinetData = await api('/api/me');
     currentRender();
-  } catch (e) { tg.showAlert(e.message); }
+  } catch (e) {
+    setButtonLoading(button, false);
+    tg.showAlert(e.message);
+  }
 }
 
 function renderAdminTariffs(data) {
@@ -2008,18 +2212,15 @@ function renderAdminBroadcast() {
   send.onclick = async () => {
     if (!text.value.trim()) { tg.showAlert(t('Текст рассылки не может быть пустым.')); return; }
     if (!(await confirmDialog(t('Отправить сообщение всем пользователям?')))) return;
-    send.disabled = true;
-    send.textContent = t('Отправка…');
     try {
-      const res = await api('/api/admin/broadcast', {
-        method: 'POST',
-        body: JSON.stringify({ message: text.value }),
-      });
+      const res = await withButtonLoading(send, t('Отправка…'), () =>
+        api('/api/admin/broadcast', {
+          method: 'POST',
+          body: JSON.stringify({ message: text.value }),
+        }));
       text.value = '';
       tg.showAlert(t('Рассылка завершена: отправлено {sent}, ошибок {failed}.', { sent: res.sent, failed: res.failed }));
     } catch (e) { tg.showAlert(e.message); }
-    send.disabled = false;
-    send.textContent = t('📢 Отправить всем');
   };
   card.appendChild(send);
   return card;
@@ -2279,16 +2480,13 @@ function renderAdminUpdates(data) {
   card.appendChild(save);
   const check = el('button', 'secondary', t('🔎 Проверить обновления'));
   check.onclick = async () => {
-    check.disabled = true;
-    check.textContent = t('Проверяю обновления…');
     try {
-      const res = await api('/api/admin/updates/check', { method: 'POST', body: JSON.stringify({}) });
+      const res = await withButtonLoading(check, t('Проверяю обновления…'), () =>
+        api('/api/admin/updates/check', { method: 'POST', body: JSON.stringify({}) }));
       adminData = await api('/api/admin');
       currentRender();
       tg.showAlert(res.message || t('Проверяю обновления…'));
     } catch (e) {
-      check.disabled = false;
-      check.textContent = t('🔎 Проверить обновления');
       tg.showAlert(e.message);
     }
   };
@@ -2405,11 +2603,12 @@ function renderAdminReferral(data) {
 // showUserAdmin is a dedicated page: the full user list with a live username
 // search; tapping a row opens that user's editable card.
 async function showUserAdmin() {
+  currentRender = showUserAdmin;
+  showLoadingView('admin', t('Управление пользователями'), title => adminPageTop(title));
   let users;
   try {
     users = (await api('/api/admin/users')).users || [];
   } catch (e) { tg.showAlert(e.message); return; }
-  currentRender = showUserAdmin;
 
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Управление пользователями')));
@@ -2454,6 +2653,7 @@ async function showUserAdmin() {
 
 // openUser swaps the page to one user's editable card with a back-to-list link.
 async function openUser(username) {
+  showLoadingView('admin', username || t('Управление пользователями'), title => adminPageTop(title, showUserAdmin));
   let user;
   try {
     user = (await api('/api/admin/user/find', { method: 'POST', body: JSON.stringify({ query: username }) })).user;
@@ -2476,11 +2676,16 @@ async function openUser(username) {
 function renderUserCard(container, user) {
   container.textContent = '';
   const update = async (payload) => {
+    const button = activeButton();
+    setButtonLoading(button, true, t('Сохранение…'));
     try {
       await api('/api/admin/user/update', { method: 'POST', body: JSON.stringify({ uuid: user.uuid, username: user.username, ...payload }) });
       const res = await api('/api/admin/user/find', { method: 'POST', body: JSON.stringify({ query: user.username }) });
       renderUserCard(container, res.user);
-    } catch (e) { tg.showAlert(e.message); }
+    } catch (e) {
+      setButtonLoading(button, false);
+      tg.showAlert(e.message);
+    }
   };
 
   const info = el('div', 'item');
@@ -2675,6 +2880,7 @@ function round2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
 // server-rendered labels.
 async function showAdminServers() {
   currentRender = showAdminServers;
+  showLoadingView('admin', t('Инфраструктура'), title => adminPageTop(title));
   let servers, fx;
   try {
     [servers, fx] = await Promise.all([api('/api/admin/servers'), api('/api/admin/fx')]);
@@ -2752,10 +2958,15 @@ function renderInfraServer(srv) {
 
 // infraPost mutates server/FX state then re-renders the infra screen in place.
 async function infraPost(path, payload) {
+  const button = activeButton();
+  setButtonLoading(button, true, t('Сохранение…'));
   try {
     await api(path, { method: 'POST', body: JSON.stringify(payload) });
     showAdminServers();
-  } catch (e) { tg.showAlert(e.message); }
+  } catch (e) {
+    setButtonLoading(button, false);
+    tg.showAlert(e.message);
+  }
 }
 
 function renderInfraForm() {
@@ -2800,9 +3011,11 @@ function renderInfraForm() {
     if (!payload.name) { tg.showAlert(t('Введите название сервера.')); return; }
     if (!(payload.period_months >= 1)) { tg.showAlert(t('Период должен быть не меньше 1 месяца.')); return; }
     try {
-      await api('/api/admin/server', { method: 'POST', body: JSON.stringify(payload) });
-      infraDraft = null;
-      showAdminServers();
+      await withButtonLoading(save, t('Сохранение…'), async () => {
+        await api('/api/admin/server', { method: 'POST', body: JSON.stringify(payload) });
+        infraDraft = null;
+        showAdminServers();
+      });
     } catch (e) { tg.showAlert(e.message); }
   };
   card.appendChild(save);
@@ -2869,6 +3082,7 @@ function renderInfraFx(fx) {
 // in-place mutations re-render correctly.
 async function showAdminStats() {
   currentRender = showAdminStats;
+  showLoadingView('stats', t('Статистика'), title => adminPageTop(title));
   const f = adminPaymentFilters;
   const params = new URLSearchParams({
     days: String(f.days), status: f.status, provider: f.provider,
@@ -3274,6 +3488,7 @@ function showAdminBroadcast() {
     statusEl.textContent = t('Откройте это приложение из Telegram.');
     return;
   }
+  showLoadingView('cabinet');
   try {
     const data = await api('/api/me');
     // With no saved choice and no Telegram-language match, fall back to the
@@ -3286,6 +3501,8 @@ function showAdminBroadcast() {
     cabinetData = data;
     showHome();
   } catch (e) {
+    appEl.hidden = true;
+    statusEl.hidden = false;
     statusEl.textContent = '⚠️ ' + e.message;
   }
 })();
