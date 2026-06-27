@@ -300,6 +300,19 @@ func (s *Service) SetNotificationPref(ctx context.Context, telegramID int64, kin
 	return nil
 }
 
+// AdminSetProxyNotification mutes or unmutes up/down alerts for one proxy server
+// from the admin Proxy Health tab. The mute is global (it silences the alert for
+// all admins) and keyed by the proxy's canonical identity.
+func (s *Service) AdminSetProxyNotification(ctx context.Context, telegramID int64, name, address, subName string, muted bool) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	if err := s.store.SetProxyNotifMuted(ctx, proxyMuteKey(address, name, subName), muted); err != nil {
+		return fmt.Errorf("set proxy notification: %w", err)
+	}
+	return nil
+}
+
 // ClaimTrial activates the one-time free trial for telegramID from the mini app,
 // reusing the shared claimTrial core. Returns the created profile and its
 // subscription link, or a trial sentinel error mapped to an HTTP status by the
