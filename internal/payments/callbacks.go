@@ -87,6 +87,10 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleGiftCodeApprove(ctx, cb)
 	case strings.HasPrefix(cb.Data, "gc_rej:"):
 		return s.handleGiftCodeReject(ctx, cb)
+	case strings.HasPrefix(cb.Data, "tr_ok:"):
+		return s.handleTrialApprove(ctx, cb)
+	case strings.HasPrefix(cb.Data, "tr_rej:"):
+		return s.handleTrialReject(ctx, cb)
 	case strings.HasPrefix(cb.Data, "gc_use:"):
 		return s.handleGiftUse(ctx, cb)
 	case cb.Data == "gc_redeem_cancel":
@@ -575,6 +579,8 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.sendTrialAdminCard(ctx, chatID)
 	case cb.Data == "adm:trial:toggle":
 		s.handleTrialToggle(ctx, chatID)
+	case cb.Data == "adm:trial:approval":
+		s.handleTrialApprovalToggle(ctx, chatID)
 	case cb.Data == "adm:trial:days":
 		s.startTrialDaysInput(ctx, chatID)
 	case cb.Data == "adm:trial:traffic":

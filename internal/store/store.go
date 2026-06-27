@@ -59,6 +59,15 @@ CREATE TABLE IF NOT EXISTS invite_requests (
   created_at          TEXT NOT NULL,
   resolved_at         TEXT
 );
+CREATE TABLE IF NOT EXISTS trial_requests (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  telegram_id INTEGER NOT NULL,
+  username    TEXT NOT NULL,
+  status      TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  resolved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trial_requests_status ON trial_requests(status);
 CREATE TABLE IF NOT EXISTS gift_codes (
   id                   INTEGER PRIMARY KEY AUTOINCREMENT,
   code                 TEXT NOT NULL UNIQUE,

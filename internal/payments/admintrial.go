@@ -25,10 +25,17 @@ func (s *Service) sendTrialAdminCard(ctx context.Context, chatID int64) {
 	if cfg.SquadUUID != "" {
 		squad = cfg.SquadUUID
 	}
-	text := fmt.Sprintf(i18n.T("🎁 Пробный период: %s\nДлительность: %d %s\nТрафик: %s\nУстройства: %s\nСквад: %s\nСброс трафика: NO_RESET"),
-		state, cfg.Days, i18n.PluralDays(cfg.Days), formatLimit(int64(cfg.TrafficLimitGB), " GB"), formatLimit(int64(cfg.HwidDeviceLimit), ""), squad)
+	approval := i18n.T("выключено")
+	approvalToggle := i18n.T("✅ Включить подтверждение админом")
+	if cfg.RequireApproval {
+		approval = i18n.T("включено")
+		approvalToggle = i18n.T("🚫 Выключить подтверждение админом")
+	}
+	text := fmt.Sprintf(i18n.T("🎁 Пробный период: %s\nДлительность: %d %s\nТрафик: %s\nУстройства: %s\nСквад: %s\nСброс трафика: NO_RESET\nПодтверждение админом (новые без реферала): %s"),
+		state, cfg.Days, i18n.PluralDays(cfg.Days), formatLimit(int64(cfg.TrafficLimitGB), " GB"), formatLimit(int64(cfg.HwidDeviceLimit), ""), squad, approval)
 	kb := &tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{
 		{{Text: toggle, CallbackData: "adm:trial:toggle"}},
+		{{Text: approvalToggle, CallbackData: "adm:trial:approval"}},
 		{{Text: i18n.T("✏️ Изменить длительность (дни)"), CallbackData: "adm:trial:days"}},
 		{{Text: i18n.T("📊 Изменить лимит трафика"), CallbackData: "adm:trial:traffic"}},
 		{{Text: i18n.T("📱 Изменить лимит устройств"), CallbackData: "adm:trial:hwid"}},
@@ -43,6 +50,18 @@ func (s *Service) handleTrialToggle(ctx context.Context, chatID int64) {
 	cfg := s.trialConfig()
 	if err := s.setTrialEnabled(ctx, !cfg.Enabled); err != nil {
 		s.logger.Error("admin: save trial enabled failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
+		return
+	}
+	s.sendTrialAdminCard(ctx, chatID)
+}
+
+// handleTrialApprovalToggle flips the "require admin approval" gate on/off from
+// the admin card and re-renders.
+func (s *Service) handleTrialApprovalToggle(ctx context.Context, chatID int64) {
+	cfg := s.trialConfig()
+	if err := s.setTrialApproval(ctx, !cfg.RequireApproval); err != nil {
+		s.logger.Error("admin: save trial approval failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
 		return
 	}

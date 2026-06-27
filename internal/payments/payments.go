@@ -61,6 +61,10 @@ type TrialConfig struct {
 	TrafficLimitGB  int
 	HwidDeviceLimit int
 	SquadUUID       string
+	// RequireApproval gates the trial behind an admin decision for new users
+	// who arrived without a referral. Referred users (vouched for by an existing
+	// subscriber) keep the instant trial even when this is on.
+	RequireApproval bool
 }
 
 // Creator creates a new user in the remote panel with all limits applied in
@@ -313,10 +317,11 @@ type Service struct {
 	// of its notification, so confirming/rejecting clears the button for every
 	// admin. Entries are deleted on resolve; abandoned requests are evicted
 	// after adminMsgTTL by putAdminMsgs.
-	payMsgs    map[int64]adminMsgEntry // protected by mu
-	inviteMsgs map[int64]adminMsgEntry // protected by mu
-	giftMsgs   map[int64]adminMsgEntry // protected by mu
-	requisites string                  // protected by mu; empty = not set
+	payMsgs      map[int64]adminMsgEntry // protected by mu
+	inviteMsgs   map[int64]adminMsgEntry // protected by mu
+	giftMsgs     map[int64]adminMsgEntry // protected by mu
+	trialReqMsgs map[int64]adminMsgEntry // protected by mu
+	requisites   string                  // protected by mu; empty = not set
 
 	// requireScreenshot mirrors the persisted setting: when true the user must
 	// attach a payment screenshot before the request reaches the admins.
@@ -413,14 +418,15 @@ const defaultTrafficResetKey = "default_traffic_reset_strategy"
 // Settings-table keys for the runtime-toggleable free-trial and referral
 // settings. Absent = use the env-provided default (see InitTrial / InitReferral).
 const (
-	trialEnabledKey        = "trial_enabled"
-	trialDaysKey           = "trial_days"
-	trialTrafficLimitGBKey = "trial_traffic_limit_gb"
-	trialHwidLimitKey      = "trial_hwid_device_limit"
-	trialSquadUUIDKey      = "trial_squad_uuid"
-	referralEnabledKey     = "referral_enabled"
-	referralInviterDaysKey = "referral_inviter_days"
-	referralInviteeDaysKey = "referral_invitee_days"
+	trialEnabledKey         = "trial_enabled"
+	trialDaysKey            = "trial_days"
+	trialTrafficLimitGBKey  = "trial_traffic_limit_gb"
+	trialHwidLimitKey       = "trial_hwid_device_limit"
+	trialSquadUUIDKey       = "trial_squad_uuid"
+	trialRequireApprovalKey = "trial_require_approval"
+	referralEnabledKey      = "referral_enabled"
+	referralInviterDaysKey  = "referral_inviter_days"
+	referralInviteeDaysKey  = "referral_invitee_days"
 )
 
 func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater UserUpdater, finder Finder, registrar Registrar, squads SquadLister, adminIDs []int64, currency string, dryRun bool, logger *slog.Logger) *Service {
@@ -450,6 +456,7 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater 
 		payMsgs:         make(map[int64]adminMsgEntry),
 		inviteMsgs:      make(map[int64]adminMsgEntry),
 		giftMsgs:        make(map[int64]adminMsgEntry),
+		trialReqMsgs:    make(map[int64]adminMsgEntry),
 		trials:          make(map[int64]*trialState),
 	}
 	// Load persisted payment requisites into the in-memory cache so the user
@@ -572,6 +579,7 @@ func (s *Service) InitTrialConfig(env TrialConfig) {
 		TrafficLimitGB:  env.TrafficLimitGB,
 		HwidDeviceLimit: env.HwidDeviceLimit,
 		SquadUUID:       strings.TrimSpace(env.SquadUUID),
+		RequireApproval: env.RequireApproval,
 	}
 	if v, found, err := s.store.GetSetting(ctx, trialEnabledKey); err != nil {
 		s.logger.Error("load trial enabled setting failed", "err", err.Error())
@@ -591,6 +599,11 @@ func (s *Service) InitTrialConfig(env TrialConfig) {
 		s.logger.Error("load trial squad setting failed", "err", err.Error())
 	} else if found {
 		cfg.SquadUUID = strings.TrimSpace(v)
+	}
+	if v, found, err := s.store.GetSetting(ctx, trialRequireApprovalKey); err != nil {
+		s.logger.Error("load trial approval setting failed", "err", err.Error())
+	} else if found {
+		cfg.RequireApproval = v == "1"
 	}
 	if cfg.Days < 1 {
 		cfg.Days = 1
@@ -659,11 +672,12 @@ func (s *Service) persistTrialConfig(ctx context.Context, cfg TrialConfig, valid
 		}
 	}
 	if err := s.store.UpsertSettings(ctx, map[string]string{
-		trialEnabledKey:        boolSetting(cfg.Enabled),
-		trialDaysKey:           strconv.Itoa(cfg.Days),
-		trialTrafficLimitGBKey: strconv.Itoa(cfg.TrafficLimitGB),
-		trialHwidLimitKey:      strconv.Itoa(cfg.HwidDeviceLimit),
-		trialSquadUUIDKey:      cfg.SquadUUID,
+		trialEnabledKey:         boolSetting(cfg.Enabled),
+		trialDaysKey:            strconv.Itoa(cfg.Days),
+		trialTrafficLimitGBKey:  strconv.Itoa(cfg.TrafficLimitGB),
+		trialHwidLimitKey:       strconv.Itoa(cfg.HwidDeviceLimit),
+		trialSquadUUIDKey:       cfg.SquadUUID,
+		trialRequireApprovalKey: boolSetting(cfg.RequireApproval),
 	}); err != nil {
 		return err
 	}
@@ -676,6 +690,12 @@ func (s *Service) persistTrialConfig(ctx context.Context, cfg TrialConfig, valid
 func (s *Service) setTrialEnabled(ctx context.Context, on bool) error {
 	cfg := s.trialConfig()
 	cfg.Enabled = on
+	return s.persistTrialConfig(ctx, cfg, false)
+}
+
+func (s *Service) setTrialApproval(ctx context.Context, on bool) error {
+	cfg := s.trialConfig()
+	cfg.RequireApproval = on
 	return s.persistTrialConfig(ctx, cfg, false)
 }
 

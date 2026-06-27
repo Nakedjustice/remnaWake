@@ -69,6 +69,8 @@ type Admin interface {
 	AdminRejectGiftRequest(ctx context.Context, telegramID, giftID int64) error
 	AdminApproveInviteRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminRejectInviteRequest(ctx context.Context, telegramID, reqID int64) error
+	AdminApproveTrialRequest(ctx context.Context, telegramID, reqID int64) error
+	AdminRejectTrialRequest(ctx context.Context, telegramID, reqID int64) error
 	AdminBroadcast(ctx context.Context, telegramID int64, text string) (*payments.WebBroadcastResult, error)
 	AdminListInfraServers(ctx context.Context, telegramID int64) ([]payments.WebInfraServer, error)
 	AdminSaveInfraServer(ctx context.Context, telegramID int64, in payments.WebInfraServerInput) error
@@ -184,6 +186,12 @@ func (s *Server) Handler() http.Handler {
 	}))
 	mux.HandleFunc("POST /api/admin/invite-request/reject", s.adminIDAction("reject invite request", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminRejectInviteRequest(ctx, tgID, id)
+	}))
+	mux.HandleFunc("POST /api/admin/trial-request/confirm", s.adminIDAction("approve trial request", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminApproveTrialRequest(ctx, tgID, id)
+	}))
+	mux.HandleFunc("POST /api/admin/trial-request/reject", s.adminIDAction("reject trial request", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminRejectTrialRequest(ctx, tgID, id)
 	}))
 	return mux
 }
@@ -337,6 +345,8 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 		writeJSONError(w, http.StatusConflict, "username already taken")
 	case errors.Is(err, payments.ErrTrialAlreadyUsed), errors.Is(err, payments.ErrTrialNotEligible):
 		writeJSONError(w, http.StatusConflict, "trial not available")
+	case errors.Is(err, payments.ErrTrialRequestPending):
+		writeJSONError(w, http.StatusConflict, "trial request already pending")
 	case errors.Is(err, payments.ErrPanelCreateFailed):
 		s.logger.Error("webapp: "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusBadGateway, "panel request failed, try again later")
@@ -524,6 +534,9 @@ func (s *Server) handleTrial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := map[string]any{"ok": true, "username": result.Username}
+	if result.Pending {
+		resp["pending"] = true
+	}
 	if result.SubscriptionURL != "" {
 		resp["subscription_url"] = result.SubscriptionURL
 	}
@@ -950,6 +963,7 @@ func (s *Server) handleAdminSetTrial(w http.ResponseWriter, r *http.Request) {
 		TrafficLimitGB  int    `json:"traffic_limit_gb"`
 		HwidDeviceLimit int    `json:"hwid_device_limit"`
 		SquadUUID       string `json:"squad_uuid"`
+		RequireApproval bool   `json:"require_approval"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "malformed request body")
@@ -958,6 +972,7 @@ func (s *Server) handleAdminSetTrial(w http.ResponseWriter, r *http.Request) {
 	if err := s.admin.AdminSetTrial(r.Context(), userID, payments.TrialConfig{
 		Enabled: req.Enabled, Days: req.Days, TrafficLimitGB: req.TrafficLimitGB,
 		HwidDeviceLimit: req.HwidDeviceLimit, SquadUUID: req.SquadUUID,
+		RequireApproval: req.RequireApproval,
 	}); err != nil {
 		s.writeAdminError(w, "set trial", userID, err)
 		return
