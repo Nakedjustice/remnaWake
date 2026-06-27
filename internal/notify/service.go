@@ -53,6 +53,11 @@ type Service struct {
 	dryRun      bool
 	winbackDays []int // days after expiry to send win-back messages; empty = off
 	now         func() time.Time
+	// sendWindow, when non-nil, gates delivery: Run only proceeds if it returns
+	// true for the current time. main wires this to the daily RUN_AT window so an
+	// off-hour RUN_ON_START sweep (e.g. a restart at 00:09) doesn't page users
+	// outside the configured schedule. nil means "always send" (tests, etc.).
+	sendWindow func(time.Time) bool
 }
 
 func NewService(rw userSource, tg sender, pay payFlow, marks sentMarker, prefs muteChecker, logger *slog.Logger, dryRun bool, winbackDays []int) *Service {
@@ -73,6 +78,15 @@ func (s *Service) Run(ctx context.Context) error {
 	startedAt := s.now()
 	logger := s.logger.With("job", "notify", "started_at", startedAt.Format(time.RFC3339))
 	logger.Info("job started")
+
+	// Stay silent outside the configured daily window. A RUN_ON_START sweep after
+	// an off-hour restart would otherwise page everyone at the restart time (e.g.
+	// 00:09) instead of RUN_AT. Returning before any send keeps the dedup store
+	// untouched, so the next in-window run still delivers.
+	if s.sendWindow != nil && !s.sendWindow(startedAt) {
+		logger.Info("skipped: outside daily send window")
+		return nil
+	}
 
 	users, err := s.rw.GetUsers(ctx)
 	if err != nil {
@@ -248,19 +262,60 @@ func containsDay(list []int, day int) bool {
 	return false
 }
 
+// daysUntil reports the whole days remaining until exp, rounding any partial
+// day up. This matches the Remnawave panel, which shows e.g. "8 days left" while
+// a subscription still has 7 days and some hours to run. Flooring here made the
+// 7-day reminder fire (and read "7 days") when the panel still said 8, which is
+// the mismatch users reported. Returns 0 once exp is reached.
 func daysUntil(now, exp time.Time) int {
 	diff := exp.Sub(now)
 	if diff <= 0 {
 		return 0
 	}
-	return int(diff / (24 * time.Hour))
+	days := int(diff / (24 * time.Hour))
+	if diff%(24*time.Hour) != 0 {
+		days++
+	}
+	return days
 }
 
-// daysSince is the post-expiry mirror of daysUntil: whole days elapsed since exp.
+// daysSince reports the whole days elapsed since exp, flooring any partial day.
+// It is the post-expiry counterpart to daysUntil but deliberately rounds the
+// other way: a win-back milestone like "1 day after expiry" must mean a full day
+// has actually passed, not the first minute past the deadline.
 func daysSince(now, exp time.Time) int {
 	diff := now.Sub(exp)
 	if diff <= 0 {
 		return 0
 	}
 	return int(diff / (24 * time.Hour))
+}
+
+// SetSendWindow restricts delivery to the daily window [runAt, runAt+window) in
+// loc. Outside it, Run is a no-op that sends nothing and writes no dedup marks,
+// so the next in-window run still delivers. The configured RUN_AT run, being
+// inside the window, is unaffected. A nil loc or non-positive window clears the
+// restriction (Run always proceeds).
+func (s *Service) SetSendWindow(loc *time.Location, runAtHour, runAtMin int, window time.Duration) {
+	if loc == nil || window <= 0 {
+		s.sendWindow = nil
+		return
+	}
+	s.sendWindow = func(now time.Time) bool {
+		return withinDailyWindow(now, loc, runAtHour, runAtMin, window)
+	}
+}
+
+// withinDailyWindow reports whether now (evaluated in loc) falls in the daily
+// window [runAt, runAt+window). It also checks the previous day's window so a
+// window straddling midnight still matches the early-morning side.
+func withinDailyWindow(now time.Time, loc *time.Location, hour, min int, window time.Duration) bool {
+	n := now.In(loc)
+	start := time.Date(n.Year(), n.Month(), n.Day(), hour, min, 0, 0, loc)
+	for _, s := range [2]time.Time{start, start.AddDate(0, 0, -1)} {
+		if !n.Before(s) && n.Before(s.Add(window)) {
+			return true
+		}
+	}
+	return false
 }
