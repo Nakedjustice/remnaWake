@@ -38,6 +38,12 @@ var (
 	ErrTrialNotEligible = errors.New("trial is for new users only")
 	ErrTrialAlreadyUsed = errors.New("trial already used by this telegram id")
 	ErrUsernameTaken    = errors.New("username already taken")
+	// ErrTrialPendingApproval is a success-but-pending control signal: the trial
+	// requires admin approval, the request was recorded and admins notified.
+	ErrTrialPendingApproval = errors.New("trial request submitted for admin approval")
+	// ErrTrialRequestPending means a trial request from this user is already
+	// awaiting an admin decision (duplicate submit).
+	ErrTrialRequestPending = errors.New("trial request already awaiting admin approval")
 )
 
 // WebProfile is one linked subscription as shown in the mini app.
@@ -100,6 +106,9 @@ type WebNotifPrefs struct {
 type WebTrialResult struct {
 	Username        string `json:"username"`
 	SubscriptionURL string `json:"subscription_url,omitempty"`
+	// Pending is true when the trial required admin approval: the request was
+	// recorded and the user must wait for an admin decision (no profile yet).
+	Pending bool `json:"pending,omitempty"`
 }
 
 type WebTrialTerms struct {
@@ -297,6 +306,9 @@ func (s *Service) SetNotificationPref(ctx context.Context, telegramID int64, kin
 // webapp handler. On dry-run the result echoes the requested username.
 func (s *Service) ClaimTrial(ctx context.Context, telegramID int64, username string) (*WebTrialResult, error) {
 	created, _, err := s.claimTrial(ctx, telegramID, strings.TrimSpace(username))
+	if errors.Is(err, ErrTrialPendingApproval) {
+		return &WebTrialResult{Username: strings.TrimSpace(username), Pending: true}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -116,6 +116,10 @@ type TrialConfig struct {
 	TrafficLimitGB  int
 	HwidDeviceLimit int
 	SquadUUID       string
+	// RequireApproval gates the trial behind an admin decision for new users
+	// without a referral. Runtime-toggleable from the admin panel; this is only
+	// the deployment default.
+	RequireApproval bool
 }
 
 // ReferralConfig configures the optional invite-referral bonus. When Enabled, an
@@ -228,6 +232,7 @@ func Load() (*Config, error) {
 			TrafficLimitGB:  getenvInt("TRIAL_TRAFFIC_LIMIT_GB", 10),
 			HwidDeviceLimit: getenvInt("TRIAL_HWID_DEVICE_LIMIT", 1),
 			SquadUUID:       strings.TrimSpace(os.Getenv("TRIAL_SQUAD_UUID")),
+			RequireApproval: getenvBool("TRIAL_REQUIRE_APPROVAL", false),
 		},
 		Referral: ReferralConfig{
 			Enabled:     getenvBool("REFERRAL_ENABLED", false),

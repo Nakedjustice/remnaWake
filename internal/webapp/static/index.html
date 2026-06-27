@@ -684,8 +684,14 @@ const EN = {
   '🎁 Активировать пробный период': '🎁 Activate trial',
   'Введите имя пользователя.': 'Enter a username.',
   '✅ Пробный период активирован!': '✅ Trial activated!',
+  '🕓 Заявка на пробный период отправлена администратору. Мы уведомим вас о решении.': '🕓 Your trial request was sent to an admin. We will notify you of the decision.',
   // Admin: trial & referral settings
   '🎁 Пробный период': '🎁 Free trial',
+  '🛂 Подтверждение админом (новые без реферала)': '🛂 Admin approval (new users without a referral)',
+  'Заявки на пробный период': 'Trial requests',
+  'TG {id}, заявка от {date}': 'TG {id}, requested on {date}',
+  'Одобрить пробный период для «{username}»?': 'Approve the trial for "{username}"?',
+  'Отклонить заявку на пробный период от «{username}»?': 'Reject the trial request for "{username}"?',
   'Включён: новые пользователи могут активировать пробный профиль.': 'Enabled: new users can activate a trial profile.',
   'Выключен.': 'Disabled.',
   'Длительность (дни)': 'Duration (days)',
@@ -1444,6 +1450,11 @@ function renderTrialClaim(terms) {
     try {
       const res = await api('/api/trial', { method: 'POST', body: JSON.stringify({ username }) });
       cabinetData = await api('/api/me');
+      if (res.pending) {
+        tg.showAlert(t('🕓 Заявка на пробный период отправлена администратору. Мы уведомим вас о решении.'));
+        showHome();
+        return;
+      }
       let msg = t('✅ Пробный период активирован!');
       if (res.subscription_url) msg += '\n' + res.subscription_url;
       tg.showAlert(msg);
@@ -2159,6 +2170,35 @@ function renderAdminInviteRequests(data) {
   return card;
 }
 
+function renderAdminTrialRequests(data) {
+  const card = el('div');
+  if (!(data.trial_requests || []).length) {
+    card.appendChild(el('div', 'admin-empty', t('Ожидающих заявок нет.')));
+    return card;
+  }
+  data.trial_requests.forEach(r => {
+    const item = el('div', 'admin-card admin-request');
+    const info = el('div', 'admin-request-copy');
+    info.appendChild(el('div', 'admin-card-title', r.username));
+    info.appendChild(el('div', 'admin-card-meta', t('TG {id}, заявка от {date}', { id: r.telegram_id, date: r.created_at })));
+    item.appendChild(info);
+    const btns = el('div', 'admin-request-actions');
+    const ok = el('button', 'admin-icon-btn', '✓');
+    ok.setAttribute('aria-label', t('Подтвердить'));
+    ok.onclick = () => adminAction('/api/admin/trial-request/confirm', { id: r.id },
+      t('Одобрить пробный период для «{username}»?', { username: r.username }));
+    const rej = el('button', 'admin-icon-btn reject', '×');
+    rej.setAttribute('aria-label', t('Отклонить'));
+    rej.onclick = () => adminAction('/api/admin/trial-request/reject', { id: r.id },
+      t('Отклонить заявку на пробный период от «{username}»?', { username: r.username }));
+    btns.appendChild(ok);
+    btns.appendChild(rej);
+    item.appendChild(btns);
+    card.appendChild(item);
+  });
+  return card;
+}
+
 function renderAdminSquad(data) {
   const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('🛡 Сквад по умолчанию')));
@@ -2280,25 +2320,34 @@ function renderAdminTrial(data) {
     card.appendChild(row);
   });
   card.appendChild(el('div', 'hint', t('Сброс трафика: NO_RESET (общий лимит на весь период).')));
-  const payload = enabled => ({
+  const payload = (enabled, requireApproval) => ({
     enabled,
     days: parseInt(days.value, 10),
     traffic_limit_gb: parseInt(traffic.value, 10),
     hwid_device_limit: parseInt(hwid.value, 10),
     squad_uuid: squad.disabled ? (data.trial_squad_uuid || '') : squad.value,
+    require_approval: requireApproval,
   });
   const save = el('button', null, t('💾 Сохранить настройки'));
   save.disabled = true;
-  save.onclick = () => adminAction('/api/admin/trial', payload(data.trial_enabled));
+  save.onclick = () => adminAction('/api/admin/trial', payload(data.trial_enabled, data.trial_require_approval));
   card.appendChild(save);
   const toggle = el('button', 'switch' + (data.trial_enabled ? ' on' : ''));
   toggle.appendChild(el('span', 'knob'));
   toggle.setAttribute('aria-label', data.trial_enabled ? t('🚫 Выключить') : t('✅ Включить'));
-  toggle.onclick = () => adminAction('/api/admin/trial', payload(!data.trial_enabled));
+  toggle.onclick = () => adminAction('/api/admin/trial', payload(!data.trial_enabled, data.trial_require_approval));
   const toggleRow = el('div', 'toggle-item');
   toggleRow.appendChild(el('div', 'ti-label', t('🎁 Пробный период')));
   toggleRow.appendChild(toggle);
   card.appendChild(toggleRow);
+  const approve = el('button', 'switch' + (data.trial_require_approval ? ' on' : ''));
+  approve.appendChild(el('span', 'knob'));
+  approve.setAttribute('aria-label', data.trial_require_approval ? t('🚫 Выключить') : t('✅ Включить'));
+  approve.onclick = () => adminAction('/api/admin/trial', payload(data.trial_enabled, !data.trial_require_approval));
+  const approveRow = el('div', 'toggle-item');
+  approveRow.appendChild(el('div', 'ti-label', t('🛂 Подтверждение админом (новые без реферала)')));
+  approveRow.appendChild(approve);
+  card.appendChild(approveRow);
   api('/api/admin/squads').then(res => {
     squad.textContent = '';
     squad.appendChild(Object.assign(el('option', null, t('Использовать сквад по умолчанию')), {
@@ -2573,6 +2622,7 @@ function renderAdminHome() {
     { icon: '₽', label: t('Заявки на оплату'), count: (data.requests || []).length, action: showAdminPaymentRequests },
     { icon: '◇', label: t('Заявки на подарки'), count: (data.gift_requests || []).length, action: showAdminGiftRequests },
     { icon: '+', label: t('Заявки на приглашения'), count: (data.invite_requests || []).length, action: showAdminInviteRequests },
+    { icon: '🎁', label: t('Заявки на пробный период'), count: (data.trial_requests || []).length, action: showAdminTrialRequests },
   ]));
   shell.appendChild(adminNavSection(t('Тарифы и оплата'), [
     { icon: '₽', label: t('Тарифы и реквизиты'), action: showAdminBilling },
@@ -3146,6 +3196,15 @@ function showAdminInviteRequests() {
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Заявки на приглашения')));
   appEl.appendChild(renderAdminInviteRequests(adminData || {}));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+function showAdminTrialRequests() {
+  currentRender = showAdminTrialRequests;
+  appEl.textContent = '';
+  appEl.appendChild(adminPageTop(t('Заявки на пробный период')));
+  appEl.appendChild(renderAdminTrialRequests(adminData || {}));
   statusEl.hidden = true;
   appEl.hidden = false;
 }
