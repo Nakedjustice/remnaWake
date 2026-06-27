@@ -24,6 +24,20 @@ func (s *Service) referralDeepLink(telegramID int64) string {
 	return fmt.Sprintf("https://t.me/%s?start=%s%d", bu, referralDeepLinkPrefix, telegramID)
 }
 
+// hasReferral reports whether telegramID arrived via a referral link (a row
+// exists in the referrals table, pending or credited). Used by the trial flow
+// to exempt referred — i.e. vouched-for — users from admin approval. On a
+// lookup error it returns false (treated as "no referral"), so the stricter
+// approval path applies.
+func (s *Service) hasReferral(ctx context.Context, telegramID int64) bool {
+	ref, err := s.store.GetReferral(ctx, telegramID)
+	if err != nil {
+		s.logger.Error("trial: referral lookup failed", "telegram_id", telegramID, "err", err.Error())
+		return false
+	}
+	return ref != nil
+}
+
 // StartReferral records a pending referral from a /start ref_<referrerID> deep
 // link. chatID is the clicker's private chat = their Telegram ID. Best-effort:
 // it never blocks the welcome screen that follows. A referral is recorded only

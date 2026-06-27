@@ -85,6 +85,7 @@ func main() {
 	pay.InitTrialConfig(payments.TrialConfig{
 		Enabled: cfg.Trial.Enabled, Days: cfg.Trial.Days, TrafficLimitGB: cfg.Trial.TrafficLimitGB,
 		HwidDeviceLimit: cfg.Trial.HwidDeviceLimit, SquadUUID: cfg.Trial.SquadUUID,
+		RequireApproval: cfg.Trial.RequireApproval,
 	})
 	pay.InitReferral(cfg.Referral.Enabled, cfg.Referral.InviterDays, cfg.Referral.InviteeDays)
 	var winbackDays []int

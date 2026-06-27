@@ -69,6 +69,15 @@ type WebAdminInviteRequest struct {
 	CreatedAt   string `json:"created_at"` // DD.MM.YYYY
 }
 
+// WebAdminTrialRequest is one pending free-trial request awaiting an admin
+// decision (only created when the trial requires approval).
+type WebAdminTrialRequest struct {
+	ID         int64  `json:"id"`
+	TelegramID int64  `json:"telegram_id"`
+	Username   string `json:"username"`
+	CreatedAt  string `json:"created_at"` // DD.MM.YYYY
+}
+
 // WebAdminPanel is the full /api/admin payload for the mini app.
 type WebAdminPanel struct {
 	Tariffs        []WebTariff             `json:"tariffs"`
@@ -77,6 +86,7 @@ type WebAdminPanel struct {
 	Requests       []WebAdminRequest       `json:"requests"`
 	GiftRequests   []WebAdminGiftRequest   `json:"gift_requests"`
 	InviteRequests []WebAdminInviteRequest `json:"invite_requests"`
+	TrialRequests  []WebAdminTrialRequest  `json:"trial_requests"`
 	// DefaultSquadName is the display name of the admin-selected internal
 	// squad for new users; empty when none is selected yet (the by-name
 	// Default-Squad fallback applies then). Read from settings only, so the
@@ -99,6 +109,7 @@ type WebAdminPanel struct {
 	TrialTrafficLimitGB  int    `json:"trial_traffic_limit_gb"`
 	TrialHwidDeviceLimit int    `json:"trial_hwid_device_limit"`
 	TrialSquadUUID       string `json:"trial_squad_uuid"`
+	TrialRequireApproval bool   `json:"trial_require_approval"`
 	ReferralEnabled      bool   `json:"referral_enabled"`
 	ReferralInviterDays  int    `json:"referral_inviter_days"`
 	ReferralInviteeDays  int    `json:"referral_invitee_days"`
@@ -174,6 +185,7 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	out.TrialTrafficLimitGB = trial.TrafficLimitGB
 	out.TrialHwidDeviceLimit = trial.HwidDeviceLimit
 	out.TrialSquadUUID = trial.SquadUUID
+	out.TrialRequireApproval = trial.RequireApproval
 	out.ReferralEnabled, out.ReferralInviterDays, out.ReferralInviteeDays = s.referralConfig()
 	out.ProxyMonitoring = s.xrayCheckerConfigured()
 	if checker := s.updateCheckerLocked(); checker != nil {
@@ -281,6 +293,20 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 			ir.PriceLabel = s.priceLabel(r.Price)
 		}
 		out.InviteRequests = append(out.InviteRequests, ir)
+	}
+
+	trialReqs, err := s.store.ListTrialRequestsByStatus(ctx, "pending")
+	if err != nil {
+		return nil, fmt.Errorf("list trial requests: %w", err)
+	}
+	for i := range trialReqs {
+		r := &trialReqs[i]
+		out.TrialRequests = append(out.TrialRequests, WebAdminTrialRequest{
+			ID:         r.ID,
+			TelegramID: r.TelegramID,
+			Username:   r.Username,
+			CreatedAt:  r.CreatedAt.Format("02.01.2006"),
+		})
 	}
 
 	return out, nil
@@ -743,5 +769,26 @@ func (s *Service) AdminRejectInviteRequest(ctx context.Context, telegramID, reqI
 		return err
 	}
 	_, err := s.rejectInviteRequest(ctx, reqID)
+	return err
+}
+
+// AdminApproveTrialRequest approves a pending trial request from the mini app
+// admin panel: creates the trial profile and notifies the user via the shared
+// helper.
+func (s *Service) AdminApproveTrialRequest(ctx context.Context, telegramID, reqID int64) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	_, _, _, err := s.approveTrialRequest(ctx, reqID)
+	return err
+}
+
+// AdminRejectTrialRequest rejects a pending trial request from the mini app
+// admin panel; the user is notified by the shared helper.
+func (s *Service) AdminRejectTrialRequest(ctx context.Context, telegramID, reqID int64) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	_, err := s.rejectTrialRequest(ctx, reqID)
 	return err
 }

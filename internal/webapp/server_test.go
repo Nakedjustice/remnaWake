@@ -294,6 +294,14 @@ func (f *fakeAdmin) AdminRejectInviteRequest(_ context.Context, tgID, reqID int6
 	f.calls = append(f.calls, adminCall{Name: "invitereject", A: reqID})
 	return f.err
 }
+func (f *fakeAdmin) AdminApproveTrialRequest(_ context.Context, tgID, reqID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "trialapprove", A: reqID})
+	return f.err
+}
+func (f *fakeAdmin) AdminRejectTrialRequest(_ context.Context, tgID, reqID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "trialreject", A: reqID})
+	return f.err
+}
 func (f *fakeAdmin) AdminBroadcast(_ context.Context, tgID int64, text string) (*payments.WebBroadcastResult, error) {
 	f.calls = append(f.calls, adminCall{Name: "broadcast", A: tgID, Text: text})
 	if f.err != nil {
