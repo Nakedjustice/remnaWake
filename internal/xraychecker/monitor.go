@@ -17,11 +17,16 @@ type statusProvider interface {
 	Status(ctx context.Context) ([]ProxyStatus, error)
 }
 
-// settingsStore persists the last-seen state across checks and restarts. It is
-// satisfied by *store.Store.
+// settingsStore persists the last-seen state across checks and restarts and
+// reports which proxies have their notifications muted. It is satisfied by
+// *store.Store.
 type settingsStore interface {
 	GetSetting(ctx context.Context, key string) (value string, found bool, err error)
 	UpsertSetting(ctx context.Context, key, value string) error
+	// ProxyNotifMuted reports whether alerts for the proxy identified by key
+	// (address|name|sub_name) are muted. Muting suppresses the notification only;
+	// state tracking continues so unmuting never replays a stale transition.
+	ProxyNotifMuted(ctx context.Context, key string) (bool, error)
 }
 
 // Notifier receives a callback when a monitored proxy changes between up and
@@ -94,6 +99,15 @@ func (m *Monitor) checkOnce(ctx context.Context) {
 		}
 		was, seen := prev[key]
 		if !seen || was == p.Up {
+			continue
+		}
+		// Admins can mute a noisy server's alerts globally. The transition is
+		// still recorded above (cur[key]) and saved below; we only skip the DM.
+		// Fail open on a lookup error so a DB hiccup never swallows a real alert.
+		if muted, err := m.store.ProxyNotifMuted(ctx, key); err != nil {
+			m.logger.Warn("xray checker: mute lookup failed", "name", p.Name, "err", err.Error())
+		} else if muted {
+			m.logger.Info("xray checker: transition suppressed (muted)", "name", p.Name, "up", p.Up)
 			continue
 		}
 		if p.Up {

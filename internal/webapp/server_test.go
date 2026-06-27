@@ -183,6 +183,10 @@ func (f *fakeAdmin) AdminProxyHealth(_ context.Context, tgID int64) (*payments.W
 	f.calls = append(f.calls, adminCall{Name: "proxy-health", A: tgID})
 	return f.proxyHealth, f.err
 }
+func (f *fakeAdmin) AdminSetProxyNotification(_ context.Context, tgID int64, name, address, subName string, muted bool) error {
+	f.calls = append(f.calls, adminCall{Name: "proxy-notification", A: tgID, Text: fmt.Sprintf("%s|%s|%s|%t", address, name, subName, muted)})
+	return f.err
+}
 func (f *fakeAdmin) AdminPaymentReport(_ context.Context, tgID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error) {
 	f.calls = append(f.calls, adminCall{Name: "payments", A: tgID, B: int64(filter.Page), Text: fmt.Sprintf("%d:%s:%s:%s", filter.Days, filter.Status, filter.Provider, filter.Query)})
 	return f.report, f.err
@@ -516,6 +520,34 @@ func TestHandleAdminScreenshotToggle(t *testing.T) {
 	adm = &fakeAdmin{err: payments.ErrNotAdmin}
 	srv = newTestServerWithAdmin(&fakeCabinet{}, adm)
 	req = httptest.NewRequest("POST", "/api/admin/screenshot-toggle", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 403 {
+		t.Fatalf("status = %d, want 403; body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleAdminProxyNotification(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	body := `{"name":"node-a","address":"1.2.3.4:443","sub_name":"eu","muted":true}`
+	req := httptest.NewRequest("POST", "/api/admin/proxy-notification", strings.NewReader(body))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "proxy-notification" ||
+		adm.calls[0].Text != "1.2.3.4:443|node-a|eu|true" {
+		t.Fatalf("unexpected admin calls: %+v", adm.calls)
+	}
+
+	// Non-admin (service error) maps to 403.
+	adm = &fakeAdmin{err: payments.ErrNotAdmin}
+	srv = newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req = httptest.NewRequest("POST", "/api/admin/proxy-notification", strings.NewReader(body))
 	req.Header.Set("Authorization", validAuth(t))
 	w = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)

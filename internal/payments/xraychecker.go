@@ -28,13 +28,16 @@ type XrayChecker interface {
 }
 
 // WebProxyRow is one proxy's health row shown in the bot report and Mini App.
+// NotificationsMuted reports whether admins have switched off this server's
+// up/down alerts from the Proxy Health tab.
 type WebProxyRow struct {
-	Name      string `json:"name"`
-	Protocol  string `json:"protocol"`
-	Address   string `json:"address"`
-	SubName   string `json:"sub_name"`
-	Up        bool   `json:"up"`
-	LatencyMs int    `json:"latency_ms"`
+	Name               string `json:"name"`
+	Protocol           string `json:"protocol"`
+	Address            string `json:"address"`
+	SubName            string `json:"sub_name"`
+	Up                 bool   `json:"up"`
+	LatencyMs          int    `json:"latency_ms"`
+	NotificationsMuted bool   `json:"notifications_muted"`
 }
 
 // WebProxyHealth is the proxy-monitoring snapshot shared by the bot report and
@@ -90,11 +93,19 @@ func (s *Service) proxyHealth(ctx context.Context) (*WebProxyHealth, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: xray checker: %v", ErrPanelUnavailable, err)
 	}
+	// Bulk-load the muted set once; degrade to "none muted" on error so a storage
+	// hiccup never hides the health view.
+	muted, err := s.store.MutedProxyKeys(ctx)
+	if err != nil {
+		s.logger.Error("xray checker: muted keys lookup failed", "err", err.Error())
+		muted = nil
+	}
 	out := &WebProxyHealth{Configured: true, DashboardURL: dashboardURL, Proxies: make([]WebProxyRow, 0, len(statuses))}
 	for _, p := range statuses {
 		out.Proxies = append(out.Proxies, WebProxyRow{
 			Name: p.Name, Protocol: p.Protocol, Address: p.Address, SubName: p.SubName,
 			Up: p.Up, LatencyMs: p.LatencyMs,
+			NotificationsMuted: muted[proxyMuteKey(p.Address, p.Name, p.SubName)],
 		})
 		if p.Up {
 			out.Up++
@@ -103,6 +114,13 @@ func (s *Service) proxyHealth(ctx context.Context) (*WebProxyHealth, error) {
 		}
 	}
 	return out, nil
+}
+
+// proxyMuteKey is the canonical per-proxy identity used as the mute key. It must
+// match xraychecker's stateIdentity (address|name|sub_name) so the Mini App
+// toggle and the monitor's alert suppression act on the same key.
+func proxyMuteKey(address, name, subName string) string {
+	return address + "|" + name + "|" + subName
 }
 
 // NotifyProxyDown DMs every admin that a monitored proxy went down. Implements

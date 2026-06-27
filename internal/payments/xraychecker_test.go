@@ -153,6 +153,54 @@ func TestAdminProxyHealthUnconfigured(t *testing.T) {
 	}
 }
 
+func TestProxyHealthMarksMutedRows(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	svc.SetXrayChecker(&fakeChecker{statuses: []ProxyStatus{
+		{Name: "A", Address: "a:443", SubName: "eu", Up: true, LatencyMs: 10},
+		{Name: "B", Address: "b:443", Up: false},
+	}})
+	if err := st.SetProxyNotifMuted(ctx, proxyMuteKey("a:443", "A", "eu"), true); err != nil {
+		t.Fatalf("mute: %v", err)
+	}
+
+	h, err := svc.AdminProxyHealth(ctx, 1000)
+	if err != nil {
+		t.Fatalf("AdminProxyHealth: %v", err)
+	}
+	muted := map[string]bool{}
+	for _, p := range h.Proxies {
+		muted[p.Name] = p.NotificationsMuted
+	}
+	if !muted["A"] || muted["B"] {
+		t.Fatalf("expected only A muted: %+v", h.Proxies)
+	}
+}
+
+func TestAdminSetProxyNotification(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	key := proxyMuteKey("a:443", "A", "eu")
+
+	if err := svc.AdminSetProxyNotification(ctx, 2222, "A", "a:443", "eu", true); !errors.Is(err, ErrNotAdmin) {
+		t.Fatalf("non-admin error = %v, want ErrNotAdmin", err)
+	}
+
+	if err := svc.AdminSetProxyNotification(ctx, 1000, "A", "a:443", "eu", true); err != nil {
+		t.Fatalf("mute: %v", err)
+	}
+	if muted, err := st.ProxyNotifMuted(ctx, key); err != nil || !muted {
+		t.Fatalf("expected persisted mute: muted=%v err=%v", muted, err)
+	}
+
+	if err := svc.AdminSetProxyNotification(ctx, 1000, "A", "a:443", "eu", false); err != nil {
+		t.Fatalf("unmute: %v", err)
+	}
+	if muted, err := st.ProxyNotifMuted(ctx, key); err != nil || muted {
+		t.Fatalf("expected unmuted: muted=%v err=%v", muted, err)
+	}
+}
+
 func TestProxyHealthCallbackRendersReport(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
 	svc.SetXrayChecker(&fakeChecker{statuses: []ProxyStatus{

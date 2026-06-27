@@ -149,6 +149,11 @@ CREATE TABLE IF NOT EXISTS fx_rates (
   manual_rate     REAL,
   updated_at      TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS proxy_notif_muted (
+  proxy_key  TEXT PRIMARY KEY,
+  muted      INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
 `
 
 // New opens (creating if needed) the SQLite database at path and applies migrations.
