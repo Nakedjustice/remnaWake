@@ -76,6 +76,11 @@
   .row { display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; font-size: 15px; }
   .row .k { color: var(--hint); flex-shrink: 0; }
   .row .v { text-align: right; word-break: break-word; font-weight: 600; }
+  /* Rows whose value is an editable field stack the label above a full-width
+     input, so a long label (e.g. the trial traffic/device limits) can't squeeze
+     the field off the right edge on slim displays. */
+  .row.input-row { flex-direction: column; align-items: stretch; gap: 0; }
+  .row.input-row .k { white-space: normal; }
   .badge { font-weight: 700; }
 
   /* ---- Buttons ---- */
@@ -2512,7 +2517,7 @@ function renderAdminTrial(data) {
     [t('Лимит устройств (0 — без ограничений)'), hwid],
     [t('Сквад пробного периода'), squad],
   ].forEach(([label, input]) => {
-    const row = el('div', 'row');
+    const row = el('div', 'row input-row');
     row.appendChild(el('span', 'k', label));
     row.appendChild(input);
     card.appendChild(row);
@@ -2574,8 +2579,8 @@ function renderAdminReferral(data) {
     : t('Выключена.')));
   const inviter = Object.assign(el('input'), { type: 'number', min: '0', value: data.referral_inviter_days || 0 });
   const invitee = Object.assign(el('input'), { type: 'number', min: '0', value: data.referral_invitee_days || 0 });
-  const r1 = el('div', 'row'); r1.appendChild(el('span', 'k', t('Бонус пригласившему (дни)'))); r1.appendChild(inviter);
-  const r2 = el('div', 'row'); r2.appendChild(el('span', 'k', t('Бонус приглашённому (дни)'))); r2.appendChild(invitee);
+  const r1 = el('div', 'row input-row'); r1.appendChild(el('span', 'k', t('Бонус пригласившему (дни)'))); r1.appendChild(inviter);
+  const r2 = el('div', 'row input-row'); r2.appendChild(el('span', 'k', t('Бонус приглашённому (дни)'))); r2.appendChild(invitee);
   card.appendChild(r1);
   card.appendChild(r2);
   const save = el('button', null, t('💾 Сохранить бонусы'));
