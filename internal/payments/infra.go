@@ -492,6 +492,19 @@ func (s *Service) RefreshInfraFxRates(ctx context.Context) error {
 			symset[c] = true
 		}
 	}
+	// Also refresh currencies that already have a stored rate but no current
+	// server (e.g. an admin-entered manual rate, or a since-removed server):
+	// they still appear as pairs in the FX card, so the "Refresh rates" button
+	// must update them too. This mirrors AdminListFxRates's currency set.
+	stored, err := s.store.ListFxRates(ctx)
+	if err != nil {
+		return fmt.Errorf("list fx rates: %w", err)
+	}
+	for i := range stored {
+		if c := strings.ToUpper(strings.TrimSpace(stored[i].Currency)); c != "" && c != base {
+			symset[c] = true
+		}
+	}
 	if len(symset) == 0 {
 		return nil
 	}

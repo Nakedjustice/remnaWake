@@ -157,6 +157,57 @@ func TestInfraFxAutoPreferredAndUnconverted(t *testing.T) {
 	}
 }
 
+func TestRefreshFxMultipleServerCurrencies(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	svc.now = func() time.Time { return time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC) }
+
+	for _, c := range []string{"USD", "EUR"} {
+		if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+			Name: "srv-" + c, Price: 10, Currency: c, PeriodMonths: 1,
+		}); err != nil {
+			t.Fatalf("save %s: %v", c, err)
+		}
+	}
+	svc.SetForex(&fakeRateFetcher{rates: map[string]float64{"USD": 80, "EUR": 90}})
+	if err := svc.RefreshInfraFxRates(ctx); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	for _, c := range []string{"USD", "EUR"} {
+		r, _ := st.GetFxRate(ctx, c)
+		if r == nil || !r.HasAuto || r.AutoRate <= 0 {
+			t.Fatalf("%s auto rate not refreshed: %+v", c, r)
+		}
+	}
+}
+
+func TestRefreshFxStoredRateWithoutServer(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	svc.now = func() time.Time { return time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC) }
+
+	// One server in USD; EUR has only an admin-entered manual rate (its server
+	// was removed, say) so it still shows as a pair in the FX card.
+	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+		Name: "us", Price: 10, Currency: "USD", PeriodMonths: 1,
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if err := svc.AdminSetManualFxRate(ctx, adminTG, "EUR", 100); err != nil {
+		t.Fatalf("manual: %v", err)
+	}
+
+	svc.SetForex(&fakeRateFetcher{rates: map[string]float64{"USD": 80, "EUR": 90}})
+	if err := svc.RefreshInfraFxRates(ctx); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	// Both pairs are shown in the FX card, so "Refresh rates" must update both.
+	eur, _ := st.GetFxRate(ctx, "EUR")
+	if eur == nil || !eur.HasAuto || eur.AutoRate != 90 {
+		t.Fatalf("EUR auto rate not refreshed: %+v", eur)
+	}
+}
+
 func TestInfraPaymentReminders(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
