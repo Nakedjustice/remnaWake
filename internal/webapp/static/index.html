@@ -41,9 +41,52 @@
     /* Per-status tone, set on the profile card; defaults to accent. */
     --tone: var(--accent);
     --tone-soft: var(--accent-soft);
+    /* Semantic tint backgrounds + accent glow — named as tokens so a scoped
+       theme (e.g. the admin Neon Tokyo recolor) can re-point them in one place. */
+    --tint-active: rgba(52, 199, 89, 0.13);
+    --tint-expired: rgba(255, 69, 58, 0.13);
+    --tint-pending: rgba(255, 184, 0, 0.13);
+    --tint-pending-text: #d99b00;
+    --shadow-accent: 0 8px 18px rgba(124, 92, 255, 0.18);
   }
   * { box-sizing: border-box; }
   html, body { background: var(--bg); }
+
+  /* ---- Neon Tokyo (admin workspace) ----
+     A scoped recolor added to <body> while the admin panel is open: a deep
+     midnight-indigo base with neon magenta + cyan accents. Tokens are the only
+     switch — every .admin-* element inherits it, the markup is unchanged. */
+  .theme-neon-tokyo {
+    --bg: #0a0b18;
+    --surface: #14162e;
+    --surface-2: #1b1f3d;
+    --text: #eaf0ff;
+    --hint: #8b93c7;
+    --border: rgba(150, 170, 255, 0.13);
+    --track: rgba(150, 170, 255, 0.15);
+    --accent: #ff3d9a;
+    --accent-soft: rgba(255, 61, 154, 0.16);
+    --accent-bd: rgba(255, 61, 154, 0.5);
+    --accent-text: #ffffff;
+    --neon-cyan: #2bf5ff;
+    --tone-active: #2bf5c8;
+    --tone-expiring: #ffd23d;
+    --tone-expired: #ff4d6d;
+    --tint-active: rgba(43, 245, 200, 0.14);
+    --tint-expired: rgba(255, 77, 109, 0.14);
+    --tint-pending: rgba(255, 210, 61, 0.14);
+    --tint-pending-text: #ffd23d;
+    --shadow-accent: 0 6px 22px rgba(255, 61, 154, 0.42);
+    --tone: var(--accent);
+    --tone-soft: var(--accent-soft);
+    --link: var(--accent);
+    --app-bg:
+      radial-gradient(105% 70% at 6% -8%, rgba(255, 61, 154, 0.22), transparent 55%),
+      radial-gradient(100% 68% at 100% -4%, rgba(43, 245, 255, 0.16), transparent 55%),
+      radial-gradient(130% 95% at 50% 112%, rgba(124, 92, 255, 0.16), transparent 62%),
+      var(--bg);
+  }
+  body.theme-neon-tokyo { background: var(--app-bg); background-attachment: fixed; }
   body {
     margin: 0;
     width: 100%; max-width: 460px; min-height: 100vh; margin-inline: auto;
@@ -89,7 +132,7 @@
     padding: 13px 14px; margin-top: 10px; font-size: 15px; font-weight: 700;
     background: var(--accent); color: var(--accent-text); cursor: pointer;
     font-family: inherit;
-    box-shadow: 0 8px 18px rgba(124, 92, 255, 0.18);
+    box-shadow: var(--shadow-accent);
     transition: transform .14s cubic-bezier(.2,.8,.2,1), filter .14s, opacity .15s, box-shadow .15s, background-color .15s, border-color .15s;
   }
   button:active:not(:disabled) { transform: translateY(1px) scale(.985); filter: brightness(0.96); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22); }
@@ -322,9 +365,9 @@
   .admin-list-title { overflow: hidden; font-size: 14px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
   .admin-list-meta { margin-top: 3px; color: var(--hint); font-size: 12px; }
   .admin-list-row button { width: auto; margin: 0; padding: 8px 13px; font-size: 13px; flex-shrink: 0; }
-  .admin-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: rgba(52,199,89,.13);
+  .admin-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: var(--tint-active);
     color: var(--tone-active); font-size: 11px; font-weight: 800; }
-  .admin-status.inactive { background: rgba(255,69,58,.13); color: var(--tone-expired); }
+  .admin-status.inactive { background: var(--tint-expired); color: var(--tone-expired); }
   .admin-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
   .admin-stat { min-height: 92px; padding: 15px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
     box-shadow: inset 0 1px 0 rgba(255,255,255,.025); }
@@ -338,7 +381,7 @@
   .payment-chart-bars { display: flex; height: 142px; align-items: flex-end; gap: 4px; overflow-x: auto; padding: 10px 1px 4px; }
   .payment-chart-column { display: flex; min-width: 9px; height: 100%; flex: 1 0 9px; align-items: flex-end; }
   .payment-chart-bar { width: 100%; min-height: 3px; border-radius: 5px 5px 2px 2px;
-    background: linear-gradient(180deg, var(--accent), rgba(123,92,255,.42)); }
+    background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 42%, transparent)); }
   .payment-chart-legend { display: flex; justify-content: space-between; gap: 12px; margin-top: 9px; color: var(--hint); font-size: 11px; }
   .payment-provider-list { display: grid; gap: 8px; }
   .payment-provider { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; padding: 13px 14px;
@@ -359,9 +402,9 @@
   .payment-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
   .payment-badge { padding: 4px 8px; border-radius: 999px; background: var(--surface-2); color: var(--hint);
     font-size: 10px; font-weight: 800; text-transform: uppercase; }
-  .payment-badge.confirmed { background: rgba(52,199,89,.13); color: var(--tone-active); }
-  .payment-badge.rejected { background: rgba(255,69,58,.13); color: var(--tone-expired); }
-  .payment-badge.pending { background: rgba(255,184,0,.13); color: #d99b00; }
+  .payment-badge.confirmed { background: var(--tint-active); color: var(--tone-active); }
+  .payment-badge.rejected { background: var(--tint-expired); color: var(--tone-expired); }
+  .payment-badge.pending { background: var(--tint-pending); color: var(--tint-pending-text); }
   .payment-txn { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 9px 10px;
     border-radius: 11px; background: var(--surface-2); }
   .payment-txn code { min-width: 0; flex: 1; overflow: hidden; color: var(--hint); text-overflow: ellipsis; white-space: nowrap; }
@@ -1850,6 +1893,7 @@ function renderTrialClaim(terms) {
 function showHome() {
   currentRender = showHome;
   stopSupportPoll();
+  document.body.classList.remove('theme-neon-tokyo');
   const data = cabinetData || {};
   appEl.textContent = '';
 
@@ -2068,6 +2112,7 @@ function confirmDialog(message) {
 // showCabinet (re)loads /api/me and renders the hub. It is the canonical
 // "go to the account home" action used after mutations and from the admin panel.
 async function showCabinet() {
+  document.body.classList.remove('theme-neon-tokyo');
   showLoadingView('cabinet');
   try {
     cabinetData = await api('/api/me');
@@ -2089,6 +2134,7 @@ let adminPaymentFilters = { days: 30, status: 'all', provider: 'all', query: '',
 // showAdmin (re)loads /api/admin and renders the admin hub.
 async function showAdmin() {
   hideDock();
+  document.body.classList.add('theme-neon-tokyo');
   showLoadingView('admin', t('⚙️ Админ-панель'), title => adminPageTop(title, showCabinet));
   try {
     adminData = await api('/api/admin');
