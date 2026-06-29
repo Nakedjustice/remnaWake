@@ -171,6 +171,11 @@ grep -q '^TELEGRAM_BOT_TOKEN=123456789:' "$REMNAWAKE_DIR/.env"
 grep -q '127.0.0.1:9090:8080' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'image: containrrr/watchtower:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'image: kutovoys/xray-checker:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
+# A partial reconfigure must NOT drop the checker's base path. METRICS_BASE_PATH
+# is what mounts the sidecar (and the bot's /checker/metrics poll) under /checker;
+# losing it reverts the checker to serving at root, 404-ing both the public
+# dashboard and the proxy-health poll even though .env still advertises /checker.
+grep -q 'METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"' "$REMNAWAKE_DIR/docker-compose.override.yml"
 
 # Alongside-Remnawave (containerised Caddy) with a PRE-EXISTING bot site: the
 # installer must inject the dashboard route into that site, not just warn. This
