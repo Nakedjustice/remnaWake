@@ -341,6 +341,7 @@
   .admin-nav-row:active { background: var(--surface-2); }
   .admin-nav-icon { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 10px;
     background: var(--accent-soft); color: var(--accent); font-size: 16px; }
+  .admin-nav-icon svg { width: 18px; height: 18px; }
   .admin-nav-label { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; }
   .admin-count { min-width: 24px; padding: 3px 8px; border-radius: 999px; background: var(--accent-soft);
     color: var(--accent); text-align: center; font-size: 12px; font-weight: 800; }
@@ -434,6 +435,7 @@
     background: rgba(26, 29, 36, 0.72); -webkit-backdrop-filter: blur(20px) saturate(150%);
     backdrop-filter: blur(20px) saturate(150%); border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 999px; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+  .dock[hidden] { display: none; }
   .dock-item { position: relative; flex: 1; margin: 0; padding: 9px 6px; display: flex; flex-direction: column;
     align-items: center; gap: 4px; border: 0; border-radius: 999px; background: transparent; color: var(--hint);
     box-shadow: none; cursor: pointer;
@@ -3001,13 +3003,35 @@ function adminPageTop(title, onBack) {
   return wrap;
 }
 
+// ADMIN_ICONS are the stroke-based (currentColor) icon path sets for the admin
+// hub menu, matching the inline-SVG icon language used elsewhere (see svg()).
+// Each value is a path-d string (or array of them) the .admin-nav-icon chip
+// tints with var(--accent), so every menu icon stays monochrome and consistent.
+const ADMIN_ICONS = {
+  payments: ['M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z', 'M2 10h20'],
+  gift: ['M20 12v10H4V12', 'M2 7h20v5H2z', 'M12 22V7', 'M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z', 'M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z'],
+  userPlus: ['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2', 'M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z', 'M19 8v6', 'M22 11h-6'],
+  clock: ['M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z', 'M12 7v5l3 2'],
+  tag: ['M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z', 'M7 7h.01'],
+  barChart: ['M6 20v-4', 'M12 20V10', 'M18 20V4'],
+  server: ['M5 5h14a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z', 'M5 13h14a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2z', 'M7 8h.01', 'M7 16h.01'],
+  sliders: ['M21 4H14', 'M10 4H3', 'M21 12H12', 'M8 12H3', 'M21 20H16', 'M12 20H3', 'M14 2v4', 'M8 10v4', 'M16 18v4'],
+  users: ['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2', 'M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z', 'M22 21v-2a4 4 0 0 0-3-3.87', 'M16 3.13a4 4 0 0 1 0 7.75'],
+  ticket: ['M3 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2z', 'M13 5v2', 'M13 11v2', 'M13 17v2'],
+  megaphone: ['M3 11l18-5v12L3 13', 'M11.6 16.8a3 3 0 1 1-5.8-1.6'],
+  chat: ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'],
+  activity: ['M22 12h-4l-3 9L9 3l-3 9H2'],
+};
+
 function adminNavSection(title, items) {
   const section = el('section', 'admin-section');
   section.appendChild(el('div', 'admin-section-label', title));
   const list = el('div', 'admin-nav');
   items.forEach(item => {
     const button = el('button', 'admin-nav-row');
-    button.appendChild(el('span', 'admin-nav-icon', item.icon));
+    const iconSpan = el('span', 'admin-nav-icon');
+    iconSpan.appendChild(svg(item.icon));
+    button.appendChild(iconSpan);
     button.appendChild(el('span', 'admin-nav-label', item.label));
     if (item.count) button.appendChild(el('span', 'admin-count', String(item.count)));
     button.appendChild(el('span', 'admin-chevron', '›'));
@@ -3028,25 +3052,25 @@ function renderAdminHome() {
   const shell = el('div', 'admin-shell');
   shell.appendChild(adminPageTop(t('⚙️ Админ-панель'), showCabinet));
   shell.appendChild(adminNavSection(t('Заявки'), [
-    { icon: '₽', label: t('Заявки на оплату'), count: (data.requests || []).length, action: showAdminPaymentRequests },
-    { icon: '◇', label: t('Заявки на подарки'), count: (data.gift_requests || []).length, action: showAdminGiftRequests },
-    { icon: '+', label: t('Заявки на приглашения'), count: (data.invite_requests || []).length, action: showAdminInviteRequests },
-    { icon: '🎁', label: t('Заявки на пробный период'), count: (data.trial_requests || []).length, action: showAdminTrialRequests },
+    { icon: ADMIN_ICONS.payments, label: t('Заявки на оплату'), count: (data.requests || []).length, action: showAdminPaymentRequests },
+    { icon: ADMIN_ICONS.gift, label: t('Заявки на подарки'), count: (data.gift_requests || []).length, action: showAdminGiftRequests },
+    { icon: ADMIN_ICONS.userPlus, label: t('Заявки на приглашения'), count: (data.invite_requests || []).length, action: showAdminInviteRequests },
+    { icon: ADMIN_ICONS.clock, label: t('Заявки на пробный период'), count: (data.trial_requests || []).length, action: showAdminTrialRequests },
   ]));
   shell.appendChild(adminNavSection(t('Тарифы и оплата'), [
-    { icon: '₽', label: t('Тарифы и реквизиты'), action: showAdminBilling },
+    { icon: ADMIN_ICONS.tag, label: t('Тарифы и реквизиты'), action: showAdminBilling },
   ]));
   const manageItems = [
-    { icon: '↗', label: t('Статистика'), action: showAdminStats },
-    { icon: '🖥', label: t('Инфраструктура'), action: showAdminServers },
-    { icon: '≡', label: t('Настройки'), action: showAdminSettings },
-    { icon: '◎', label: t('Управление пользователями'), action: showUserAdmin },
-    { icon: '◇', label: t('Активные подарочные коды'), action: showAdminGiftCodes },
-    { icon: '◉', label: t('Рассылка'), action: showAdminBroadcast },
-    { icon: '□', label: t('Чат поддержки'), action: showAdminSupport },
+    { icon: ADMIN_ICONS.barChart, label: t('Статистика'), action: showAdminStats },
+    { icon: ADMIN_ICONS.server, label: t('Инфраструктура'), action: showAdminServers },
+    { icon: ADMIN_ICONS.sliders, label: t('Настройки'), action: showAdminSettings },
+    { icon: ADMIN_ICONS.users, label: t('Управление пользователями'), action: showUserAdmin },
+    { icon: ADMIN_ICONS.ticket, label: t('Активные подарочные коды'), action: showAdminGiftCodes },
+    { icon: ADMIN_ICONS.megaphone, label: t('Рассылка'), action: showAdminBroadcast },
+    { icon: ADMIN_ICONS.chat, label: t('Чат поддержки'), action: showAdminSupport },
   ];
   if (data.proxy_monitoring) {
-    manageItems.push({ icon: '🩺', label: t('Состояние прокси'), action: showAdminProxyHealth });
+    manageItems.push({ icon: ADMIN_ICONS.activity, label: t('Состояние прокси'), action: showAdminProxyHealth });
   }
   shell.appendChild(adminNavSection(t('Управление'), manageItems));
   appEl.appendChild(shell);
