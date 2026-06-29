@@ -447,7 +447,7 @@ func TestConfirmRejectsNonAdmin(t *testing.T) {
 }
 
 func TestConfirmExtendsByChosenMonths(t *testing.T) {
-	svc, _, ext, st := newTestService(t)
+	svc, bot, ext, st := newTestService(t)
 	ctx := context.Background()
 	svc.now = func() time.Time { return time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC) }
 	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC) // future -> base is expiry
@@ -465,6 +465,17 @@ func TestConfirmExtendsByChosenMonths(t *testing.T) {
 	want := exp.AddDate(0, 3, 0)
 	if !ext.expire.Equal(want) {
 		t.Fatalf("new expiry = %s, want %s", ext.expire, want)
+	}
+
+	// The paying user (not just the admin) is told their payment was accepted.
+	var userNotified bool
+	for _, m := range bot.sent {
+		if m.ChatID == 777 && strings.Contains(m.Text, "продлена") {
+			userNotified = true
+		}
+	}
+	if !userNotified {
+		t.Fatalf("user not notified about acceptance: %+v", bot.sent)
 	}
 
 	svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("ok:%d", id)))
