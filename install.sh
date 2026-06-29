@@ -570,7 +570,18 @@ load_defaults() {
 
   ALONGSIDE_REMNAWAVE="no"
   HOST_PROXY_ENABLED="no"
+  # Restore the dashboard-exposed flag from persisted state. The override gates
+  # METRICS_BASE_PATH on this flag, but the flag is only set to "yes" by
+  # section_xray. A partial reconfigure that edits an unrelated section never
+  # walks section_xray, so leaving this at "no" silently drops METRICS_BASE_PATH:
+  # the checker reverts to serving at root and both the public /checker dashboard
+  # and the bot's /checker/metrics poll start returning 404 even though .env still
+  # advertises the sub-path. Inferring it from the persisted public URL keeps the
+  # override consistent with .env across reconfigures.
   CHECKER_PUBLIC_ENABLED="no"
+  if [ -n "$XRAY_CHECKER_PUBLIC_URL" ]; then
+    CHECKER_PUBLIC_ENABLED="yes"
+  fi
   caddy_host=""
 }
 
