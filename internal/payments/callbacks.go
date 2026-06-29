@@ -440,6 +440,15 @@ func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool 
 		return true
 	}
 
+	// Notify the paying user that their payment was accepted (mirrors the mini
+	// app confirm path; the shared confirmPaymentRequest stays silent because the
+	// automatic Stars/Platega flows send their own message).
+	if req.TelegramID != 0 {
+		_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
+			i18n.T("✅ Подписка «%s» продлена на %d мес. до %s."),
+			req.Username, req.Months, newExpireAt.Format("02.01.2006")))
+	}
+
 	if s.dryRun {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Подписка продлена (dry-run)."))
 		return true
