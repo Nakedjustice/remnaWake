@@ -54,7 +54,7 @@
   }
 
   /* ---- Header / top bar ---- */
-  #topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 2px 2px 18px; }
+  #topbar { margin: 2px 2px 16px; }
   .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hint); }
   h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; margin: 4px 0 0; }
   .seg { display: inline-flex; background: var(--track); border-radius: 999px; padding: 3px; gap: 2px; flex-shrink: 0; }
@@ -112,7 +112,18 @@
   .pill svg { width: 15px; height: 15px; }
 
   /* ---- Profile dashboard ---- */
-  .profile-card { padding: 18px 16px; }
+  /* Glow tint/ring/halo follow --tone (subscription status), set on the card
+     in renderProfile. color-mix gives the surface a faint status-colored wash. */
+  .profile-card {
+    --glow-halo: 0 0 24px -8px color-mix(in srgb, var(--tone) 50%, transparent);
+    --glow-ring: color-mix(in srgb, var(--tone) 30%, transparent);
+    --glow-tint: radial-gradient(115% 90% at 0% 0%, color-mix(in srgb, var(--tone) 15%, transparent), transparent 52%);
+    background: var(--glow-tint), var(--surface);
+    border: 1px solid var(--glow-ring);
+    border-radius: 18px; padding: 16px; box-shadow: var(--glow-halo);
+  }
+  .stat-bar { height: 5px; margin-top: 8px; border-radius: 999px; background: var(--track); overflow: hidden; }
+  .stat-bar-fill { height: 100%; border-radius: inherit; background: var(--tone); }
   .profile-select-wrap { margin-bottom: 14px; }
   .profile-select-wrap label { display: block; color: var(--hint); font-size: 12px; font-weight: 700; margin: 0 2px 5px; }
   .profile-select-wrap select { margin: 0; }
@@ -127,8 +138,9 @@
   .status-pill .pdot { width: 7px; height: 7px; border-radius: 50%; background: var(--tone); }
 
   .validity { display: flex; align-items: center; justify-content: space-between; gap: 16px;
-    margin-top: 18px; padding: 18px 20px; border-radius: 22px;
-    background: linear-gradient(135deg, var(--accent-soft), rgba(255,255,255,0.02)); border: 1px solid var(--accent-bd); }
+    margin-top: 14px; padding: 16px 18px; border-radius: 22px;
+    background: linear-gradient(135deg, var(--accent-soft), rgba(255,255,255,0.02)); border: 1px solid var(--accent-bd);
+    box-shadow: var(--glow-halo); }
   .validity-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .validity-label { color: #9aa0ab; font-size: 12.5px; font-weight: 600; }
   .validity-date { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
@@ -357,6 +369,56 @@
   .admin-card textarea { min-height: 120px; }
   .admin-support-avatar { display: grid; width: 40px; height: 40px; flex: none; place-items: center;
     border-radius: 13px; background: var(--accent-soft); color: var(--accent); font-weight: 800; }
+  /* ---- Top chrome (two-row header: lang toggle + utility icons, then title) ---- */
+  .topbar-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .top-actions { display: flex; gap: 8px; flex: none; }
+  .icon-btn { display: grid; place-items: center; width: 40px; height: 40px; margin: 0; padding: 0;
+    border-radius: 13px; cursor: pointer; box-shadow: none;
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+  .icon-btn.accent { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-bd); }
+  .icon-btn svg { width: 18px; height: 18px; }
+
+  /* ---- Detached dockbar (primary client navigation) ---- */
+  body.has-dock { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
+  .dock { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom));
+    transform: translateX(-50%); width: calc(100% - 28px); max-width: calc(460px - 28px);
+    z-index: 40; display: flex; gap: 4px; padding: 6px;
+    background: rgba(26, 29, 36, 0.72); -webkit-backdrop-filter: blur(20px) saturate(150%);
+    backdrop-filter: blur(20px) saturate(150%); border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999px; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+  .dock-item { position: relative; flex: 1; margin: 0; padding: 9px 6px; display: flex; flex-direction: column;
+    align-items: center; gap: 4px; border: 0; border-radius: 999px; background: transparent; color: var(--hint);
+    box-shadow: none; cursor: pointer;
+    transition: background-color .16s, color .16s, transform .14s cubic-bezier(.2,.8,.2,1); }
+  .dock-item.active { background: var(--accent-soft); color: var(--accent); }
+  .dock-icon { font-size: 19px; line-height: 1; }
+  .dock-label { font-size: 11px; font-weight: 700; letter-spacing: .01em; }
+  .dock-badge { position: absolute; top: 4px; right: calc(50% - 22px); min-width: 16px; height: 16px;
+    padding: 0 4px; display: grid; place-items: center; border-radius: 999px;
+    background: var(--accent); color: var(--accent-text); font-size: 10px; font-weight: 800; line-height: 1; }
+
+  /* ---- Support drawer (slide-up chat overlay) ---- */
+  .drawer { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+  .drawer.open { pointer-events: auto; }
+  .drawer-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); opacity: 0; transition: opacity .25s; }
+  .drawer.open .drawer-backdrop { opacity: 1; }
+  .drawer-sheet { position: absolute; left: 50%; bottom: 0; width: 100%; max-width: 460px;
+    transform: translateX(-50%) translateY(100%); transition: transform .3s cubic-bezier(.2,.8,.2,1);
+    background: var(--bg); border: 1px solid var(--border); border-bottom: 0; border-radius: 22px 22px 0 0;
+    padding: 16px 16px calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; max-height: 82vh; }
+  .drawer.open .drawer-sheet { transform: translateX(-50%) translateY(0); }
+  .drawer-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .drawer-head .info { flex: 1; min-width: 0; }
+  .drawer-title { font-size: 16px; font-weight: 800; }
+  .drawer-online { font-size: 12px; font-weight: 700; color: var(--tone-active); }
+  .drawer-close { width: 34px; height: 34px; flex: none; margin: 0; padding: 0; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text); box-shadow: none; font-size: 15px; }
+  .drawer .chat { max-height: none; flex: 1; }
+  .drawer-compose { display: flex; gap: 8px; margin-top: 12px; align-items: flex-end; }
+  .drawer-compose textarea { margin: 0; min-height: 46px; max-height: 120px; border-radius: 16px; }
+  .drawer-send { width: auto; flex: none; margin: 0; padding: 12px 18px; border-radius: 999px; }
+  .drawer-end { width: 100%; margin-top: 10px; }
+
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes shimmer { 100% { transform: translateX(100%); } }
   @media (prefers-reduced-motion: reduce) {
@@ -376,14 +438,19 @@
 </head>
 <body>
 <div id="topbar">
+  <div class="topbar-row">
+    <div id="lang-seg" class="seg" role="tablist" aria-label="Language"></div>
+    <div id="top-actions" class="top-actions"></div>
+  </div>
   <div class="brand">
     <div class="eyebrow">Telegram Mini App · Remnawave</div>
     <h1 id="title">Мой профиль</h1>
   </div>
-  <div id="lang-seg" class="seg" role="tablist" aria-label="Language"></div>
 </div>
 <div id="status">Загрузка…</div>
 <div id="app" hidden></div>
+<nav id="dock" class="dock" hidden aria-label="Навигация"></nav>
+<div id="support-drawer" class="drawer" aria-hidden="true"></div>
 
 <script>
 const tg = window.Telegram.WebApp;
@@ -398,6 +465,9 @@ const statusEl = document.getElementById('status');
 const appEl = document.getElementById('app');
 const titleEl = document.getElementById('title');
 const langSegEl = document.getElementById('lang-seg');
+const topActionsEl = document.getElementById('top-actions');
+const dockEl = document.getElementById('dock');
+const drawerEl = document.getElementById('support-drawer');
 
 // --- Client-side i18n. Mirrors the gettext-style server package: the Russian
 // source string doubles as the lookup key, EN holds the English translation,
@@ -1112,31 +1182,28 @@ function renderProfile(p, data) {
   validity.appendChild(ring);
   card.appendChild(validity);
 
+  // Two metric tiles: device limit and traffic usage (with a tone-colored bar).
+  // UUID moved to Settings → the dashboard stays focused on status at a glance.
   const grid = el('div', 'stat-grid');
-  const stat = (lbl, val) => {
+  const tile = (lbl, val, barPct) => {
     const s = el('div', 'stat');
     s.appendChild(el('div', 'lbl', lbl));
     s.appendChild(el('div', 'val', val));
+    if (barPct !== null) {
+      const trk = el('div', 'stat-bar');
+      const fl = el('div', 'stat-bar-fill');
+      fl.style.width = Math.min(Math.max(barPct, 0), 100).toFixed(1) + '%';
+      trk.appendChild(fl);
+      s.appendChild(trk);
+    }
     grid.appendChild(s);
   };
-  stat(t('UUID'), shortUUID(p.uuid));
-  stat(t('Устройства'), p.hwid_limit > 0 ? String(p.hwid_limit) : '∞');
-  card.appendChild(grid);
-
   const used = Math.max(Number.parseFloat(p.used_traffic_gb) || 0, 0);
   const limit = Math.max(Number(p.traffic_limit_gb) || 0, 0);
   const pct = limit > 0 ? Math.min(used / limit * 100, 100) : 0;
-  const traffic = el('div', 'traffic-card');
-  const trafficHead = el('div', 'traffic-head');
-  trafficHead.appendChild(el('span', 'traffic-label', t('Трафик')));
-  trafficHead.appendChild(el('span', 'traffic-value', used.toFixed(2) + ' GB / ' + (limit > 0 ? limit + ' GB' : '∞')));
-  traffic.appendChild(trafficHead);
-  const track = el('div', 'traffic-track');
-  const fill = el('div', 'traffic-fill');
-  fill.style.width = pct.toFixed(1) + '%';
-  track.appendChild(fill);
-  traffic.appendChild(track);
-  card.appendChild(traffic);
+  tile(t('Устройства'), p.hwid_limit > 0 ? String(p.hwid_limit) : '∞', null);
+  tile(t('Трафик'), used.toFixed(2) + ' / ' + (limit > 0 ? limit + ' GB' : '∞'), limit > 0 ? pct : null);
+  card.appendChild(grid);
 
   if (p.subscription_url) {
     const copyButton = el('button', 'copy-link');
@@ -1518,22 +1585,58 @@ function renderProfileSelector(profiles, selected) {
   return wrap;
 }
 
-// pillRow builds the top-of-profile quick actions (Admin / Support).
-function pillRow(data) {
-  const wrap = el('div', 'pill-row');
-  if (data.is_admin) {
-    const a = el('button', 'pill accent');
-    a.appendChild(svg(['M12 2l8 4v6c0 4.5-3.2 7.7-8 9-4.8-1.3-8-4.5-8-9V6l8-4z', 'M9 12l2 2 4-4']));
-    a.appendChild(el('span', null, t('Админ')));
-    a.onclick = showAdmin;
-    wrap.appendChild(a);
+// renderTopActions fills the top-right utility cluster in the header: a support
+// button that opens the slide-up chat drawer and, for admins, an accent shield
+// that switches to the admin panel.
+function renderTopActions(data) {
+  topActionsEl.textContent = '';
+  const support = el('button', 'icon-btn');
+  support.setAttribute('aria-label', t('Поддержка'));
+  support.appendChild(svg('M21 11.5a8.38 8.38 0 0 1-9 8.4 9.5 9.5 0 0 1-4-.9L3 21l1.9-4.5A8.38 8.38 0 0 1 4 12a8.5 8.5 0 0 1 17-.5z'));
+  support.onclick = openSupportDrawer;
+  topActionsEl.appendChild(support);
+  if (data && data.is_admin) {
+    const admin = el('button', 'icon-btn accent');
+    admin.setAttribute('aria-label', t('Админ'));
+    admin.appendChild(svg(['M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z', 'M9.5 12l1.8 1.8 3.2-3.6']));
+    admin.onclick = showAdmin;
+    topActionsEl.appendChild(admin);
   }
-  const s = el('button', 'pill');
-  s.appendChild(svg('M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'));
-  s.appendChild(el('span', null, t('Поддержка')));
-  s.onclick = showSupport;
-  wrap.appendChild(s);
-  return wrap;
+}
+
+// DOCK_ITEMS are the detached dockbar's four primary client destinations,
+// matching the design's renew · gift · invite · settings order.
+const DOCK_ITEMS = [
+  { id: 'renew', icon: '💳', key: 'Продлить', go: () => showRenew() },
+  { id: 'gift', icon: '🎁', key: 'Подарок', go: () => showGift() },
+  { id: 'invite', icon: '👥', key: 'Друзья', go: () => showInvite() },
+  { id: 'settings', icon: '⚙️', key: 'Настройки', go: () => showSettings() },
+];
+
+// mountDock (re)builds the floating dockbar from the cached data (for the invite
+// badge), highlights the active destination and reveals it. activeId null marks
+// the dashboard (nothing highlighted). The dock is the linked cabinet's nav, so
+// it stays hidden for unlinked users and the admin workspace.
+function mountDock(activeId) {
+  const data = cabinetData || {};
+  if (!data.linked) { hideDock(); return; }
+  const pending = (data.invites && data.invites.pending) || 0;
+  dockEl.textContent = '';
+  DOCK_ITEMS.forEach(it => {
+    const b = el('button', 'dock-item' + (it.id === activeId ? ' active' : ''));
+    b.appendChild(el('span', 'dock-icon', it.icon));
+    b.appendChild(el('span', 'dock-label', t(it.key)));
+    if (it.id === 'invite' && pending > 0) b.appendChild(el('span', 'dock-badge', String(pending)));
+    b.onclick = it.go;
+    dockEl.appendChild(b);
+  });
+  dockEl.hidden = false;
+  document.body.classList.add('has-dock');
+}
+
+function hideDock() {
+  dockEl.hidden = true;
+  document.body.classList.remove('has-dock');
 }
 
 // actionGrid builds the 2-column action buttons under the profile.
@@ -1547,21 +1650,92 @@ function actionGrid(buttons) {
   return grid;
 }
 
-function profileActions() {
-  const grid = el('div', 'profile-actions');
-  const add = (label, paths, onClick, primary) => {
-    const button = el('button', primary ? null : 'secondary');
-    button.appendChild(svg(paths));
-    button.appendChild(el('span', null, label));
-    button.onclick = onClick;
-    grid.appendChild(button);
+// ---- Support drawer (slide-up chat overlay, opened from the top chrome) ----
+
+// supportDrawerBox holds the scrollable message container while the drawer is
+// open, so the poll can refresh it without rebuilding the sheet.
+let supportDrawerBox = null;
+
+// buildSupportDrawer lazily constructs the drawer DOM (backdrop + sheet) once.
+// It reuses the existing /api/support send/close endpoints and chat bubble
+// styles, so the only change versus the old full view is the presentation.
+function buildSupportDrawer() {
+  drawerEl.textContent = '';
+  const backdrop = el('div', 'drawer-backdrop');
+  backdrop.onclick = closeSupportDrawer;
+  drawerEl.appendChild(backdrop);
+
+  const sheet = el('div', 'drawer-sheet');
+  const head = el('div', 'drawer-head');
+  const av = el('div', 'avatar');
+  av.style.cssText = 'width:40px;height:40px;border-radius:13px;font-size:18px;';
+  av.textContent = '💬';
+  head.appendChild(av);
+  const info = el('div', 'info');
+  info.appendChild(el('div', 'drawer-title', t('Чат с поддержкой')));
+  info.appendChild(el('div', 'drawer-online', '● online'));
+  head.appendChild(info);
+  const x = el('button', 'drawer-close', '✕');
+  x.setAttribute('aria-label', t('Завершить чат'));
+  x.onclick = closeSupportDrawer;
+  head.appendChild(x);
+  sheet.appendChild(head);
+
+  const box = el('div', 'chat');
+  supportDrawerBox = box;
+  sheet.appendChild(box);
+
+  const compose = el('div', 'drawer-compose');
+  const text = Object.assign(el('textarea'), { placeholder: t('Введите сообщение…'), rows: 1 });
+  const send = el('button', 'drawer-send', t('Отправить'));
+  send.onclick = async () => {
+    const v = text.value.trim();
+    if (!v) { tg.showAlert(t('Сообщение не может быть пустым.')); return; }
+    send.disabled = true;
+    try {
+      await api('/api/support/send', { method: 'POST', body: JSON.stringify({ text: v }) });
+      text.value = '';
+      await refreshSupport(box);
+    } catch (e) { tg.showAlert(e.message); }
+    send.disabled = false;
   };
-  add(t('Продлить'), ['M3 11a9 9 0 0 1 15-4l3 3', 'M21 4v6h-6', 'M21 13a9 9 0 0 1-15 4l-3-3', 'M3 20v-6h6'], showRenew, true);
-  add(t('Друзья'), ['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2', 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8', 'M19 8v6', 'M16 11h6'], showInvite, false);
-  add(t('Подарок'), ['M3 9h18v12H3z', 'M3 13h18', 'M12 9v12', 'M12 9c-3 0-5-5-2.5-5.8C11 2.7 12 5 12 9z', 'M12 9c3 0 5-5 2.5-5.8C13 2.7 12 5 12 9z'], showGift, false);
-  add(t('Настройки'), ['M4 7h9', 'M17 7h3', 'M4 17h3', 'M11 17h9'], showSettings, false);
-  return grid;
+  compose.appendChild(text);
+  compose.appendChild(send);
+  sheet.appendChild(compose);
+
+  const end = el('button', 'secondary drawer-end', t('Завершить чат'));
+  end.onclick = async () => {
+    if (!(await confirmDialog(t('Завершить чат с поддержкой? История будет удалена.')))) return;
+    try {
+      await api('/api/support/close', { method: 'POST', body: '{}' });
+      closeSupportDrawer();
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  sheet.appendChild(end);
+
+  drawerEl.appendChild(sheet);
 }
+
+// openSupportDrawer reveals the chat overlay over the current view and polls for
+// admin replies while open.
+async function openSupportDrawer() {
+  if (!drawerEl.firstChild) buildSupportDrawer();
+  drawerEl.classList.add('open');
+  drawerEl.setAttribute('aria-hidden', 'false');
+  try { await refreshSupport(supportDrawerBox); } catch (e) { /* poll will retry */ }
+  startSupportPoll(() => refreshSupport(supportDrawerBox), 4000);
+}
+
+// closeSupportDrawer hides the overlay (without deleting history) and stops the
+// poll; the conversation persists until the user taps "end chat".
+function closeSupportDrawer() {
+  stopSupportPoll();
+  drawerEl.classList.remove('open');
+  drawerEl.setAttribute('aria-hidden', 'true');
+}
+
+// showSupport keeps the old entry-point name working (e.g. the unlinked menu).
+function showSupport() { openSupportDrawer(); }
 
 // menuCard builds one hub section: a title, a hint and one or more buttons that
 // navigate to a sub-view.
@@ -1615,6 +1789,16 @@ function renderNotifPrefs(data) {
   return card;
 }
 
+// renderSubscriptionInfo shows the technical details that used to sit in the
+// dashboard's stat grid (UUID, device limit), now grouped under Settings.
+function renderSubscriptionInfo(p) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('Подписка')));
+  row(card, t('UUID'), shortUUID(p.uuid));
+  row(card, t('Лимит устройств'), p.hwid_limit > 0 ? String(p.hwid_limit) : '∞');
+  return card;
+}
+
 // renderTrialClaim builds the free-trial claim card shown to new (unlinked)
 // users when the trial is enabled.
 function renderTrialClaim(terms) {
@@ -1664,7 +1848,7 @@ function showHome() {
   const data = cabinetData || {};
   appEl.textContent = '';
 
-  appEl.appendChild(pillRow(data));
+  renderTopActions(data);
 
   if (!data.linked) {
     appEl.appendChild(renderUnlinked());
@@ -1691,11 +1875,11 @@ function showHome() {
     const profile = selectedProfile(data);
     if (profiles.length > 1) appEl.appendChild(renderProfileSelector(profiles, profile));
     if (profile) appEl.appendChild(renderProfile(profile, data));
-    appEl.appendChild(profileActions());
     const ref = renderReferral(data);
     if (ref) appEl.appendChild(ref);
   }
 
+  mountDock(null);
   statusEl.hidden = true;
   appEl.hidden = false;
 }
@@ -1704,6 +1888,7 @@ function showHome() {
 // and the pay/renew flow.
 function showRenew() {
   currentRender = showRenew;
+  mountDock('renew');
   const data = cabinetData || {};
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('Продлить')));
@@ -1728,10 +1913,13 @@ function showRenew() {
 // showSettings opens the notification-preferences screen.
 function showSettings() {
   currentRender = showSettings;
+  mountDock('settings');
   const data = cabinetData || {};
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('Настройки')));
   if (data.notifications) appEl.appendChild(renderNotifPrefs(data));
+  const profile = selectedProfile(data);
+  if (profile) appEl.appendChild(renderSubscriptionInfo(profile));
   appEl.appendChild(renderRegistration());
   appEl.appendChild(renderGiftRedemption());
   statusEl.hidden = true;
@@ -1741,6 +1929,7 @@ function showSettings() {
 // showGift opens the gift-purchase flow.
 function showGift() {
   currentRender = showGift;
+  mountDock('gift');
   const data = cabinetData || {};
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('🎁 Подарить подписку')));
@@ -1760,6 +1949,7 @@ function showGift() {
 // showInvite opens the user-invitation flow.
 function showInvite() {
   currentRender = showInvite;
+  mountDock('invite');
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('👥 Пригласить пользователя')));
   appEl.appendChild(renderInvite());
@@ -1771,6 +1961,7 @@ function showInvite() {
 // showMyGifts lists the user's issued gift codes grouped by status.
 function showMyGifts() {
   currentRender = showMyGifts;
+  mountDock('gift');
   const data = cabinetData || {};
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('📦 Мои подарки')));
@@ -1803,6 +1994,7 @@ function renderMyInvites(data, withHeading) {
 
 function showMyInvites() {
   currentRender = showMyInvites;
+  mountDock('invite');
   const data = cabinetData || {};
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('👥 Мои приглашения')));
@@ -1844,6 +2036,7 @@ function renderReferral(data) {
 // showReferral opens the referral screen from the invitations menu.
 function showReferral() {
   currentRender = showReferral;
+  mountDock('invite');
   appEl.textContent = '';
   appEl.appendChild(subPageTop(t('🤝 Пригласить друга')));
   const card = renderReferral(cabinetData || {});
@@ -1890,6 +2083,7 @@ let adminPaymentFilters = { days: 30, status: 'all', provider: 'all', query: '',
 
 // showAdmin (re)loads /api/admin and renders the admin hub.
 async function showAdmin() {
+  hideDock();
   showLoadingView('admin', t('⚙️ Админ-панель'), title => adminPageTop(title, showCabinet));
   try {
     adminData = await api('/api/admin');
@@ -1930,49 +2124,8 @@ function renderChatMessages(box, messages) {
   box.scrollTop = box.scrollHeight;
 }
 
-// showSupport is the user's own support thread with a send box and a close
-// (delete) button, polling for admin replies while open.
-async function showSupport() {
-  currentRender = showSupport;
-  stopSupportPoll();
-  appEl.textContent = '';
-  appEl.appendChild(subPageTop(t('💬 Чат с поддержкой')));
-
-  const chatCard = el('div', 'card');
-  const box = el('div', 'chat');
-  chatCard.appendChild(box);
-  const text = Object.assign(el('textarea'), { placeholder: t('Введите сообщение…') });
-  chatCard.appendChild(text);
-  const send = el('button', null, t('Отправить'));
-  send.onclick = async () => {
-    const v = text.value.trim();
-    if (!v) { tg.showAlert(t('Сообщение не может быть пустым.')); return; }
-    send.disabled = true;
-    try {
-      await api('/api/support/send', { method: 'POST', body: JSON.stringify({ text: v }) });
-      text.value = '';
-      await refreshSupport(box);
-    } catch (e) { tg.showAlert(e.message); }
-    send.disabled = false;
-  };
-  chatCard.appendChild(send);
-  const close = el('button', 'secondary', t('Завершить чат'));
-  close.onclick = async () => {
-    if (!(await confirmDialog(t('Завершить чат с поддержкой? История будет удалена.')))) return;
-    try {
-      await api('/api/support/close', { method: 'POST', body: '{}' });
-      showHome();
-    } catch (e) { tg.showAlert(e.message); }
-  };
-  chatCard.appendChild(close);
-  appEl.appendChild(chatCard);
-
-  statusEl.hidden = true;
-  appEl.hidden = false;
-  await refreshSupport(box);
-  startSupportPoll(() => refreshSupport(box), 4000);
-}
-
+// The user's support thread is now the slide-up drawer (see buildSupportDrawer);
+// refreshSupport renders the polled messages into whichever box is open.
 async function refreshSupport(box) {
   const data = await api('/api/support');
   renderChatMessages(box, data.messages);
