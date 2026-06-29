@@ -479,7 +479,7 @@ func TestAdminConfirmRequest(t *testing.T) {
 	if req.Status != "confirmed" {
 		t.Fatalf("status: %s", req.Status)
 	}
-	// The paying user gets a chat notification (webapp path only).
+	// The paying user gets a chat notification (the bot confirm path does too).
 	var notified bool
 	for _, m := range bot.sent {
 		if m.ChatID == userTG && strings.Contains(m.Text, "продлена") {
