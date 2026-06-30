@@ -370,8 +370,11 @@
     color: var(--tone-active); font-size: 11px; font-weight: 800; }
   .admin-status.inactive { background: var(--tint-expired); color: var(--tone-expired); }
   .admin-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-  .admin-stat { min-height: 92px; padding: 15px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
+  .admin-stat { position: relative; min-height: 92px; padding: 15px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
     box-shadow: inset 0 1px 0 rgba(255,255,255,.025); }
+  .admin-stat.tappable { cursor: pointer; }
+  .admin-stat.tappable:active { background: var(--surface-2); }
+  .admin-stat-chevron { position: absolute; top: 11px; right: 13px; color: var(--hint); font-size: 20px; font-weight: 400; line-height: 1; }
   .admin-stat-value { margin-top: 7px; font-size: 23px; font-weight: 800; letter-spacing: -.03em; }
   .admin-stat-label { color: var(--hint); font-size: 11px; font-weight: 700; line-height: 1.35; }
   .payment-range { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 5px; margin-bottom: 14px;
@@ -2814,16 +2817,22 @@ function renderAdminReferral(data) {
 
 // showUserAdmin is a dedicated page: the full user list with a live username
 // search; tapping a row opens that user's editable card.
-async function showUserAdmin() {
-  currentRender = showUserAdmin;
-  showLoadingView('admin', t('Управление пользователями'), title => adminPageTop(title));
+async function showUserAdmin(opts) {
+  // Nav rows wire `onclick = showUserAdmin`, so opts may arrive as a click Event.
+  if (!opts || typeof opts !== 'object' || opts instanceof Event) opts = {};
+  const cohort = opts.cohort || '';
+  const title = opts.title || t('Управление пользователями');
+  const onBack = typeof opts.onBack === 'function' ? opts.onBack : renderAdminHome;
+  const back = () => showUserAdmin(opts);
+  currentRender = back;
+  showLoadingView('admin', title, ttl => adminPageTop(ttl, onBack));
   let users;
   try {
-    users = (await api('/api/admin/users')).users || [];
+    users = (await api('/api/admin/users' + (cohort ? '?cohort=' + encodeURIComponent(cohort) : ''))).users || [];
   } catch (e) { tg.showAlert(e.message); return; }
 
   appEl.textContent = '';
-  appEl.appendChild(adminPageTop(t('Управление пользователями')));
+  appEl.appendChild(adminPageTop(title, onBack));
 
   const card = el('div', 'admin-card');
   const search = Object.assign(el('input'), { placeholder: t('Поиск по имени…') });
@@ -2852,7 +2861,7 @@ async function showUserAdmin() {
       button.appendChild(copy);
       button.appendChild(el('span', 'admin-status' + (u.status === 'ACTIVE' ? '' : ' inactive'), u.status));
       button.appendChild(el('span', 'admin-chevron', '›'));
-      button.onclick = () => openUser(u.username);
+      button.onclick = () => openUser(u.username, back);
       list.appendChild(button);
     });
   };
@@ -2864,15 +2873,16 @@ async function showUserAdmin() {
 }
 
 // openUser swaps the page to one user's editable card with a back-to-list link.
-async function openUser(username) {
-  showLoadingView('admin', username || t('Управление пользователями'), title => adminPageTop(title, showUserAdmin));
+async function openUser(username, onBack) {
+  if (typeof onBack !== 'function') onBack = showUserAdmin;
+  showLoadingView('admin', username || t('Управление пользователями'), title => adminPageTop(title, onBack));
   let user;
   try {
     user = (await api('/api/admin/user/find', { method: 'POST', body: JSON.stringify({ query: username }) })).user;
   } catch (e) { tg.showAlert(e.message); return; }
-  currentRender = () => openUser(username);
+  currentRender = () => openUser(username, onBack);
   appEl.textContent = '';
-  appEl.appendChild(adminPageTop(user.username, showUserAdmin));
+  appEl.appendChild(adminPageTop(user.username, onBack));
 
   const card = el('div', 'admin-card');
   renderUserCard(card, user);
@@ -3361,20 +3371,22 @@ async function showAdminStats() {
   appEl.appendChild(renderPaymentHistory(report));
 
   if (stats) {
+    const userTile = (label, value, cohort) =>
+      [label, value, () => showUserAdmin({ cohort, title: label, onBack: showAdminStats })];
     appEl.appendChild(paymentStatsCard(t('Пользователи панели'), [
-      [t('Всего'), stats.users_total],
-      [t('Активные'), stats.users_active],
-      [t('Истекают в ближайшие 7 дней'), stats.users_expiring_soon],
-      [t('Истекшие'), stats.users_expired],
-      [t('С привязанным Telegram'), stats.users_linked],
+      userTile(t('Всего'), stats.users_total, 'total'),
+      userTile(t('Активные'), stats.users_active, 'active'),
+      userTile(t('Истекают в ближайшие 7 дней'), stats.users_expiring_soon, 'expiring_soon'),
+      userTile(t('Истекшие'), stats.users_expired, 'expired'),
+      userTile(t('С привязанным Telegram'), stats.users_linked, 'linked'),
     ]));
     appEl.appendChild(paymentStatsCard(t('Подарочные коды'), [
-      [t('Ожидают оплаты'), stats.gifts_pending],
-      [t('Выданы'), stats.gifts_issued],
-      [t('Активированы'), stats.gifts_activated],
+      [t('Ожидают оплаты'), stats.gifts_pending, () => showAdminGiftRequests(showAdminStats)],
+      [t('Выданы'), stats.gifts_issued, () => showAdminGiftCodes(showAdminStats)],
+      [t('Активированы'), stats.gifts_activated, () => showAdminGiftCodes(showAdminStats)],
     ]));
     appEl.appendChild(paymentStatsCard(t('👥 Приглашения'), [
-      [t('Ожидают одобрения'), stats.invites_pending],
+      [t('Ожидают одобрения'), stats.invites_pending, () => showAdminInviteRequests(showAdminStats)],
     ]));
   } else {
     const warning = el('div', 'admin-card admin-empty', t('Статистика пользователей временно недоступна.'));
@@ -3460,10 +3472,14 @@ function paymentStatsCard(title, rows) {
   const section = el('section', 'admin-section');
   section.appendChild(el('div', 'admin-section-label', title));
   const grid = el('div', 'admin-stat-grid');
-  rows.forEach(([label, value]) => {
-    const tile = el('div', 'admin-stat');
+  rows.forEach(([label, value, onClick]) => {
+    const tile = el('div', 'admin-stat' + (onClick ? ' tappable' : ''));
     tile.appendChild(el('div', 'admin-stat-label', label));
     tile.appendChild(el('div', 'admin-stat-value', String(value)));
+    if (onClick) {
+      tile.appendChild(el('span', 'admin-stat-chevron', '›'));
+      tile.onclick = onClick;
+    }
     grid.appendChild(tile);
   });
   section.appendChild(grid);
@@ -3664,19 +3680,21 @@ function showAdminPaymentRequests() {
   appEl.hidden = false;
 }
 
-function showAdminGiftRequests() {
-  currentRender = showAdminGiftRequests;
+function showAdminGiftRequests(onBack) {
+  if (typeof onBack !== 'function') onBack = undefined;
+  currentRender = () => showAdminGiftRequests(onBack);
   appEl.textContent = '';
-  appEl.appendChild(adminPageTop(t('Заявки на подарки')));
+  appEl.appendChild(adminPageTop(t('Заявки на подарки'), onBack));
   appEl.appendChild(renderAdminGiftRequests(adminData || {}));
   statusEl.hidden = true;
   appEl.hidden = false;
 }
 
-function showAdminInviteRequests() {
-  currentRender = showAdminInviteRequests;
+function showAdminInviteRequests(onBack) {
+  if (typeof onBack !== 'function') onBack = undefined;
+  currentRender = () => showAdminInviteRequests(onBack);
   appEl.textContent = '';
-  appEl.appendChild(adminPageTop(t('Заявки на приглашения')));
+  appEl.appendChild(adminPageTop(t('Заявки на приглашения'), onBack));
   appEl.appendChild(renderAdminInviteRequests(adminData || {}));
   statusEl.hidden = true;
   appEl.hidden = false;
@@ -3708,10 +3726,11 @@ function showAdminSettings() {
   appEl.hidden = false;
 }
 
-function showAdminGiftCodes() {
-  currentRender = showAdminGiftCodes;
+function showAdminGiftCodes(onBack) {
+  if (typeof onBack !== 'function') onBack = undefined;
+  currentRender = () => showAdminGiftCodes(onBack);
   appEl.textContent = '';
-  appEl.appendChild(adminPageTop(t('Активные подарочные коды')));
+  appEl.appendChild(adminPageTop(t('Активные подарочные коды'), onBack));
   appEl.appendChild(renderAdminGifts(adminData || {}));
   statusEl.hidden = true;
   appEl.hidden = false;

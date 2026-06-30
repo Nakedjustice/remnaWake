@@ -59,6 +59,7 @@ type Admin interface {
 	AdminListSquads(ctx context.Context, telegramID int64) ([]payments.WebSquad, error)
 	AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error
 	AdminListUsers(ctx context.Context, telegramID int64) ([]payments.WebUserRow, error)
+	AdminListUsersByCohort(ctx context.Context, telegramID int64, cohort string) ([]payments.WebUserRow, error)
 	AdminSetDefaultTrafficReset(ctx context.Context, telegramID int64, strategy string) error
 	AdminSetTrial(ctx context.Context, telegramID int64, cfg payments.TrialConfig) error
 	AdminSetReferral(ctx context.Context, telegramID int64, enabled bool, inviterDays, inviteeDays int) error
@@ -953,7 +954,15 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	users, err := s.admin.AdminListUsers(r.Context(), userID)
+	var (
+		users []payments.WebUserRow
+		err   error
+	)
+	if cohort := r.URL.Query().Get("cohort"); cohort != "" {
+		users, err = s.admin.AdminListUsersByCohort(r.Context(), userID, cohort)
+	} else {
+		users, err = s.admin.AdminListUsers(r.Context(), userID)
+	}
 	if err != nil {
 		s.writeAdminError(w, "list users", userID, err)
 		return

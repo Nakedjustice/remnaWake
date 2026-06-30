@@ -38,6 +38,34 @@ type WebAdminStats struct {
 	InfraUnconverted      int     `json:"infra_unconverted"`
 }
 
+// userClass labels a panel user for the admin dashboard tiles and their
+// drill-down lists. A user can belong to several cohorts at once (e.g. active,
+// expiring soon and linked). The counts in AdminStatsData and the filtered
+// lists in AdminListUsersByCohort are derived from this single classifier so a
+// tile's number always equals the length of its drill-down list.
+type userClass struct {
+	active       bool
+	expiringSoon bool
+	expired      bool
+	linked       bool
+}
+
+// classifyUser applies the cohort rules for one panel user as of now.
+func classifyUser(u *Subscriber, now time.Time) userClass {
+	c := userClass{linked: u.TelegramID != 0}
+	pastExpiry := !u.ExpireAt.IsZero() && !u.ExpireAt.After(now)
+	switch {
+	case u.Status == "ACTIVE" && !pastExpiry:
+		c.active = true
+		if !u.ExpireAt.IsZero() && u.ExpireAt.Sub(now) <= 7*24*time.Hour {
+			c.expiringSoon = true
+		}
+	case u.Status == "EXPIRED" || pastExpiry:
+		c.expired = true
+	}
+	return c
+}
+
 // AdminStatsData returns the admin statistics snapshot for the Mini App and
 // bot. The caller identity is always checked because Web API requests reach
 // this method directly.
@@ -53,18 +81,17 @@ func (s *Service) AdminStatsData(ctx context.Context, telegramID int64) (*WebAdm
 	now := s.now()
 	out := &WebAdminStats{UsersTotal: len(subs)}
 	for i := range subs {
-		u := &subs[i]
-		if u.TelegramID != 0 {
+		c := classifyUser(&subs[i], now)
+		if c.linked {
 			out.UsersLinked++
 		}
-		pastExpiry := !u.ExpireAt.IsZero() && !u.ExpireAt.After(now)
 		switch {
-		case u.Status == "ACTIVE" && !pastExpiry:
+		case c.active:
 			out.UsersActive++
-			if !u.ExpireAt.IsZero() && u.ExpireAt.Sub(now) <= 7*24*time.Hour {
+			if c.expiringSoon {
 				out.UsersExpiringSoon++
 			}
-		case u.Status == "EXPIRED" || pastExpiry:
+		case c.expired:
 			out.UsersExpired++
 		}
 	}
@@ -79,7 +106,7 @@ func (s *Service) AdminStatsData(ctx context.Context, telegramID int64) (*WebAdm
 	out.RevenueLabel = s.priceLabel(st.Revenue)
 	out.GiftsPending = st.GiftsByStatus["pending"]
 	out.GiftsIssued = st.GiftsByStatus["issued"]
-	out.GiftsActivated = st.GiftsByStatus["activated"]
+	out.GiftsActivated = st.GiftsByStatus["redeemed"]
 	out.InvitesPending = st.InvitesPending
 
 	base := s.baseCurrencyISO(ctx)
