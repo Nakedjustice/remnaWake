@@ -204,6 +204,19 @@ func (s *Store) DeletePendingPaymentRequest(ctx context.Context, id int64) (bool
 	return n > 0, err
 }
 
+// DeletePaymentRequest permanently removes a payment request of any status by
+// id. Unlike DeletePendingPaymentRequest this is unconditional, so admins can
+// purge test/junk records that distort reporting. Returns true if a row was
+// deleted, false if no request had that id.
+func (s *Store) DeletePaymentRequest(ctx context.Context, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM payment_requests WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // RejectPaymentRequest transitions pending->rejected exactly once, storing the
 // resolution time in confirmed_at (it doubles as resolved-at).
 // Returns true only on the transition; false if already resolved or not found.

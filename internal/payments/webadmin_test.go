@@ -29,6 +29,7 @@ func TestWebAdminRejectsNonAdmin(t *testing.T) {
 	calls["AdminRevokeGiftCode"] = svc.AdminRevokeGiftCode(ctx, userTG, 1)
 	calls["AdminConfirmRequest"] = svc.AdminConfirmRequest(ctx, userTG, 1)
 	calls["AdminRejectRequest"] = svc.AdminRejectRequest(ctx, userTG, 1)
+	calls["AdminDeletePaymentRequest"] = svc.AdminDeletePaymentRequest(ctx, userTG, 1)
 	calls["AdminConfirmGiftRequest"] = svc.AdminConfirmGiftRequest(ctx, userTG, 1)
 	calls["AdminRejectGiftRequest"] = svc.AdminRejectGiftRequest(ctx, userTG, 1)
 	calls["AdminApproveInviteRequest"] = svc.AdminApproveInviteRequest(ctx, userTG, 1)
@@ -530,5 +531,32 @@ func TestAdminRejectRequest(t *testing.T) {
 	// Rejected request cannot be confirmed afterwards.
 	if err := svc.AdminConfirmRequest(ctx, adminTG, reqID); !errors.Is(err, ErrRequestResolved) {
 		t.Fatalf("confirm after reject: err = %v, want ErrRequestResolved", err)
+	}
+}
+
+func TestAdminDeletePaymentRequest(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+
+	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	confirmedAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	reqID, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: userTG,
+		Months: 3, Price: 450, ExpireAt: exp, Status: "pending",
+	})
+	// A confirmed record skews revenue stats, so deletion must work on it.
+	if _, err := st.ConfirmPaymentRequest(ctx, reqID, confirmedAt); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	if err := svc.AdminDeletePaymentRequest(ctx, adminTG, reqID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if got, _ := st.GetPaymentRequest(ctx, reqID); got != nil {
+		t.Fatalf("record still present: %+v", got)
+	}
+	// Deleting again (or a never-existing id) reports not found.
+	if err := svc.AdminDeletePaymentRequest(ctx, adminTG, reqID); !errors.Is(err, ErrRequestNotFound) {
+		t.Fatalf("second delete: err = %v, want ErrRequestNotFound", err)
 	}
 }
