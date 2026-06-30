@@ -733,6 +733,25 @@ func (s *Service) AdminRejectRequest(ctx context.Context, telegramID, reqID int6
 // AdminConfirmGiftRequest confirms payment of a pending gift purchase from the
 // mini app admin panel; the buyer gets the redemption link from the shared
 // helper.
+// AdminDeletePaymentRequest permanently removes a payment record from local
+// history (any status) so admins can purge test data that distorts the revenue
+// and conversion reporting. It only touches the local ledger — a confirmed
+// subscription extension already applied on the panel is not reversed — and
+// notifies nobody.
+func (s *Service) AdminDeletePaymentRequest(ctx context.Context, telegramID, reqID int64) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	ok, err := s.store.DeletePaymentRequest(ctx, reqID)
+	if err != nil {
+		return fmt.Errorf("delete payment request: %w", err)
+	}
+	if !ok {
+		return ErrRequestNotFound
+	}
+	return nil
+}
+
 func (s *Service) AdminConfirmGiftRequest(ctx context.Context, telegramID, giftID int64) error {
 	if err := s.adminGuard(telegramID); err != nil {
 		return err

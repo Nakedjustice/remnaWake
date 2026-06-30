@@ -410,6 +410,9 @@
     border-radius: 11px; background: var(--surface-2); }
   .payment-txn code { min-width: 0; flex: 1; overflow: hidden; color: var(--hint); text-overflow: ellipsis; white-space: nowrap; }
   .payment-txn button { width: auto; flex: none; margin: 0; padding: 6px 9px; font-size: 12px; }
+  .payment-record-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .payment-record-actions .payment-delete { width: auto; margin: 0; padding: 7px 12px; font-size: 12px;
+    color: var(--danger, #e5484d); border-color: var(--danger, #e5484d); }
   .payment-pages { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
   .payment-pages button { width: auto; margin: 0; }
   .payment-pages span { color: var(--hint); font-size: 12px; }
@@ -666,6 +669,9 @@ const EN = {
   'Способы оплаты': 'Payment methods',
   'подтверждено {confirmed} · отклонено {rejected} · ожидает {pending}': 'confirmed {confirmed} · rejected {rejected} · pending {pending}',
   'История платежей': 'Payment history',
+  'Удалить из истории': 'Delete from history',
+  'Удалить платёж №{id} из истории? Это действие необратимо и не отменяет уже продлённую подписку.': 'Delete payment #{id} from history? This is irreversible and does not undo an already-extended subscription.',
+  'Удаление…': 'Deleting…',
   'Поиск по пользователю, Telegram ID или транзакции': 'Search user, Telegram ID or transaction',
   'Найти': 'Search',
   'Все статусы': 'All statuses',
@@ -3606,6 +3612,18 @@ function renderPaymentRecord(payment) {
     txn.appendChild(copy);
     card.appendChild(txn);
   }
+  const actions = el('div', 'payment-record-actions');
+  const del = el('button', 'secondary payment-delete', t('Удалить из истории'));
+  del.onclick = async () => {
+    if (!(await confirmDialog(t('Удалить платёж №{id} из истории? Это действие необратимо и не отменяет уже продлённую подписку.', { id: payment.id })))) return;
+    try {
+      await withButtonLoading(del, t('Удаление…'), () =>
+        api('/api/admin/payment/delete', { method: 'POST', body: JSON.stringify({ id: payment.id }) }));
+      showAdminStats();
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  actions.appendChild(del);
+  card.appendChild(actions);
   return card;
 }
 

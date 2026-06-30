@@ -48,6 +48,7 @@ type Admin interface {
 	AdminProxyHealth(ctx context.Context, telegramID int64) (*payments.WebProxyHealth, error)
 	AdminSetProxyNotification(ctx context.Context, telegramID int64, name, address, subName string, muted bool) error
 	AdminPaymentReport(ctx context.Context, telegramID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error)
+	AdminDeletePaymentRequest(ctx context.Context, telegramID, id int64) error
 	AdminCheckUpdates(ctx context.Context, telegramID int64) (*payments.WebUpdateCheckResult, error)
 	AdminSetUpdateInterval(ctx context.Context, telegramID int64, interval string) error
 	AdminSetTariff(ctx context.Context, telegramID int64, months, price int) error
@@ -134,6 +135,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/admin/proxy-health", s.handleAdminProxyHealth)
 	mux.HandleFunc("POST /api/admin/proxy-notification", s.handleAdminSetProxyNotification)
 	mux.HandleFunc("GET /api/admin/payments", s.handleAdminPayments)
+	mux.HandleFunc("POST /api/admin/payment/delete", s.adminIDAction("delete payment", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminDeletePaymentRequest(ctx, tgID, id)
+	}))
 	mux.HandleFunc("POST /api/admin/updates/check", s.handleAdminCheckUpdates)
 	mux.HandleFunc("POST /api/admin/updates/interval", s.handleAdminSetUpdateInterval)
 	mux.HandleFunc("GET /api/admin/support", s.handleAdminSupport)
