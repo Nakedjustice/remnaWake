@@ -493,12 +493,58 @@ func (s *Service) AdminListUsers(ctx context.Context, telegramID int64) ([]WebUs
 	}
 	out := make([]WebUserRow, 0, len(subs))
 	for i := range subs {
-		out = append(out, WebUserRow{
-			UUID:     subs[i].UUID,
-			Username: subs[i].Username,
-			Status:   subs[i].Status,
-			ExpireAt: subs[i].ExpireAt.Format("02.01.2006"),
-		})
+		out = append(out, toWebUserRow(&subs[i]))
+	}
+	return out, nil
+}
+
+// toWebUserRow projects a panel user onto the lightweight list row.
+func toWebUserRow(sub *Subscriber) WebUserRow {
+	return WebUserRow{
+		UUID:     sub.UUID,
+		Username: sub.Username,
+		Status:   sub.Status,
+		ExpireAt: sub.ExpireAt.Format("02.01.2006"),
+	}
+}
+
+// AdminListUsersByCohort returns the panel users behind one admin dashboard
+// tile. The cohort is classified with the same rules as AdminStatsData (via
+// classifyUser) so each returned list matches its tile count exactly. An empty
+// cohort (or "total") returns every user; an unknown cohort is rejected.
+func (s *Service) AdminListUsersByCohort(ctx context.Context, telegramID int64, cohort string) ([]WebUserRow, error) {
+	if err := s.adminGuard(telegramID); err != nil {
+		return nil, err
+	}
+	switch cohort {
+	case "", "total", "active", "expiring_soon", "expired", "linked":
+	default:
+		return nil, ErrBadInput
+	}
+	subs, err := s.finder.ListAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: list users: %v", ErrPanelUnavailable, err)
+	}
+	now := s.now()
+	out := make([]WebUserRow, 0, len(subs))
+	for i := range subs {
+		c := classifyUser(&subs[i], now)
+		keep := false
+		switch cohort {
+		case "", "total":
+			keep = true
+		case "active":
+			keep = c.active
+		case "expiring_soon":
+			keep = c.expiringSoon
+		case "expired":
+			keep = c.expired
+		case "linked":
+			keep = c.linked
+		}
+		if keep {
+			out = append(out, toWebUserRow(&subs[i]))
+		}
 	}
 	return out, nil
 }

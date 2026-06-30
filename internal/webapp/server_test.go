@@ -259,6 +259,15 @@ func (f *fakeAdmin) AdminListUsers(_ context.Context, tgID int64) ([]payments.We
 		{UUID: "u-1", Username: "alice", Status: "ACTIVE", ExpireAt: "01.07.2026"},
 	}, nil
 }
+func (f *fakeAdmin) AdminListUsersByCohort(_ context.Context, tgID int64, cohort string) ([]payments.WebUserRow, error) {
+	f.calls = append(f.calls, adminCall{Name: "listuserscohort", A: tgID, Text: cohort})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return []payments.WebUserRow{
+		{UUID: "u-2", Username: "bob", Status: "EXPIRED", ExpireAt: "01.06.2026"},
+	}, nil
+}
 func (f *fakeAdmin) AdminSetDefaultTrafficReset(_ context.Context, tgID int64, strategy string) error {
 	f.calls = append(f.calls, adminCall{Name: "settreset", A: tgID, Text: strategy})
 	return f.err
@@ -953,6 +962,31 @@ func TestHandleAdminListUsers(t *testing.T) {
 	}
 	if len(got.Users) != 1 || got.Users[0].Username != "alice" || got.Users[0].ExpireAt != "01.07.2026" {
 		t.Fatalf("unexpected payload: %+v", got)
+	}
+
+	// A ?cohort= query routes to the filtered method.
+	req = httptest.NewRequest("GET", "/api/admin/users?cohort=expired", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("cohort status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	got.Users = nil
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode cohort: %v", err)
+	}
+	if len(got.Users) != 1 || got.Users[0].Username != "bob" {
+		t.Fatalf("unexpected cohort payload: %+v", got)
+	}
+	var sawCohort bool
+	for _, c := range adm.calls {
+		if c.Name == "listuserscohort" && c.Text == "expired" {
+			sawCohort = true
+		}
+	}
+	if !sawCohort {
+		t.Fatalf("AdminListUsersByCohort not called with cohort=expired; calls=%+v", adm.calls)
 	}
 }
 

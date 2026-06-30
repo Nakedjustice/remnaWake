@@ -92,6 +92,83 @@ func TestAdminListUsers(t *testing.T) {
 	}
 }
 
+func TestAdminListUsersByCohort(t *testing.T) {
+	now := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
+	finder := &fakeFinder{all: []Subscriber{
+		{UUID: "u-a", Username: "alice", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TelegramID: 111},
+		{UUID: "u-b", Username: "bob", Status: "ACTIVE", ExpireAt: now.Add(3 * 24 * time.Hour), TelegramID: 222},
+		{UUID: "u-c", Username: "carol", Status: "ACTIVE", ExpireAt: now.Add(7 * 24 * time.Hour)},
+		{UUID: "u-d", Username: "dave", Status: "EXPIRED", ExpireAt: now.Add(-5 * 24 * time.Hour)},
+		{UUID: "u-e", Username: "erin", Status: "ACTIVE", ExpireAt: now.Add(-24 * time.Hour)}, // past expiry => expired
+		{UUID: "u-f", Username: "frank", Status: "DISABLED", ExpireAt: now.Add(30 * 24 * time.Hour)},
+	}}
+	svc, _ := newUserCtlService(t, finder, &fakeUpdater{})
+	svc.now = func() time.Time { return now }
+	ctx := context.Background()
+
+	names := func(rows []WebUserRow) string {
+		out := make([]string, len(rows))
+		for i, r := range rows {
+			out[i] = r.Username
+		}
+		return strings.Join(out, ",")
+	}
+	cases := []struct {
+		cohort string
+		want   string
+	}{
+		{"", "alice,bob,carol,dave,erin,frank"},
+		{"total", "alice,bob,carol,dave,erin,frank"},
+		{"active", "alice,bob,carol"},
+		{"expiring_soon", "bob,carol"},
+		{"expired", "dave,erin"},
+		{"linked", "alice,bob"},
+	}
+	for _, tc := range cases {
+		rows, err := svc.AdminListUsersByCohort(ctx, adminTG, tc.cohort)
+		if err != nil {
+			t.Fatalf("cohort %q: %v", tc.cohort, err)
+		}
+		if got := names(rows); got != tc.want {
+			t.Errorf("cohort %q: got [%s], want [%s]", tc.cohort, got, tc.want)
+		}
+	}
+
+	// Unknown cohort is rejected (before reaching the panel).
+	if _, err := svc.AdminListUsersByCohort(ctx, adminTG, "bogus"); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("bogus cohort: err = %v, want ErrBadInput", err)
+	}
+	// Non-admin is rejected.
+	if _, err := svc.AdminListUsersByCohort(ctx, userTG, "active"); !errors.Is(err, ErrNotAdmin) {
+		t.Fatalf("non-admin: err = %v, want ErrNotAdmin", err)
+	}
+
+	// Each cohort list length must equal its dashboard tile count exactly.
+	stats, err := svc.AdminStatsData(ctx, adminTG)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	tiles := []struct {
+		cohort string
+		count  int
+	}{
+		{"total", stats.UsersTotal},
+		{"active", stats.UsersActive},
+		{"expiring_soon", stats.UsersExpiringSoon},
+		{"expired", stats.UsersExpired},
+		{"linked", stats.UsersLinked},
+	}
+	for _, tile := range tiles {
+		rows, err := svc.AdminListUsersByCohort(ctx, adminTG, tile.cohort)
+		if err != nil {
+			t.Fatalf("cohort %q: %v", tile.cohort, err)
+		}
+		if len(rows) != tile.count {
+			t.Errorf("cohort %q: list len %d != tile count %d", tile.cohort, len(rows), tile.count)
+		}
+	}
+}
+
 func TestAdminFindAndUpdateUser(t *testing.T) {
 	finder := &fakeFinder{byName: map[string]*Subscriber{
 		"alice": {
