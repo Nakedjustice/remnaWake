@@ -191,6 +191,10 @@ func (f *fakeAdmin) AdminPaymentReport(_ context.Context, tgID int64, filter pay
 	f.calls = append(f.calls, adminCall{Name: "payments", A: tgID, B: int64(filter.Page), Text: fmt.Sprintf("%d:%s:%s:%s", filter.Days, filter.Status, filter.Provider, filter.Query)})
 	return f.report, f.err
 }
+func (f *fakeAdmin) AdminDeletePaymentRequest(_ context.Context, tgID, id int64) error {
+	f.calls = append(f.calls, adminCall{Name: "delete payment", A: tgID, B: id})
+	return f.err
+}
 func (f *fakeAdmin) AdminCheckUpdates(_ context.Context, tgID int64) (*payments.WebUpdateCheckResult, error) {
 	f.calls = append(f.calls, adminCall{Name: "checkupdates", A: tgID})
 	return &payments.WebUpdateCheckResult{Status: "up_to_date", Message: "ok"}, f.err
