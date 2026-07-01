@@ -25,6 +25,20 @@ func TestAdminPaymentReportMapsHistoryAndGuardsAdmin(t *testing.T) {
 	if _, err := st.ConfirmPaymentRequest(ctx, id, now); err != nil {
 		t.Fatal(err)
 	}
+	gift, err := st.CreateGiftCode(ctx, store.GiftCode{Code: "GIFT-7", BuyerTelegramID: 1, Months: 1, Price: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.IssueGiftCode(ctx, gift, now); err != nil {
+		t.Fatal(err)
+	}
+	invite, err := st.CreateInviteRequest(ctx, store.InviteRequest{InviterTelegramID: 1, NewUsername: "invitee", Months: 1, Price: 50, Status: "pending"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ResolveInviteRequest(ctx, invite, "approved", now); err != nil {
+		t.Fatal(err)
+	}
 
 	filter := WebPaymentFilter{Days: 30, Status: "all", Provider: "all", Page: 1}
 	if _, err := svc.AdminPaymentReport(ctx, 2000, filter); !errors.Is(err, ErrNotAdmin) {
@@ -39,6 +53,9 @@ func TestAdminPaymentReportMapsHistoryAndGuardsAdmin(t *testing.T) {
 	}
 	if report.Analytics.RevenueLabel != "450₽" || report.Analytics.ConversionRate != 100 {
 		t.Fatalf("unexpected analytics: %+v", report.Analytics)
+	}
+	if report.Analytics.GiftRevenue != 100 || report.Analytics.InviteRevenue != 50 || report.Analytics.TotalRevenueLabel != "600₽" {
+		t.Fatalf("unexpected revenue breakdown: %+v", report.Analytics)
 	}
 	if report.TotalPages != 1 || report.PageSize != 25 || report.Items[0].ResolvedAt == "" {
 		t.Fatalf("unexpected paging/record: %+v", report)

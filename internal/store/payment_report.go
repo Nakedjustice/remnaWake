@@ -32,12 +32,15 @@ type PaymentProviderStat struct {
 }
 
 type PaymentAnalytics struct {
-	Confirmed int
-	Rejected  int
-	Pending   int
-	Revenue   int
-	Daily     []PaymentDailyStat
-	Providers []PaymentProviderStat
+	Confirmed     int
+	Rejected      int
+	Pending       int
+	Revenue       int // confirmed subscription payments only
+	GiftRevenue   int // paid gifts (issued/redeemed), unfiltered view only
+	InviteRevenue int // approved invites, unfiltered view only
+	TotalRevenue  int // Revenue + GiftRevenue + InviteRevenue
+	Daily         []PaymentDailyStat
+	Providers     []PaymentProviderStat
 }
 
 type PaymentReport struct {
@@ -132,6 +135,26 @@ func (s *Store) readPaymentAnalytics(ctx context.Context, since time.Time, provi
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payment_requests WHERE status = 'pending'`+providerSQL, providerArgs...).Scan(&out.Pending); err != nil {
 		return nil, err
 	}
+
+	// Gifts and invites have no payment provider, so their revenue only applies
+	// to the unfiltered ("all") view. issued_at / resolved_at mirror the
+	// confirmed_at window used for payments above, so the day-range selector
+	// bounds all three sources consistently.
+	if provider == "" || provider == "all" {
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT COALESCE(SUM(price), 0) FROM gift_codes
+			WHERE status IN ('issued', 'redeemed') AND issued_at >= ?
+		`, sinceText).Scan(&out.GiftRevenue); err != nil {
+			return nil, err
+		}
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT COALESCE(SUM(price), 0) FROM invite_requests
+			WHERE status = 'approved' AND resolved_at >= ?
+		`, sinceText).Scan(&out.InviteRevenue); err != nil {
+			return nil, err
+		}
+	}
+	out.TotalRevenue = out.Revenue + out.GiftRevenue + out.InviteRevenue
 
 	dailyRows, err := s.db.QueryContext(ctx, `SELECT SUBSTR(confirmed_at, 1, 10), COUNT(*), COALESCE(SUM(price), 0)
 		FROM payment_requests WHERE status = 'confirmed' AND confirmed_at >= ?`+providerSQL+`

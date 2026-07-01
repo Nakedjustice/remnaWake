@@ -44,6 +44,23 @@ func TestReadPaymentReportAnalyticsAndFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A paid gift and an approved invite inside the window contribute to total
+	// revenue but never to the payment_requests ledger, providers, or daily bars.
+	gift, err := st.CreateGiftCode(ctx, GiftCode{Code: "GIFT-1", BuyerTelegramID: 1, Months: 1, Price: 500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.IssueGiftCode(ctx, gift, now.Add(-24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	invite, err := st.CreateInviteRequest(ctx, InviteRequest{InviterTelegramID: 1, NewUsername: "invitee", Months: 1, Price: 700, Status: "pending"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ResolveInviteRequest(ctx, invite, "approved", now.Add(-24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
 	report, err := st.ReadPaymentReport(ctx, PaymentReportFilter{Since: now.Add(-30 * 24 * time.Hour), Status: "all", Provider: "all", Limit: 25})
 	if err != nil {
 		t.Fatalf("ReadPaymentReport: %v", err)
@@ -56,6 +73,9 @@ func TestReadPaymentReportAnalyticsAndFilters(t *testing.T) {
 	}
 	if report.Analytics.Confirmed != 1 || report.Analytics.Rejected != 1 || report.Analytics.Pending != 1 || report.Analytics.Revenue != 100 {
 		t.Fatalf("unexpected analytics: %+v", report.Analytics)
+	}
+	if report.Analytics.GiftRevenue != 500 || report.Analytics.InviteRevenue != 700 || report.Analytics.TotalRevenue != 1300 {
+		t.Fatalf("unexpected total revenue breakdown: %+v", report.Analytics)
 	}
 	if len(report.Analytics.Daily) != 1 || report.Analytics.Daily[0].Revenue != 100 {
 		t.Fatalf("unexpected daily stats: %+v", report.Analytics.Daily)
@@ -75,6 +95,9 @@ func TestReadPaymentReportAnalyticsAndFilters(t *testing.T) {
 	}
 	if filtered.Analytics.Pending != 1 || filtered.Analytics.Confirmed != 0 {
 		t.Fatalf("provider filter did not affect analytics: %+v", filtered.Analytics)
+	}
+	if filtered.Analytics.GiftRevenue != 0 || filtered.Analytics.InviteRevenue != 0 || filtered.Analytics.TotalRevenue != 0 {
+		t.Fatalf("provider filter should exclude gift/invite revenue: %+v", filtered.Analytics)
 	}
 }
 

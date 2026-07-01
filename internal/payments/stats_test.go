@@ -28,6 +28,9 @@ func TestAdminStatsDataCountsPanelUsers(t *testing.T) {
 	if got.PaymentsConfirmed30d != 0 || got.PaymentsPending != 0 || got.Revenue != 0 || got.RevenueLabel != "0₽" {
 		t.Fatalf("unexpected empty payment counters: %+v", got)
 	}
+	if got.GiftsRevenue != 0 || got.InvitesRevenue != 0 || got.TotalRevenue != 0 || got.TotalRevenueLabel != "0₽" {
+		t.Fatalf("unexpected empty revenue breakdown: %+v", got)
+	}
 }
 
 func TestAdminStatsDataRejectsNonAdmin(t *testing.T) {
