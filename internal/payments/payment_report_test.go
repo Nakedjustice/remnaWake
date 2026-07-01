@@ -48,8 +48,22 @@ func TestAdminPaymentReportMapsHistoryAndGuardsAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Total != 1 || len(report.Items) != 1 || report.Items[0].ProviderTxnID != "txn-7" {
-		t.Fatalf("unexpected history: %+v", report)
+	// The history now merges the payment, the gift and the invite.
+	if report.Total != 3 || len(report.Items) != 3 {
+		t.Fatalf("unexpected history total/items: %+v", report)
+	}
+	byKind := map[string]WebPaymentRecord{}
+	for _, it := range report.Items {
+		byKind[it.Kind] = it
+	}
+	if pay := byKind["payment"]; pay.ProviderTxnID != "txn-7" || pay.Provider != ProviderPlatega || pay.ResolvedAt == "" {
+		t.Fatalf("unexpected payment record: %+v", pay)
+	}
+	if g := byKind["gift"]; g.ProviderTxnID != "GIFT-7" || g.Provider != "" {
+		t.Fatalf("unexpected gift record: %+v", g)
+	}
+	if inv := byKind["invite"]; inv.PayerUsername != "invitee" || inv.Provider != "" {
+		t.Fatalf("unexpected invite record: %+v", inv)
 	}
 	if report.Analytics.RevenueLabel != "450₽" || report.Analytics.ConversionRate != 100 {
 		t.Fatalf("unexpected analytics: %+v", report.Analytics)
@@ -57,17 +71,22 @@ func TestAdminPaymentReportMapsHistoryAndGuardsAdmin(t *testing.T) {
 	if report.Analytics.GiftRevenue != 100 || report.Analytics.InviteRevenue != 50 || report.Analytics.TotalRevenueLabel != "600₽" {
 		t.Fatalf("unexpected revenue breakdown: %+v", report.Analytics)
 	}
-	if report.TotalPages != 1 || report.PageSize != 25 || report.Items[0].ResolvedAt == "" {
-		t.Fatalf("unexpected paging/record: %+v", report)
+	if report.TotalPages != 1 || report.PageSize != 25 {
+		t.Fatalf("unexpected paging: %+v", report)
 	}
 }
 
 func TestAdminPaymentReportRejectsInvalidFilter(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
-	_, err := svc.AdminPaymentReport(context.Background(), 1000, WebPaymentFilter{
+	ctx := context.Background()
+	if _, err := svc.AdminPaymentReport(ctx, 1000, WebPaymentFilter{
 		Days: 14, Status: "all", Provider: "all", Page: 1,
-	})
-	if !errors.Is(err, ErrBadInput) {
-		t.Fatalf("error = %v, want ErrBadInput", err)
+	}); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("days: error = %v, want ErrBadInput", err)
+	}
+	if _, err := svc.AdminPaymentReport(ctx, 1000, WebPaymentFilter{
+		Days: 30, Status: "all", Provider: "all", Kind: "bogus", Page: 1,
+	}); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("kind: error = %v, want ErrBadInput", err)
 	}
 }

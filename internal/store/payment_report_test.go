@@ -44,14 +44,19 @@ func TestReadPaymentReportAnalyticsAndFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A paid gift and an approved invite inside the window contribute to total
-	// revenue but never to the payment_requests ledger, providers, or daily bars.
+	// A paid gift and an approved invite inside the window: they now appear in
+	// the unified history (interleaved by created_at) and contribute to total
+	// revenue, but never to the payment_requests ledger, providers, or daily
+	// bars. created_at is pinned so the newest-first order below is deterministic.
 	gift, err := st.CreateGiftCode(ctx, GiftCode{Code: "GIFT-1", BuyerTelegramID: 1, Months: 1, Price: 500})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.IssueGiftCode(ctx, gift, now.Add(-24*time.Hour)); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ctx, `UPDATE gift_codes SET created_at = ? WHERE id = ?`, formatTime(now.Add(-36*time.Hour)), gift); err != nil {
+		t.Fatalf("set gift created_at: %v", err)
 	}
 	invite, err := st.CreateInviteRequest(ctx, InviteRequest{InviterTelegramID: 1, NewUsername: "invitee", Months: 1, Price: 700, Status: "pending"})
 	if err != nil {
@@ -60,16 +65,25 @@ func TestReadPaymentReportAnalyticsAndFilters(t *testing.T) {
 	if _, err := st.ResolveInviteRequest(ctx, invite, "approved", now.Add(-24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.db.ExecContext(ctx, `UPDATE invite_requests SET created_at = ? WHERE id = ?`, formatTime(now.Add(-60*time.Hour)), invite); err != nil {
+		t.Fatalf("set invite created_at: %v", err)
+	}
 
 	report, err := st.ReadPaymentReport(ctx, PaymentReportFilter{Since: now.Add(-30 * 24 * time.Hour), Status: "all", Provider: "all", Limit: 25})
 	if err != nil {
 		t.Fatalf("ReadPaymentReport: %v", err)
 	}
-	if report.Total != 3 || len(report.Items) != 3 {
-		t.Fatalf("history total/items = %d/%d, want 3/3", report.Total, len(report.Items))
+	if report.Total != 5 || len(report.Items) != 5 {
+		t.Fatalf("history total/items = %d/%d, want 5/5", report.Total, len(report.Items))
 	}
-	if report.Items[0].Username != "carol" || report.Items[2].Username != "bob" {
+	if report.Items[0].Username != "carol" || report.Items[4].Username != "bob" {
 		t.Fatalf("unexpected newest-first order: %+v", report.Items)
+	}
+	if report.Items[1].Kind != "gift" || report.Items[1].Reference != "GIFT-1" {
+		t.Fatalf("gift not in history as expected: %+v", report.Items[1])
+	}
+	if report.Items[2].Kind != "invite" || report.Items[2].CounterpartyName != "invitee" {
+		t.Fatalf("invite not in history as expected: %+v", report.Items[2])
 	}
 	if report.Analytics.Confirmed != 1 || report.Analytics.Rejected != 1 || report.Analytics.Pending != 1 || report.Analytics.Revenue != 100 {
 		t.Fatalf("unexpected analytics: %+v", report.Analytics)
@@ -98,6 +112,42 @@ func TestReadPaymentReportAnalyticsAndFilters(t *testing.T) {
 	}
 	if filtered.Analytics.GiftRevenue != 0 || filtered.Analytics.InviteRevenue != 0 || filtered.Analytics.TotalRevenue != 0 {
 		t.Fatalf("provider filter should exclude gift/invite revenue: %+v", filtered.Analytics)
+	}
+}
+
+func TestReadPaymentReportKindFilter(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	since := now.Add(-30 * 24 * time.Hour)
+
+	if _, err := st.CreatePaymentRequest(ctx, PaymentRequest{
+		RemnawaveID: 1, UUID: "u1", Username: "payer-user", TelegramID: 11,
+		Months: 1, Price: 100, ExpireAt: now.AddDate(0, 1, 0), Provider: "p2p",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateGiftCode(ctx, GiftCode{Code: "GIFT-K", BuyerTelegramID: 22, BuyerUsername: "buyer", Months: 1, Price: 200}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateInviteRequest(ctx, InviteRequest{InviterTelegramID: 33, InviterUsername: "inviter", NewUsername: "newbie", Months: 1, Price: 300, Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, c := range []struct {
+		kind string
+		want int
+	}{{"all", 3}, {"payment", 1}, {"gift", 1}, {"invite", 1}} {
+		report, err := st.ReadPaymentReport(ctx, PaymentReportFilter{Since: since, Status: "all", Provider: "all", Kind: c.kind, Limit: 25})
+		if err != nil {
+			t.Fatalf("kind %q: %v", c.kind, err)
+		}
+		if report.Total != c.want || len(report.Items) != c.want {
+			t.Fatalf("kind %q: total/items = %d/%d, want %d", c.kind, report.Total, len(report.Items), c.want)
+		}
+		if c.kind != "all" && report.Items[0].Kind != c.kind {
+			t.Fatalf("kind %q: item kind = %q", c.kind, report.Items[0].Kind)
+		}
 	}
 }
 

@@ -188,11 +188,19 @@ func (f *fakeAdmin) AdminSetProxyNotification(_ context.Context, tgID int64, nam
 	return f.err
 }
 func (f *fakeAdmin) AdminPaymentReport(_ context.Context, tgID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error) {
-	f.calls = append(f.calls, adminCall{Name: "payments", A: tgID, B: int64(filter.Page), Text: fmt.Sprintf("%d:%s:%s:%s", filter.Days, filter.Status, filter.Provider, filter.Query)})
+	f.calls = append(f.calls, adminCall{Name: "payments", A: tgID, B: int64(filter.Page), Text: fmt.Sprintf("%d:%s:%s:%s:%s", filter.Days, filter.Status, filter.Provider, filter.Kind, filter.Query)})
 	return f.report, f.err
 }
 func (f *fakeAdmin) AdminDeletePaymentRequest(_ context.Context, tgID, id int64) error {
 	f.calls = append(f.calls, adminCall{Name: "delete payment", A: tgID, B: id})
+	return f.err
+}
+func (f *fakeAdmin) AdminDeleteGiftCode(_ context.Context, tgID, id int64) error {
+	f.calls = append(f.calls, adminCall{Name: "delete gift", A: tgID, B: id})
+	return f.err
+}
+func (f *fakeAdmin) AdminDeleteInviteRequest(_ context.Context, tgID, id int64) error {
+	f.calls = append(f.calls, adminCall{Name: "delete invite", A: tgID, B: id})
 	return f.err
 }
 func (f *fakeAdmin) AdminCheckUpdates(_ context.Context, tgID int64) (*payments.WebUpdateCheckResult, error) {
@@ -718,14 +726,14 @@ func TestHandleAdminPaymentsDefaultsAndFilters(t *testing.T) {
 		Items: []payments.WebPaymentRecord{{ID: 9, Username: "alice", ProviderTxnID: "txn-9"}},
 	}}
 	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/payments?days=7&status=confirmed&provider=platega&q=alice&page=2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/payments?days=7&status=confirmed&provider=platega&kind=gift&q=alice&page=2", nil)
 	req.Header.Set("Authorization", validAuth(t))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
-	if len(adm.calls) != 1 || adm.calls[0].Name != "payments" || adm.calls[0].B != 2 || adm.calls[0].Text != "7:confirmed:platega:alice" {
+	if len(adm.calls) != 1 || adm.calls[0].Name != "payments" || adm.calls[0].B != 2 || adm.calls[0].Text != "7:confirmed:platega:gift:alice" {
 		t.Fatalf("calls = %+v", adm.calls)
 	}
 	var got payments.WebPaymentReport
@@ -744,8 +752,17 @@ func TestHandleAdminPaymentsDefaultQueryAndValidation(t *testing.T) {
 	req.Header.Set("Authorization", validAuth(t))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusOK || len(adm.calls) != 1 || adm.calls[0].Text != "30:all:all:" || adm.calls[0].B != 1 {
+	if w.Code != http.StatusOK || len(adm.calls) != 1 || adm.calls[0].Text != "30:all:all:all:" || adm.calls[0].B != 1 {
 		t.Fatalf("status=%d calls=%+v", w.Code, adm.calls)
+	}
+
+	// An unknown kind is rejected before reaching the service.
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/payments?kind=bogus", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest || len(adm.calls) != 1 {
+		t.Fatalf("bad kind status=%d calls=%+v", w.Code, adm.calls)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/admin/payments?page=zero", nil)
@@ -766,6 +783,8 @@ func TestStaticAdminStatisticsView(t *testing.T) {
 	for _, want := range []string{
 		"/api/admin/stats",
 		"/api/admin/payments",
+		"/api/admin/gift/delete",
+		"/api/admin/invite/delete",
 		"showAdminStats",
 		"📊 Статистика",
 		"Panel users",
@@ -845,6 +864,9 @@ func TestHandleAdminMutations(t *testing.T) {
 		{"/api/admin/tariff/delete", `{"months":3}`, "deltariff", 3, 0, ""},
 		{"/api/admin/requisites", `{"text":"card 1"}`, "setreq", 0, 0, "card 1"},
 		{"/api/admin/gift/revoke", `{"id":5}`, "revoke", 5, 0, ""},
+		{"/api/admin/payment/delete", `{"id":13}`, "delete payment", 42, 13, ""},
+		{"/api/admin/gift/delete", `{"id":14}`, "delete gift", 42, 14, ""},
+		{"/api/admin/invite/delete", `{"id":15}`, "delete invite", 42, 15, ""},
 		{"/api/admin/request/confirm", `{"id":7}`, "confirm", 7, 0, ""},
 		{"/api/admin/request/reject", `{"id":8}`, "reject", 8, 0, ""},
 		{"/api/admin/gift-request/confirm", `{"id":9}`, "giftconfirm", 9, 0, ""},

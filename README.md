@@ -154,6 +154,11 @@ buyer → used/not-used → individual codes, with one-tap revoke), and a
 (falls back to the stock `Default-Squad`; user creation fails visibly if no
 squad can be resolved). The same controls live in the Mini App admin panel.
 
+In the Mini App, the **payment history** merges subscription payments, gift
+codes and invites into one list: filter it by type (payments / gifts / invites)
+and delete any record from history (deletion is local-only — it never reverses
+an applied panel change, and removing an unredeemed gift code makes it unusable).
+
 - 👤 **Manage user** — look a panel user up by **profile name** or
   **subscription link**, then edit them directly: extend or shorten the expiry
   (±30/±90 days or an exact number), set the device (HWID) limit, set the

@@ -141,6 +141,19 @@ func (s *Store) transitionGift(ctx context.Context, query string, args ...any) (
 	return n > 0, err
 }
 
+// DeleteGiftCode permanently removes a gift code of any status by id. Unlike
+// DeleteResolvedGiftCodes this is unconditional, so admins can purge test/junk
+// records from the payment history. Returns true if a row was deleted, false if
+// no gift had that id.
+func (s *Store) DeleteGiftCode(ctx context.Context, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM gift_codes WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // DeleteResolvedGiftCodes removes gifts the admin rejected or revoked.
 // Returns the number of deleted rows.
 func (s *Store) DeleteResolvedGiftCodes(ctx context.Context) (int64, error) {

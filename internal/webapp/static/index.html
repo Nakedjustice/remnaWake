@@ -406,9 +406,11 @@
   .payment-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
   .payment-badge { padding: 4px 8px; border-radius: 999px; background: var(--surface-2); color: var(--hint);
     font-size: 10px; font-weight: 800; text-transform: uppercase; }
-  .payment-badge.confirmed { background: var(--tint-active); color: var(--tone-active); }
-  .payment-badge.rejected { background: var(--tint-expired); color: var(--tone-expired); }
-  .payment-badge.pending { background: var(--tint-pending); color: var(--tint-pending-text); }
+  .payment-badge.confirmed, .payment-badge.redeemed, .payment-badge.approved { background: var(--tint-active); color: var(--tone-active); }
+  .payment-badge.rejected, .payment-badge.revoked { background: var(--tint-expired); color: var(--tone-expired); }
+  .payment-badge.pending, .payment-badge.issued { background: var(--tint-pending); color: var(--tint-pending-text); }
+  .payment-badge.kind-payment, .payment-badge.kind-gift, .payment-badge.kind-invite {
+    background: transparent; color: var(--hint); border: 1px solid var(--surface-2); }
   .payment-txn { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 9px 10px;
     border-radius: 11px; background: var(--surface-2); }
   .payment-txn code { min-width: 0; flex: 1; overflow: hidden; color: var(--hint); text-overflow: ellipsis; white-space: nowrap; }
@@ -677,7 +679,25 @@ const EN = {
   'История платежей': 'Payment history',
   'Удалить из истории': 'Delete from history',
   'Удалить платёж №{id} из истории? Это действие необратимо и не отменяет уже продлённую подписку.': 'Delete payment #{id} from history? This is irreversible and does not undo an already-extended subscription.',
+  'Удалить подарок №{id} из истории? Действие необратимо; неактивированный код станет недействительным.': 'Delete gift #{id} from history? This is irreversible; an unredeemed code becomes unusable.',
+  'Удалить приглашение №{id} из истории? Действие необратимо.': 'Delete invitation #{id} from history? This is irreversible.',
   'Удаление…': 'Deleting…',
+  'Все типы': 'All types',
+  'Платежи': 'Payments',
+  'Подарки': 'Gifts',
+  'Приглашения': 'Invitations',
+  '💳 Платёж': '💳 Payment',
+  '🎁 Подарок': '🎁 Gift',
+  '👥 Приглашение': '👥 Invitation',
+  'Покупатель': 'Buyer',
+  'Активировал': 'Redeemed by',
+  'Пригласил': 'Inviter',
+  'Новый пользователь': 'New user',
+  'Скопировать код': 'Copy code',
+  'Выдан': 'Issued',
+  'Активирован': 'Redeemed',
+  'Отозван': 'Revoked',
+  'Одобрено': 'Approved',
   'Поиск по пользователю, Telegram ID или транзакции': 'Search user, Telegram ID or transaction',
   'Найти': 'Search',
   'Все статусы': 'All statuses',
@@ -2143,7 +2163,7 @@ async function showCabinet() {
 // adminData caches the latest /api/admin payload so the admin hub and its
 // sub-views render from the same data without re-fetching on every navigation.
 let adminData = null;
-let adminPaymentFilters = { days: 30, status: 'all', provider: 'all', query: '', page: 1 };
+let adminPaymentFilters = { days: 30, status: 'all', provider: 'all', kind: 'all', query: '', page: 1 };
 
 // showAdmin (re)loads /api/admin and renders the admin hub.
 async function showAdmin() {
@@ -3332,7 +3352,7 @@ async function showAdminStats() {
   showLoadingView('stats', t('Статистика'), title => adminPageTop(title));
   const f = adminPaymentFilters;
   const params = new URLSearchParams({
-    days: String(f.days), status: f.status, provider: f.provider,
+    days: String(f.days), status: f.status, provider: f.provider, kind: f.kind,
     q: f.query, page: String(f.page),
   });
   const [statsResult, reportResult] = await Promise.allSettled([
@@ -3577,6 +3597,13 @@ function renderPaymentHistory(report) {
   });
   provider.onchange = () => { adminPaymentFilters.provider = provider.value; adminPaymentFilters.page = 1; showAdminStats(); };
   filters.appendChild(provider);
+  const kind = el('select');
+  [['all', t('Все типы')], ['payment', t('Платежи')], ['gift', t('Подарки')], ['invite', t('Приглашения')]].forEach(([value, label]) => {
+    const option = Object.assign(el('option', null, label), { value, selected: value === adminPaymentFilters.kind });
+    kind.appendChild(option);
+  });
+  kind.onchange = () => { adminPaymentFilters.kind = kind.value; adminPaymentFilters.page = 1; showAdminStats(); };
+  filters.appendChild(kind);
   section.appendChild(filters);
 
   const history = el('div', 'payment-history');
@@ -3602,51 +3629,89 @@ function renderPaymentHistory(report) {
 }
 
 function renderPaymentRecord(payment) {
+  const kind = payment.kind || 'payment';
+  const nameWithTG = (name, tgID) => {
+    if (name && tgID) return `${name} · TG ${tgID}`;
+    if (name) return name;
+    if (tgID) return `TG ${tgID}`;
+    return '';
+  };
   const card = el('article', 'payment-record');
   const head = el('div', 'payment-record-head');
   const title = el('div');
-  title.appendChild(el('div', 'payment-record-title', `#${payment.id} · ${payment.username}`));
+  title.appendChild(el('div', 'payment-record-title', `#${payment.id} · ${payment.username || nameWithTG('', payment.telegram_id) || '—'}`));
   title.appendChild(el('div', 'payment-record-price', `${payment.price_label} · ${payment.months} ${paymentMonthLabel(payment.months)}`));
   head.appendChild(title);
   const badges = el('div', 'payment-badges');
-  badges.appendChild(el('span', 'payment-badge', paymentProviderLabel(payment.provider)));
+  badges.appendChild(el('span', `payment-badge kind-${kind}`, paymentKindLabel(kind)));
+  if (kind === 'payment') badges.appendChild(el('span', 'payment-badge', paymentProviderLabel(payment.provider)));
   badges.appendChild(el('span', `payment-badge ${payment.status}`, paymentStatusLabel(payment.status)));
   head.appendChild(badges);
   card.appendChild(head);
   const meta = el('div', 'payment-record-meta');
-  meta.appendChild(el('div', null, `${t('Подписка')}: ${payment.username}${payment.telegram_id ? ` · TG ${payment.telegram_id}` : ''}`));
-  const payer = payment.payer_username || (payment.payer_telegram_id ? `TG ${payment.payer_telegram_id}` : payment.username);
-  meta.appendChild(el('div', null, `${t('Плательщик')}: ${payer}${payment.payer_username && payment.payer_telegram_id ? ` · TG ${payment.payer_telegram_id}` : ''}`));
+  if (kind === 'gift') {
+    meta.appendChild(el('div', null, `${t('Покупатель')}: ${nameWithTG(payment.username, payment.telegram_id) || '—'}`));
+    const redeemer = nameWithTG(payment.payer_username, payment.payer_telegram_id);
+    if (redeemer) meta.appendChild(el('div', null, `${t('Активировал')}: ${redeemer}`));
+  } else if (kind === 'invite') {
+    meta.appendChild(el('div', null, `${t('Пригласил')}: ${nameWithTG(payment.username, payment.telegram_id) || '—'}`));
+    if (payment.payer_username) meta.appendChild(el('div', null, `${t('Новый пользователь')}: ${payment.payer_username}`));
+  } else {
+    meta.appendChild(el('div', null, `${t('Подписка')}: ${payment.username}${payment.telegram_id ? ` · TG ${payment.telegram_id}` : ''}`));
+    const payer = payment.payer_username || (payment.payer_telegram_id ? `TG ${payment.payer_telegram_id}` : payment.username);
+    meta.appendChild(el('div', null, `${t('Плательщик')}: ${payer}${payment.payer_username && payment.payer_telegram_id ? ` · TG ${payment.payer_telegram_id}` : ''}`));
+  }
   meta.appendChild(el('div', null, `${t('Создано')}: ${formatPaymentDate(payment.created_at)}`));
   if (payment.resolved_at) meta.appendChild(el('div', null, `${t('Решено')}: ${formatPaymentDate(payment.resolved_at)}`));
   card.appendChild(meta);
   if (payment.provider_txn_id) {
+    const copyLabel = kind === 'gift' ? t('Скопировать код') : t('Скопировать ID транзакции');
     const txn = el('div', 'payment-txn');
     txn.appendChild(el('code', null, payment.provider_txn_id));
-    const copy = el('button', 'secondary', t('Скопировать ID транзакции'));
+    const copy = el('button', 'secondary', copyLabel);
     copy.onclick = async () => {
       try {
         await navigator.clipboard.writeText(payment.provider_txn_id);
         copy.textContent = t('✅ Скопировано');
-        setTimeout(() => copy.textContent = t('Скопировать ID транзакции'), 1500);
+        setTimeout(() => copy.textContent = copyLabel, 1500);
       } catch { tg.showAlert(t('Не удалось скопировать, выделите ссылку вручную.')); }
     };
     txn.appendChild(copy);
     card.appendChild(txn);
   }
   const actions = el('div', 'payment-record-actions');
+  const deleteEndpoint = {
+    payment: '/api/admin/payment/delete',
+    gift: '/api/admin/gift/delete',
+    invite: '/api/admin/invite/delete',
+  }[kind] || '/api/admin/payment/delete';
   const del = el('button', 'secondary payment-delete', t('Удалить из истории'));
   del.onclick = async () => {
-    if (!(await confirmDialog(t('Удалить платёж №{id} из истории? Это действие необратимо и не отменяет уже продлённую подписку.', { id: payment.id })))) return;
+    if (!(await confirmDialog(paymentDeleteConfirm(kind, payment.id)))) return;
     try {
       await withButtonLoading(del, t('Удаление…'), () =>
-        api('/api/admin/payment/delete', { method: 'POST', body: JSON.stringify({ id: payment.id }) }));
+        api(deleteEndpoint, { method: 'POST', body: JSON.stringify({ id: payment.id }) }));
       showAdminStats();
     } catch (e) { tg.showAlert(e.message); }
   };
   actions.appendChild(del);
   card.appendChild(actions);
   return card;
+}
+
+function paymentKindLabel(kind) {
+  if (kind === 'gift') return t('🎁 Подарок');
+  if (kind === 'invite') return t('👥 Приглашение');
+  return t('💳 Платёж');
+}
+
+// paymentDeleteConfirm returns a kind-specific confirmation. Deletion only
+// touches local history: it never reverses an applied panel change, and for an
+// unredeemed gift code it makes that code permanently unusable.
+function paymentDeleteConfirm(kind, id) {
+  if (kind === 'gift') return t('Удалить подарок №{id} из истории? Действие необратимо; неактивированный код станет недействительным.', { id });
+  if (kind === 'invite') return t('Удалить приглашение №{id} из истории? Действие необратимо.', { id });
+  return t('Удалить платёж №{id} из истории? Это действие необратимо и не отменяет уже продлённую подписку.', { id });
 }
 
 function paymentProviderLabel(provider) {
@@ -3658,6 +3723,10 @@ function paymentProviderLabel(provider) {
 function paymentStatusLabel(status) {
   if (status === 'confirmed') return t('Подтверждено');
   if (status === 'rejected') return t('Отклонено');
+  if (status === 'issued') return t('Выдан');
+  if (status === 'redeemed') return t('Активирован');
+  if (status === 'revoked') return t('Отозван');
+  if (status === 'approved') return t('Одобрено');
   return t('Ожидает');
 }
 

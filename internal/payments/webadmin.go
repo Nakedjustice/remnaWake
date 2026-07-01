@@ -798,6 +798,41 @@ func (s *Service) AdminDeletePaymentRequest(ctx context.Context, telegramID, req
 	return nil
 }
 
+// AdminDeleteGiftCode permanently removes a gift code from local history (any
+// status) so admins can purge test/junk records that distort reporting. It only
+// touches the local ledger and notifies nobody; deleting an unredeemed code
+// simply makes that code unusable.
+func (s *Service) AdminDeleteGiftCode(ctx context.Context, telegramID, giftID int64) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	ok, err := s.store.DeleteGiftCode(ctx, giftID)
+	if err != nil {
+		return fmt.Errorf("delete gift code: %w", err)
+	}
+	if !ok {
+		return ErrRequestNotFound
+	}
+	return nil
+}
+
+// AdminDeleteInviteRequest permanently removes an invite request from local
+// history (any status) so admins can purge test/junk records that distort
+// reporting. It only touches the local ledger and notifies nobody.
+func (s *Service) AdminDeleteInviteRequest(ctx context.Context, telegramID, reqID int64) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	ok, err := s.store.DeleteInviteRequest(ctx, reqID)
+	if err != nil {
+		return fmt.Errorf("delete invite request: %w", err)
+	}
+	if !ok {
+		return ErrRequestNotFound
+	}
+	return nil
+}
+
 func (s *Service) AdminConfirmGiftRequest(ctx context.Context, telegramID, giftID int64) error {
 	if err := s.adminGuard(telegramID); err != nil {
 		return err

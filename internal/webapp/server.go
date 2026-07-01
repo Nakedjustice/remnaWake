@@ -49,6 +49,8 @@ type Admin interface {
 	AdminSetProxyNotification(ctx context.Context, telegramID int64, name, address, subName string, muted bool) error
 	AdminPaymentReport(ctx context.Context, telegramID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error)
 	AdminDeletePaymentRequest(ctx context.Context, telegramID, id int64) error
+	AdminDeleteGiftCode(ctx context.Context, telegramID, id int64) error
+	AdminDeleteInviteRequest(ctx context.Context, telegramID, id int64) error
 	AdminCheckUpdates(ctx context.Context, telegramID int64) (*payments.WebUpdateCheckResult, error)
 	AdminSetUpdateInterval(ctx context.Context, telegramID int64, interval string) error
 	AdminSetTariff(ctx context.Context, telegramID int64, months, price int) error
@@ -138,6 +140,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/admin/payments", s.handleAdminPayments)
 	mux.HandleFunc("POST /api/admin/payment/delete", s.adminIDAction("delete payment", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminDeletePaymentRequest(ctx, tgID, id)
+	}))
+	mux.HandleFunc("POST /api/admin/gift/delete", s.adminIDAction("delete gift", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminDeleteGiftCode(ctx, tgID, id)
+	}))
+	mux.HandleFunc("POST /api/admin/invite/delete", s.adminIDAction("delete invite", func(ctx context.Context, tgID, id int64) error {
+		return s.admin.AdminDeleteInviteRequest(ctx, tgID, id)
 	}))
 	mux.HandleFunc("POST /api/admin/updates/check", s.handleAdminCheckUpdates)
 	mux.HandleFunc("POST /api/admin/updates/interval", s.handleAdminSetUpdateInterval)
@@ -659,12 +667,16 @@ func (s *Server) handleAdminPayments(w http.ResponseWriter, r *http.Request) {
 	if provider == "" {
 		provider = "all"
 	}
-	if !validPaymentQuery(days, status, provider, query.Get("q")) {
+	kind := query.Get("kind")
+	if kind == "" {
+		kind = "all"
+	}
+	if !validPaymentQuery(days, status, provider, kind, query.Get("q")) {
 		writeJSONError(w, http.StatusBadRequest, "invalid payment report filters")
 		return
 	}
 	report, err := s.admin.AdminPaymentReport(r.Context(), userID, payments.WebPaymentFilter{
-		Days: days, Status: status, Provider: provider, Query: query.Get("q"), Page: page,
+		Days: days, Status: status, Provider: provider, Kind: kind, Query: query.Get("q"), Page: page,
 	})
 	if err != nil {
 		s.writeAdminError(w, "payment report", userID, err)
@@ -684,11 +696,14 @@ func positiveQueryInt(raw string, fallback int) (int, error) {
 	return n, nil
 }
 
-func validPaymentQuery(days int, status, provider, search string) bool {
+func validPaymentQuery(days int, status, provider, kind, search string) bool {
 	if days != 7 && days != 30 && days != 90 || len(strings.TrimSpace(search)) > 100 {
 		return false
 	}
 	if status != "all" && status != "pending" && status != "confirmed" && status != "rejected" {
+		return false
+	}
+	if kind != "all" && kind != "payment" && kind != "gift" && kind != "invite" {
 		return false
 	}
 	return provider == "all" || provider == payments.ProviderP2P || provider == payments.ProviderPlatega || provider == payments.ProviderTelegramStars

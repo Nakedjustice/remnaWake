@@ -30,6 +30,8 @@ func TestWebAdminRejectsNonAdmin(t *testing.T) {
 	calls["AdminConfirmRequest"] = svc.AdminConfirmRequest(ctx, userTG, 1)
 	calls["AdminRejectRequest"] = svc.AdminRejectRequest(ctx, userTG, 1)
 	calls["AdminDeletePaymentRequest"] = svc.AdminDeletePaymentRequest(ctx, userTG, 1)
+	calls["AdminDeleteGiftCode"] = svc.AdminDeleteGiftCode(ctx, userTG, 1)
+	calls["AdminDeleteInviteRequest"] = svc.AdminDeleteInviteRequest(ctx, userTG, 1)
 	calls["AdminConfirmGiftRequest"] = svc.AdminConfirmGiftRequest(ctx, userTG, 1)
 	calls["AdminRejectGiftRequest"] = svc.AdminRejectGiftRequest(ctx, userTG, 1)
 	calls["AdminApproveInviteRequest"] = svc.AdminApproveInviteRequest(ctx, userTG, 1)
@@ -634,6 +636,54 @@ func TestAdminDeletePaymentRequest(t *testing.T) {
 	}
 	// Deleting again (or a never-existing id) reports not found.
 	if err := svc.AdminDeletePaymentRequest(ctx, adminTG, reqID); !errors.Is(err, ErrRequestNotFound) {
+		t.Fatalf("second delete: err = %v, want ErrRequestNotFound", err)
+	}
+}
+
+func TestAdminDeleteGiftCode(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+
+	giftID, err := st.CreateGiftCode(ctx, store.GiftCode{Code: "GIFT-DEL", BuyerTelegramID: userTG, Months: 1, Price: 100})
+	if err != nil {
+		t.Fatalf("create gift: %v", err)
+	}
+	// Even an issued (still-active) code is deletable from history.
+	if _, err := st.IssueGiftCode(ctx, giftID, time.Now()); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if err := svc.AdminDeleteGiftCode(ctx, adminTG, giftID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if got, _ := st.GetGiftCode(ctx, giftID); got != nil {
+		t.Fatalf("gift still present: %+v", got)
+	}
+	if err := svc.AdminDeleteGiftCode(ctx, adminTG, giftID); !errors.Is(err, ErrRequestNotFound) {
+		t.Fatalf("second delete: err = %v, want ErrRequestNotFound", err)
+	}
+}
+
+func TestAdminDeleteInviteRequest(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+
+	reqID, err := st.CreateInviteRequest(ctx, store.InviteRequest{
+		InviterTelegramID: userTG, InviterUsername: "inviter", NewUsername: "newbie",
+		Months: 1, Price: 50, Status: "pending",
+	})
+	if err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+	if _, err := st.ResolveInviteRequest(ctx, reqID, "approved", time.Now()); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if err := svc.AdminDeleteInviteRequest(ctx, adminTG, reqID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if got, _ := st.GetInviteRequest(ctx, reqID); got != nil {
+		t.Fatalf("invite still present: %+v", got)
+	}
+	if err := svc.AdminDeleteInviteRequest(ctx, adminTG, reqID); !errors.Is(err, ErrRequestNotFound) {
 		t.Fatalf("second delete: err = %v, want ErrRequestNotFound", err)
 	}
 }
