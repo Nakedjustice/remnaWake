@@ -53,14 +53,20 @@ type WebPaymentProvider struct {
 }
 
 type WebPaymentAnalytics struct {
-	Confirmed      int                  `json:"confirmed"`
-	Rejected       int                  `json:"rejected"`
-	Pending        int                  `json:"pending"`
-	Revenue        int                  `json:"revenue"`
-	RevenueLabel   string               `json:"revenue_label"`
-	ConversionRate float64              `json:"conversion_rate"`
-	Daily          []WebPaymentDaily    `json:"daily"`
-	Providers      []WebPaymentProvider `json:"providers"`
+	Confirmed          int                  `json:"confirmed"`
+	Rejected           int                  `json:"rejected"`
+	Pending            int                  `json:"pending"`
+	Revenue            int                  `json:"revenue"` // subscription payments only
+	RevenueLabel       string               `json:"revenue_label"`
+	GiftRevenue        int                  `json:"gift_revenue"`
+	GiftRevenueLabel   string               `json:"gift_revenue_label"`
+	InviteRevenue      int                  `json:"invite_revenue"`
+	InviteRevenueLabel string               `json:"invite_revenue_label"`
+	TotalRevenue       int                  `json:"total_revenue"` // payments + gifts + invites
+	TotalRevenueLabel  string               `json:"total_revenue_label"`
+	ConversionRate     float64              `json:"conversion_rate"`
+	Daily              []WebPaymentDaily    `json:"daily"`
+	Providers          []WebPaymentProvider `json:"providers"`
 }
 
 type WebPaymentReport struct {
@@ -98,9 +104,15 @@ func (s *Service) AdminPaymentReport(ctx context.Context, telegramID int64, f We
 		Analytics: WebPaymentAnalytics{
 			Confirmed: report.Analytics.Confirmed, Rejected: report.Analytics.Rejected,
 			Pending: report.Analytics.Pending, Revenue: report.Analytics.Revenue,
-			RevenueLabel: s.priceLabel(report.Analytics.Revenue),
-			Daily:        make([]WebPaymentDaily, 0, len(report.Analytics.Daily)),
-			Providers:    make([]WebPaymentProvider, 0, len(report.Analytics.Providers)),
+			RevenueLabel:       s.priceLabel(report.Analytics.Revenue),
+			GiftRevenue:        report.Analytics.GiftRevenue,
+			GiftRevenueLabel:   s.priceLabel(report.Analytics.GiftRevenue),
+			InviteRevenue:      report.Analytics.InviteRevenue,
+			InviteRevenueLabel: s.priceLabel(report.Analytics.InviteRevenue),
+			TotalRevenue:       report.Analytics.TotalRevenue,
+			TotalRevenueLabel:  s.priceLabel(report.Analytics.TotalRevenue),
+			Daily:              make([]WebPaymentDaily, 0, len(report.Analytics.Daily)),
+			Providers:          make([]WebPaymentProvider, 0, len(report.Analytics.Providers)),
 		},
 	}
 	if out.Total > 0 {

@@ -659,6 +659,9 @@ const EN = {
   'Оплаты за 30 дней': 'Payments in 30 days',
   'Подтверждено': 'Confirmed',
   'Выручка': 'Revenue',
+  'в т.ч. подписки': 'incl. subscriptions',
+  'в т.ч. подарки': 'incl. gifts',
+  'в т.ч. приглашения': 'incl. invites',
   'Ожидают подтверждения': 'Awaiting confirmation',
   'Платежи и выручка': 'Payments and revenue',
   'Последние 7 дней': 'Last 7 days',
@@ -3354,7 +3357,10 @@ async function showAdminStats() {
   });
   appEl.appendChild(range);
   appEl.appendChild(paymentStatsCard(t('Платежи и выручка'), [
-    [t('Выручка'), analytics.revenue_label],
+    [t('Выручка'), analytics.total_revenue_label],
+    [t('в т.ч. подписки'), analytics.revenue_label],
+    [t('в т.ч. подарки'), analytics.gift_revenue_label],
+    [t('в т.ч. приглашения'), analytics.invite_revenue_label],
     [t('Подтверждено'), analytics.confirmed],
     [t('Отклонено'), analytics.rejected],
     [t('Ожидают подтверждения'), analytics.pending],

@@ -24,8 +24,14 @@ type WebAdminStats struct {
 	UsersLinked          int    `json:"users_linked"`
 	PaymentsConfirmed30d int    `json:"payments_confirmed_30d"`
 	PaymentsPending      int    `json:"payments_pending"`
-	Revenue              int    `json:"revenue"`
+	Revenue              int    `json:"revenue"` // confirmed subscription payments only
 	RevenueLabel         string `json:"revenue_label"`
+	GiftsRevenue         int    `json:"gifts_revenue"` // paid gifts (issued/redeemed)
+	GiftsRevenueLabel    string `json:"gifts_revenue_label"`
+	InvitesRevenue       int    `json:"invites_revenue"` // approved invites
+	InvitesRevenueLabel  string `json:"invites_revenue_label"`
+	TotalRevenue         int    `json:"total_revenue"` // payments + gifts + invites
+	TotalRevenueLabel    string `json:"total_revenue_label"`
 	GiftsPending         int    `json:"gifts_pending"`
 	GiftsIssued          int    `json:"gifts_issued"`
 	GiftsActivated       int    `json:"gifts_activated"`
@@ -104,6 +110,12 @@ func (s *Service) AdminStatsData(ctx context.Context, telegramID int64) (*WebAdm
 	out.PaymentsPending = st.PaymentsPending
 	out.Revenue = st.Revenue
 	out.RevenueLabel = s.priceLabel(st.Revenue)
+	out.GiftsRevenue = st.GiftsRevenue
+	out.GiftsRevenueLabel = s.priceLabel(st.GiftsRevenue)
+	out.InvitesRevenue = st.InvitesRevenue
+	out.InvitesRevenueLabel = s.priceLabel(st.InvitesRevenue)
+	out.TotalRevenue = st.Revenue + st.GiftsRevenue + st.InvitesRevenue
+	out.TotalRevenueLabel = s.priceLabel(out.TotalRevenue)
 	out.GiftsPending = st.GiftsByStatus["pending"]
 	out.GiftsIssued = st.GiftsByStatus["issued"]
 	out.GiftsActivated = st.GiftsByStatus["redeemed"]
@@ -158,8 +170,11 @@ func (s *Service) sendAdminStats(ctx context.Context, chatID int64) {
 	b.WriteString(fmt.Sprintf(i18n.T("• ожидают оплаты: %d\n"), st.GiftsPending))
 	b.WriteString(fmt.Sprintf(i18n.T("• выданы (не активированы): %d\n"), st.GiftsIssued))
 	b.WriteString(fmt.Sprintf(i18n.T("• активированы: %d\n"), st.GiftsActivated))
+	b.WriteString(fmt.Sprintf(i18n.T("• доход за 30 дней: %s\n"), st.GiftsRevenueLabel))
 	b.WriteString(i18n.T("\nПриглашения:\n"))
-	b.WriteString(fmt.Sprintf(i18n.T("• ожидают одобрения: %d"), st.InvitesPending))
+	b.WriteString(fmt.Sprintf(i18n.T("• ожидают одобрения: %d\n"), st.InvitesPending))
+	b.WriteString(fmt.Sprintf(i18n.T("• доход за 30 дней: %s\n"), st.InvitesRevenueLabel))
+	b.WriteString(fmt.Sprintf(i18n.T("\nВыручка за 30 дней (всего): %s"), st.TotalRevenueLabel))
 	b.WriteString(i18n.T("\n\nИнфраструктура:\n"))
 	b.WriteString(fmt.Sprintf(i18n.T("• серверов: %d\n"), st.InfraServers))
 	b.WriteString(fmt.Sprintf(i18n.T("• расходы в месяц: %s"), st.InfraMonthlyCostLabel))
