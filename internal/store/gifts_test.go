@@ -321,3 +321,28 @@ func TestGiftCodesByBuyerStatusPagingAndCounts(t *testing.T) {
 		t.Fatalf("unknown buyer must have empty counts: %v %+v", err, c)
 	}
 }
+
+func TestDeleteGiftCode(t *testing.T) {
+	st := newGiftStore(t)
+	ctx := context.Background()
+
+	id, err := st.CreateGiftCode(ctx, GiftCode{Code: "DEL-GIFT-1", BuyerTelegramID: 111, Months: 1, Price: 100})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// Unconditional: an issued (still-active) code must be deletable too.
+	if _, err := st.IssueGiftCode(ctx, id, time.Now()); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	ok, err := st.DeleteGiftCode(ctx, id)
+	if err != nil || !ok {
+		t.Fatalf("delete: ok=%v err=%v", ok, err)
+	}
+	if got, _ := st.GetGiftCode(ctx, id); got != nil {
+		t.Fatalf("gift still present: %+v", got)
+	}
+	// Deleting again (or a never-existing id) reports no row removed.
+	if ok, err := st.DeleteGiftCode(ctx, id); err != nil || ok {
+		t.Fatalf("second delete: ok=%v err=%v, want ok=false", ok, err)
+	}
+}

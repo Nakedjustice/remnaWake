@@ -16,11 +16,20 @@ type WebPaymentFilter struct {
 	Days     int
 	Status   string
 	Provider string
+	Kind     string
 	Query    string
 	Page     int
 }
 
+// WebPaymentRecord is one row of the unified admin history. Kind is
+// "payment", "gift" or "invite". Username/TelegramID is the primary party
+// (payment recipient / gift buyer / inviter); PayerUsername/PayerTelegramID
+// hold the counterparty, which is the payer for payments, the redeemer for
+// gifts and the invited username for invites — the frontend labels them per
+// kind. Provider is empty for gifts/invites, and ProviderTxnID carries the
+// gift code for gifts.
 type WebPaymentRecord struct {
+	Kind            string `json:"kind"`
 	ID              int64  `json:"id"`
 	Username        string `json:"username"`
 	TelegramID      int64  `json:"telegram_id"`
@@ -91,7 +100,7 @@ func (s *Service) AdminPaymentReport(ctx context.Context, telegramID int64, f We
 
 	since := s.now().UTC().Add(-time.Duration(f.Days) * 24 * time.Hour)
 	report, err := s.store.ReadPaymentReport(ctx, store.PaymentReportFilter{
-		Since: since, Status: f.Status, Provider: f.Provider, Query: strings.TrimSpace(f.Query),
+		Since: since, Status: f.Status, Provider: f.Provider, Kind: f.Kind, Query: strings.TrimSpace(f.Query),
 		Limit: webPaymentPageSize, Offset: (f.Page - 1) * webPaymentPageSize,
 	})
 	if err != nil {
@@ -124,14 +133,14 @@ func (s *Service) AdminPaymentReport(ctx context.Context, telegramID int64, f We
 	}
 	for _, r := range report.Items {
 		item := WebPaymentRecord{
-			ID: r.ID, Username: r.Username, TelegramID: r.TelegramID,
-			PayerUsername: r.PayerUsername, PayerTelegramID: r.PayerTelegramID,
+			Kind: r.Kind, ID: r.ID, Username: r.Username, TelegramID: r.TelegramID,
+			PayerUsername: r.CounterpartyName, PayerTelegramID: r.CounterpartyTelegramID,
 			Months: r.Months, Price: r.Price, PriceLabel: s.priceLabel(r.Price),
-			Status: r.Status, Provider: r.Provider, ProviderTxnID: r.ProviderTxnID,
+			Status: r.Status, Provider: r.Provider, ProviderTxnID: r.Reference,
 			CreatedAt: r.CreatedAt.UTC().Format(time.RFC3339),
 		}
-		if r.ConfirmedAt != nil {
-			item.ResolvedAt = r.ConfirmedAt.UTC().Format(time.RFC3339)
+		if r.ResolvedAt != nil {
+			item.ResolvedAt = r.ResolvedAt.UTC().Format(time.RFC3339)
 		}
 		out.Items = append(out.Items, item)
 	}
@@ -163,6 +172,13 @@ func validPaymentReportFilter(f WebPaymentFilter) bool {
 	}
 	switch f.Provider {
 	case "all", ProviderP2P, ProviderPlatega, ProviderTelegramStars:
+	default:
+		return false
+	}
+	// An empty kind is treated as "all" so callers that don't filter by type
+	// keep working; the store maps both to the unfiltered union.
+	switch f.Kind {
+	case "", "all", "payment", "gift", "invite":
 	default:
 		return false
 	}

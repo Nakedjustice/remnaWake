@@ -104,6 +104,18 @@ func (s *Store) listInviteRequests(ctx context.Context, where string, arg any) (
 	return out, rows.Err()
 }
 
+// DeleteInviteRequest permanently removes an invite request of any status by
+// id, so admins can purge test/junk records from the payment history. Returns
+// true if a row was deleted, false if no request had that id.
+func (s *Store) DeleteInviteRequest(ctx context.Context, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM invite_requests WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // ResolveInviteRequest transitions a pending request to approved or rejected exactly once.
 // Returns true only when the row was actually updated.
 func (s *Store) ResolveInviteRequest(ctx context.Context, id int64, status string, resolvedAt time.Time) (bool, error) {
