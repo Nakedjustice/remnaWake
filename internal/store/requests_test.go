@@ -178,6 +178,62 @@ func TestListPaymentRequestsByStatus(t *testing.T) {
 	}
 }
 
+func TestLatestConfirmedPaymentRequestByUUID(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+
+	first, err := st.CreatePaymentRequest(ctx, PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 999,
+		Months: 1, Price: 100, ExpireAt: exp, Plan: "basic", Status: "pending",
+	})
+	if err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+	pending, err := st.CreatePaymentRequest(ctx, PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 999,
+		Months: 1, Price: 400, ExpireAt: exp, Plan: PlanStandard, Status: "pending",
+	})
+	if err != nil || pending == 0 {
+		t.Fatalf("create pending: id=%d err=%v", pending, err)
+	}
+	other, err := st.CreatePaymentRequest(ctx, PaymentRequest{
+		RemnawaveID: 99, UUID: "uuid-99", Username: "bob", TelegramID: 555,
+		Months: 1, Price: 900, ExpireAt: exp, Plan: "vip", Status: "pending",
+	})
+	if err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	latest, err := st.CreatePaymentRequest(ctx, PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 999,
+		Months: 3, Price: 300, ExpireAt: exp, Plan: "basic", Status: "pending",
+	})
+	if err != nil {
+		t.Fatalf("create latest: %v", err)
+	}
+
+	if ok, err := st.ConfirmPaymentRequest(ctx, first, time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)); err != nil || !ok {
+		t.Fatalf("confirm first: ok=%v err=%v", ok, err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(ctx, other, time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)); err != nil || !ok {
+		t.Fatalf("confirm other: ok=%v err=%v", ok, err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(ctx, latest, time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)); err != nil || !ok {
+		t.Fatalf("confirm latest: ok=%v err=%v", ok, err)
+	}
+
+	got, err := st.LatestConfirmedPaymentRequestByUUID(ctx, "uuid-42")
+	if err != nil || got == nil {
+		t.Fatalf("latest: %v %+v", err, got)
+	}
+	if got.ID != latest || got.Plan != "basic" || got.Price != 300 || got.Months != 3 {
+		t.Fatalf("unexpected latest request: %+v", got)
+	}
+	if missing, err := st.LatestConfirmedPaymentRequestByUUID(ctx, "missing"); err != nil || missing != nil {
+		t.Fatalf("missing latest: %+v err=%v", missing, err)
+	}
+}
+
 func TestRejectPaymentRequest(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()

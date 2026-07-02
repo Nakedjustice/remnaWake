@@ -32,6 +32,21 @@ var (
 	ErrPanelUnavailable = errors.New("panel api unavailable")
 )
 
+const (
+	RenewStatusPlanChangePreview = "plan_change_preview"
+
+	PlanChangeUpgradeRecalculation = "upgrade_recalculation"
+	PlanChangeDowngradeImmediate   = "downgrade_immediate"
+)
+
+type PlanChangePreview struct {
+	Kind            string `json:"kind"`
+	CurrentPlan     string `json:"current_plan"`
+	TargetPlan      string `json:"target_plan"`
+	CurrentExpireAt string `json:"current_expire_at"`
+	NewExpireAt     string `json:"new_expire_at"`
+}
+
 // confirmPaymentRequest extends the subscription for a pending payment
 // request, marks it confirmed and clears the confirm buttons in every admin's
 // chat. Shared by the bot callback and the mini app admin API; it sends no
@@ -48,11 +63,8 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 		return req, time.Time{}, ErrRequestResolved
 	}
 
-	base := req.ExpireAt
-	if now := s.now(); base.Before(now) {
-		base = now
-	}
-	newExpireAt := base.AddDate(0, req.Months, 0)
+	plan, planErr := s.getPlan(ctx, req.Plan)
+	newExpireAt, _ := s.renewalPlanChange(ctx, req, planErr == nil)
 
 	// Referral link payout: if this payer was referred and not yet credited,
 	// fold the invitee bonus into this same extension so it lands in one panel
@@ -75,8 +87,8 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 	// retryable as one unit. A plan deleted between purchase and confirm falls
 	// back to extending the expiry only — never silently altering limits.
 	patch := UserPatch{ExpireAt: &newExpireAt}
-	if plan, err := s.getPlan(ctx, req.Plan); err != nil {
-		s.logger.Warn("confirm: plan lookup failed, extending expiry only", "plan", req.Plan, "err", err.Error())
+	if planErr != nil {
+		s.logger.Warn("confirm: plan lookup failed, extending expiry only", "plan", req.Plan, "err", planErr.Error())
 	} else {
 		patch = s.planUserPatch(ctx, plan, newExpireAt)
 	}
@@ -100,6 +112,85 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 		s.settleReferral(ctx, pendingReferral, inviterDays, inviteeDays)
 	}
 	return req, newExpireAt, nil
+}
+
+func (s *Service) renewalExpireAt(ctx context.Context, req *store.PaymentRequest, targetPlanKnown bool) time.Time {
+	newExpireAt, _ := s.renewalPlanChange(ctx, req, targetPlanKnown)
+	return newExpireAt
+}
+
+func (s *Service) renewalPlanChangePreview(ctx context.Context, req *store.PaymentRequest, targetPlanKnown bool) *PlanChangePreview {
+	_, preview := s.renewalPlanChange(ctx, req, targetPlanKnown)
+	return preview
+}
+
+func (s *Service) renewalPlanChange(ctx context.Context, req *store.PaymentRequest, targetPlanKnown bool) (time.Time, *PlanChangePreview) {
+	now := s.now()
+	base := req.ExpireAt
+	if base.Before(now) {
+		base = now
+	}
+	newExpireAt := base.AddDate(0, req.Months, 0)
+	if !targetPlanKnown || !base.After(now) || req.Months <= 0 || req.Price <= 0 {
+		return newExpireAt, nil
+	}
+
+	prev, err := s.store.LatestConfirmedPaymentRequestByUUID(ctx, req.UUID)
+	if err != nil {
+		s.logger.Warn("confirm: latest plan lookup failed, using full remaining time", "uuid", req.UUID, "err", err.Error())
+		return newExpireAt, nil
+	}
+	if prev == nil || prev.Months <= 0 || prev.Price <= 0 || samePlan(prev.Plan, req.Plan) {
+		return newExpireAt, nil
+	}
+
+	currentRate := monthlyRate(prev)
+	targetRate := monthlyRate(req)
+	if currentRate <= 0 || targetRate <= 0 || targetRate == currentRate {
+		return newExpireAt, nil
+	}
+	kind := PlanChangeDowngradeImmediate
+	if targetRate > currentRate {
+		kind = PlanChangeUpgradeRecalculation
+		remaining := base.Sub(now)
+		if remaining <= 0 {
+			return newExpireAt, nil
+		}
+		convertedRemaining := time.Duration(float64(remaining) * currentRate / targetRate)
+		newExpireAt = now.Add(convertedRemaining).AddDate(0, req.Months, 0)
+	}
+
+	return newExpireAt, &PlanChangePreview{
+		Kind:            kind,
+		CurrentPlan:     s.planDisplayName(ctx, prev.Plan),
+		TargetPlan:      s.planDisplayName(ctx, req.Plan),
+		CurrentExpireAt: req.ExpireAt.Format("02.01.2006"),
+		NewExpireAt:     newExpireAt.Format("02.01.2006"),
+	}
+}
+
+func (s *Service) planDisplayName(ctx context.Context, code string) string {
+	code = normalizePlan(code)
+	plan, err := s.getPlan(ctx, code)
+	if err == nil && plan.Name != "" {
+		return plan.Name
+	}
+	return code
+}
+
+func samePlan(a, b string) bool {
+	return normalizePlan(a) == normalizePlan(b)
+}
+
+func normalizePlan(plan string) string {
+	if plan == "" {
+		return store.PlanStandard
+	}
+	return plan
+}
+
+func monthlyRate(req *store.PaymentRequest) float64 {
+	return float64(req.Price) / float64(req.Months)
 }
 
 // rejectPaymentRequest marks a pending payment request rejected, clears the

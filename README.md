@@ -82,8 +82,13 @@ Enabled only when `TELEGRAM_ADMIN_ID` is set:
    (`1 мес. — 150₽`, …); otherwise it falls back to a single 1-month request.
 3. The **admin** receives the client's details and chosen months/price with a
    **«Подтвердить оплату»** button.
-4. On confirmation the bot calls `PATCH /api/users` and extends by the chosen
-   months from `max(now, current expiry)`, then reports the new expiry.
+4. On confirmation the bot calls `PATCH /api/users` and normally extends by the
+   chosen months from `max(now, current expiry)`. When moving to a more
+   expensive plan, remaining active time is prorated by the old/new monthly
+   price ratio before the purchased months are added.
+   Plan changes require an extra user confirmation first: upgrades show the
+   recalculated expiry, while downgrades warn that time is not recalculated and
+   the new limits apply immediately after payment confirmation.
 
 Prices are **informational** — the bot does not process money in P2P mode; the
 user pays you externally and you confirm manually.
@@ -177,9 +182,11 @@ Tariffs and payment state are stored in SQLite (`DB_PATH`, default
 `/data/bot.db`, in the `botdata` Docker volume), so they survive restarts.
 
 **Safeguards** — only the admin can confirm payments, approve invites/gifts,
-revoke codes or manage tariffs; payment confirmation is idempotent; new expiry
-= `max(now, current expiry) + chosen months`, so a late confirmation never
-lands in the past.
+revoke codes or manage tariffs; payment confirmation is idempotent; same-plan
+new expiry = `max(now, current expiry) + chosen months`, while upgrades to a
+more expensive plan first prorate existing active time by price so cheap months
+cannot become full-price months; downgrades do not recalculate existing time and
+apply the cheaper plan limits immediately after payment confirmation.
 
 ## 🎁 Gifting (`/gift`)
 

@@ -595,6 +595,8 @@ const EN = {
   '{months} мес. — {price}': '{months} mo. — {price}',
   '💳 Оплатить / продлить': '💳 Pay / renew',
   'Оплатить и продлить': 'Pay & renew',
+  '⚠️ Переход на более дешёвый тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время не будет пересчитано: срок после покупки на {months} мес. будет до {date}. После подтверждения оплаты лимиты нового тарифа применятся сразу.\n\nПродолжить?': '⚠️ Switching to a cheaper plan\n\nYou are switching from "{current}" to "{target}". Remaining time will not be recalculated: after purchasing {months} mo., the subscription will be valid until {date}. After payment confirmation, the new plan limits apply immediately.\n\nContinue?',
+  '⚠️ Переход на более дорогой тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время до {currentDate} будет пересчитано по цене. После покупки на {months} мес. подписка будет действовать до {date}.\n\nПродолжить?': '⚠️ Switching to a more expensive plan\n\nYou are switching from "{current}" to "{target}". Remaining time until {currentDate} will be recalculated by price. After purchasing {months} mo., the subscription will be valid until {date}.\n\nContinue?',
   'Выберите способ оплаты': 'Choose a payment method',
   'Доступно несколько способов оплаты. Выберите удобный вариант.': 'Several payment methods are available. Choose the one that works best.',
   'Прикрепите чек': 'Attach a receipt',
@@ -1336,6 +1338,7 @@ function renderRenew(target, data) {
 
   let months = 0;
   let plan = '';
+  let planChangeConfirmed = false;
   const plans = data.plans || [];
   const context = el('div', 'renew-context');
   context.appendChild(el('div', 'label', t('Профиль')));
@@ -1362,6 +1365,7 @@ function renderRenew(target, data) {
   const fillMonths = (list) => {
     grid.textContent = '';
     months = 0;
+    planChangeConfirmed = false;
     periodValue.textContent = '—';
     pay.disabled = true;
     (list || []).forEach(tf => {
@@ -1370,6 +1374,7 @@ function renderRenew(target, data) {
       b.appendChild(el('div', 'hint', tf.price_label));
       b.onclick = () => {
         months = tf.months;
+        planChangeConfirmed = false;
         grid.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
         b.classList.add('selected');
         periodValue.textContent = t('{months} мес.', { months });
@@ -1389,6 +1394,7 @@ function renderRenew(target, data) {
       b.appendChild(el('div', 'hint', planLimitsLabel(p)));
       b.onclick = () => {
         plan = p.code;
+        planChangeConfirmed = false;
         planRow.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
         b.classList.add('selected');
         planValue.textContent = p.name;
@@ -1470,6 +1476,7 @@ function renderRenew(target, data) {
       const body = { remnawave_id: target.remnawave_id, months };
       if (provider) body.provider = provider;
       if (plan && plan !== 'standard') body.plan = plan;
+      if (planChangeConfirmed) body.plan_change_confirmed = true;
       res = await api('/api/renew', { method: 'POST', body: JSON.stringify(body) });
     } catch (e) {
       err = e;
@@ -1479,6 +1486,15 @@ function renderRenew(target, data) {
     if (err) {
       resetPay();
       tg.showAlert(err.message);
+      return;
+    }
+    if (res.status === 'plan_change_preview' && res.plan_change) {
+      resetPay();
+      const ok = await confirmDialog(planChangeMessage(res.plan_change, months));
+      if (ok) {
+        planChangeConfirmed = true;
+        await doRenew(provider, triggerButton);
+      }
       return;
     }
     if (res.status === 'choose_provider') {
@@ -1531,6 +1547,20 @@ function providerLabel(id) {
     case 'telegram_stars': return t('⭐ Telegram Stars');
     default: return t('💳 Перевод (P2P)');
   }
+}
+
+function planChangeMessage(change, months) {
+  const values = {
+    current: change.current_plan || '',
+    target: change.target_plan || '',
+    months,
+    currentDate: change.current_expire_at || '',
+    date: change.new_expire_at || '',
+  };
+  if (change.kind === 'downgrade_immediate') {
+    return t('⚠️ Переход на более дешёвый тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время не будет пересчитано: срок после покупки на {months} мес. будет до {date}. После подтверждения оплаты лимиты нового тарифа применятся сразу.\n\nПродолжить?', values);
+  }
+  return t('⚠️ Переход на более дорогой тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время до {currentDate} будет пересчитано по цене. После покупки на {months} мес. подписка будет действовать до {date}.\n\nПродолжить?', values);
 }
 
 // renderGiftBuy mirrors the chat /gift flow: pick a period, the request goes
