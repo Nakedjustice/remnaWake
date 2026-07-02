@@ -34,6 +34,9 @@ type PaymentRequest struct {
 	// ProviderTxnID is the external gateway transaction id (Platega), used to
 	// correlate webhook callbacks with this request; empty for p2p.
 	ProviderTxnID string
+	// Plan is the tariff preset code the buyer picked; its panel settings are
+	// stamped onto the user when the request is confirmed.
+	Plan string
 }
 
 func (s *Store) CreatePaymentRequest(ctx context.Context, r PaymentRequest) (int64, error) {
@@ -42,15 +45,19 @@ func (s *Store) CreatePaymentRequest(ctx context.Context, r PaymentRequest) (int
 	if provider == "" {
 		provider = "p2p"
 	}
+	plan := r.Plan
+	if plan == "" {
+		plan = PlanStandard
+	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO payment_requests
 			(remnawave_user_id, uuid, username, telegram_id, months, price, expire_at,
 			 status, created_at, payer_telegram_id, payer_username, screenshot_file_id,
-			 screenshot_is_document, provider, provider_txn_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 screenshot_is_document, provider, provider_txn_id, plan)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.RemnawaveID, r.UUID, r.Username, r.TelegramID, r.Months, r.Price,
 		formatTime(r.ExpireAt), "pending", now, r.PayerTelegramID, r.PayerUsername, r.ScreenshotFileID,
-		r.ScreenshotIsDocument, provider, r.ProviderTxnID)
+		r.ScreenshotIsDocument, provider, r.ProviderTxnID, plan)
 	if err != nil {
 		return 0, err
 	}
@@ -66,11 +73,11 @@ func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentReques
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id
+			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan
 		FROM payment_requests WHERE id = ?
 	`, id).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
 		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
-		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID)
+		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -102,11 +109,11 @@ func (s *Store) GetPaymentRequestByProviderTxn(ctx context.Context, txnID string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id
+			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan
 		FROM payment_requests WHERE provider_txn_id = ?
 	`, txnID).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
 		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
-		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID)
+		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -143,7 +150,7 @@ func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id
+			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan
 		FROM payment_requests WHERE status = ? ORDER BY id
 	`, status)
 	if err != nil {
@@ -161,7 +168,7 @@ func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) 
 		if err := rows.Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID,
 			&r.Months, &r.Price, &exp, &r.Status, &created, &confirmed,
 			&r.PayerTelegramID, &r.PayerUsername, &r.ScreenshotFileID,
-			&r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID); err != nil {
+			&r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan); err != nil {
 			return nil, err
 		}
 		r.ExpireAt, _ = parseTime(exp)

@@ -17,6 +17,9 @@ var (
 	ErrBadInput        = errors.New("invalid input")
 	ErrRequestNotFound = errors.New("request not found")
 	ErrRequestResolved = errors.New("request already resolved")
+	// ErrPlanUnknown: the referenced tariff preset does not exist (and is not
+	// the built-in standard plan).
+	ErrPlanUnknown = errors.New("plan unknown")
 	// ErrConfirmedNotMarked: the panel extension succeeded but the request could
 	// not be marked confirmed in the database; confirming again would extend the
 	// subscription a second time.
@@ -67,9 +70,20 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 		}
 	}
 
+	// The purchase stamps the plan's panel settings (squad, limits, tag) in the
+	// same PATCH as the expiry, so a failure leaves the request pending and
+	// retryable as one unit. A plan deleted between purchase and confirm falls
+	// back to extending the expiry only — never silently altering limits.
+	patch := UserPatch{ExpireAt: &newExpireAt}
+	if plan, err := s.getPlan(ctx, req.Plan); err != nil {
+		s.logger.Warn("confirm: plan lookup failed, extending expiry only", "plan", req.Plan, "err", err.Error())
+	} else {
+		patch = s.planUserPatch(ctx, plan, newExpireAt)
+	}
+
 	if s.dryRun {
-		s.logger.Info("dry-run: would extend", "uuid", req.UUID, "months", req.Months, "new_expire", newExpireAt.Format("2006-01-02"))
-	} else if err := s.extender.ExtendSubscriptionByUUID(ctx, req.UUID, newExpireAt); err != nil {
+		s.logger.Info("dry-run: would extend and stamp plan", "uuid", req.UUID, "months", req.Months, "plan", req.Plan, "new_expire", newExpireAt.Format("2006-01-02"))
+	} else if err := s.userUpdater.UpdateUser(ctx, req.UUID, patch); err != nil {
 		s.logger.Error("extend subscription failed", "uuid", req.UUID, "err", err.Error())
 		return req, time.Time{}, fmt.Errorf("extend subscription: %w", err)
 	}

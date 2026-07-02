@@ -2,7 +2,6 @@ package payments
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
@@ -45,7 +44,7 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 		var rows [][]tg.InlineKeyboardButton
 		// The free-trial button leads the menu when enabled, since it targets new
 		// users who have nothing else to do yet.
-			if s.trialConfig().Enabled {
+		if s.trialConfig().Enabled {
 			rows = append(rows, []tg.InlineKeyboardButton{
 				{Text: i18n.T("🎁 Попробовать бесплатно"), CallbackData: "menu:trial"},
 			})
@@ -73,22 +72,17 @@ func (s *Service) SendMenu(ctx context.Context, chatID int64) bool {
 
 // SendTariffs lists the current tariffs to any user. Returns true (handled).
 func (s *Service) SendTariffs(ctx context.Context, chatID int64) bool {
-	tariffs, err := s.store.ListTariffs(ctx)
+	text, any, err := s.formatTariffListing(ctx)
 	if err != nil {
 		s.logger.Error("tariffs: list failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
-	if len(tariffs) == 0 {
+	if !any {
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Тарифы пока не заданы."))
 		return true
 	}
-	var b strings.Builder
-	b.WriteString(i18n.T("Тарифы:\n"))
-	for _, t := range tariffs {
-		b.WriteString(fmt.Sprintf(i18n.T("%d мес. — %s\n"), t.Months, s.priceLabel(t.Price)))
-	}
-	_ = s.bot.SendPlain(ctx, chatID, strings.TrimRight(b.String(), "\n"))
+	_ = s.bot.SendPlain(ctx, chatID, text)
 	return true
 }
 

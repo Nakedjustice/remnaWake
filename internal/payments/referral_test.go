@@ -36,7 +36,7 @@ func newReferralLinkService(t *testing.T, finder *fakeFinder) (*Service, *fakeBo
 	ext := &recExtender{}
 	creator := &fakeCreator{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, ext, creator, &fakeUpdater{}, finder, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false, logger)
+	svc := New(st, bot, ext, creator, &fakeUpdater{ext: ext}, finder, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false, logger)
 	svc.now = func() time.Time { return time.Date(2026, 6, 20, 0, 0, 0, 0, time.UTC) }
 	return svc, bot, ext, creator, st
 }

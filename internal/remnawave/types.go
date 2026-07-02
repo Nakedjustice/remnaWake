@@ -51,6 +51,9 @@ type UserPatch struct {
 	TrafficLimitStrategy *string
 	Status               *string // ACTIVE | DISABLED
 	ActiveInternalSquads *[]string
+	// Tag: a pointer to the empty string clears the tag (sent as JSON null —
+	// the panel rejects empty-string tags); a non-empty value sets it.
+	Tag *string
 }
 
 // InternalSquad is one internal squad as returned by GET /api/internal-squads.

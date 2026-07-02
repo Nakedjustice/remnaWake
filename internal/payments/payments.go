@@ -51,6 +51,7 @@ type CreateUserSpec struct {
 	TrafficLimitBytes    int64
 	TrafficLimitStrategy string
 	HwidDeviceLimit      int
+	Tag                  string
 }
 
 // TrialConfig is the immutable snapshot used when offering and creating a
@@ -85,6 +86,9 @@ type UserPatch struct {
 	TrafficLimitStrategy *string
 	Status               *string // ACTIVE | DISABLED
 	ActiveInternalSquads *[]string
+	// Tag: a pointer to the empty string clears the panel tag; a non-empty
+	// value sets it.
+	Tag *string
 }
 
 // UserUpdater patches the manageable fields of an existing panel user.
@@ -274,6 +278,7 @@ type payPhotoState struct {
 	userID    int64 // remnawave user ID whose subscription is being renewed
 	months    int
 	price     int
+	plan      string
 	createdAt time.Time
 }
 

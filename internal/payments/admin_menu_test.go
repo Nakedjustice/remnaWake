@@ -2,6 +2,7 @@ package payments
 
 import (
 	"context"
+	"github.com/Nakedjustice/remnaWake/internal/store"
 	"strings"
 	"testing"
 
@@ -95,8 +96,8 @@ func TestAdmTariffsCallbackEmpty(t *testing.T) {
 func TestAdmTariffsCallbackWithTariffs(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
-	_ = st.UpsertTariff(ctx, 1, 150)
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 1, 150)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	cb := &tg.CallbackQuery{ID: "cb1", From: tg.User{ID: 1000}, Data: "adm:tariffs"}
 	svc.HandleCallback(ctx, cb)
@@ -134,7 +135,7 @@ func TestAdmReqCallbackSet(t *testing.T) {
 func TestAdmDelListCallback(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	cb := &tg.CallbackQuery{ID: "cb1", From: tg.User{ID: 1000}, Data: "adm:del_list"}
 	svc.HandleCallback(ctx, cb)
@@ -157,13 +158,13 @@ func TestAdmDelListCallback(t *testing.T) {
 func TestAdmDelTariffCallback(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	cb := &tg.CallbackQuery{ID: "cb1", From: tg.User{ID: 1000}, Data: "adm:del:3"}
 	if !svc.HandleCallback(ctx, cb) {
 		t.Fatal("adm:del:3 should be handled")
 	}
-	got, _ := st.GetTariff(ctx, 3)
+	got, _ := st.GetTariff(ctx, store.PlanStandard, 3)
 	if got != nil {
 		t.Fatal("tariff should be deleted")
 	}
@@ -277,7 +278,7 @@ func TestAdmAddTariffFullFlow(t *testing.T) {
 	}
 
 	// Verify persisted
-	got, _ := st.GetTariff(ctx, 6)
+	got, _ := st.GetTariff(ctx, store.PlanStandard, 6)
 	if got == nil || got.Price != 900 {
 		t.Fatalf("tariff not persisted: %+v", got)
 	}

@@ -113,7 +113,7 @@ func (s *Service) UploadRenewReceipt(ctx context.Context, telegramID int64, rece
 		s.clearPayPhoto(telegramID)
 		return ErrProfileUnknown
 	}
-	_, err = s.createPaymentRequest(ctx, u, st.months, st.price, &receiptAttachment{
+	_, err = s.createPaymentRequest(ctx, u, st.months, st.price, st.plan, &receiptAttachment{
 		asDocument: isDocument && !isPhoto, note: strings.TrimSpace(receipt.Note), filename: receipt.Filename, data: receipt.Data,
 	})
 	if err != nil {
@@ -148,11 +148,12 @@ func (s *Service) clearPayPhoto(chatID int64) {
 
 // startPayPhotoFlow remembers the picked tariff and asks the user to attach a
 // payment screenshot; the request is created only when the photo arrives.
-func (s *Service) startPayPhotoFlow(ctx context.Context, chatID, userID int64, months, price int) {
+func (s *Service) startPayPhotoFlow(ctx context.Context, chatID, userID int64, months, price int, plan string) {
 	s.setPayPhoto(chatID, &payPhotoState{
 		userID:    userID,
 		months:    months,
 		price:     price,
+		plan:      plan,
 		createdAt: s.now(),
 	})
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Отправьте фото, скриншот или PDF-файл чека об оплате следующим сообщением — после этого заявка уйдёт администратору.\n\nОтменить: /cancel"))
@@ -247,7 +248,7 @@ func (s *Service) finishPayPhotoFlow(ctx context.Context, chatID int64, st *payP
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось найти данные. Начните продление заново."))
 		return true
 	}
-	if _, err := s.createPaymentRequest(ctx, u, st.months, st.price, att); err != nil {
+	if _, err := s.createPaymentRequest(ctx, u, st.months, st.price, st.plan, att); err != nil {
 		// Keep the state so the user can simply resend the file.
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true

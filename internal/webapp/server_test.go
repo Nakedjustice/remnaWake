@@ -110,7 +110,7 @@ func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabi
 	return f.data, nil
 }
 
-func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int, _ string) (*payments.RenewResult, error) {
+func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int, _, _ string) (*payments.RenewResult, error) {
 	f.renewed = append(f.renewed, remnawaveID)
 	return f.renewResult, f.renewErr
 }
@@ -211,12 +211,20 @@ func (f *fakeAdmin) AdminSetUpdateInterval(_ context.Context, tgID int64, interv
 	f.calls = append(f.calls, adminCall{Name: "setupdateinterval", A: tgID, Text: interval})
 	return f.err
 }
-func (f *fakeAdmin) AdminSetTariff(_ context.Context, tgID int64, months, price int) error {
-	f.calls = append(f.calls, adminCall{Name: "settariff", A: int64(months), B: int64(price)})
+func (f *fakeAdmin) AdminSetTariff(_ context.Context, tgID int64, plan string, months, price int) error {
+	f.calls = append(f.calls, adminCall{Name: "settariff", A: int64(months), B: int64(price), Text: plan})
 	return f.err
 }
-func (f *fakeAdmin) AdminDeleteTariff(_ context.Context, tgID int64, months int) error {
-	f.calls = append(f.calls, adminCall{Name: "deltariff", A: int64(months)})
+func (f *fakeAdmin) AdminDeleteTariff(_ context.Context, tgID int64, plan string, months int) error {
+	f.calls = append(f.calls, adminCall{Name: "deltariff", A: int64(months), Text: plan})
+	return f.err
+}
+func (f *fakeAdmin) AdminSetPlan(_ context.Context, tgID int64, in payments.WebAdminPlan) error {
+	f.calls = append(f.calls, adminCall{Name: "setplan", A: tgID, Text: in.Code})
+	return f.err
+}
+func (f *fakeAdmin) AdminDeletePlan(_ context.Context, tgID int64, code string) error {
+	f.calls = append(f.calls, adminCall{Name: "delplan", A: tgID, Text: code})
 	return f.err
 }
 func (f *fakeAdmin) AdminSetRequisites(_ context.Context, tgID int64, text string) error {

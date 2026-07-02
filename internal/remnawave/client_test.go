@@ -332,6 +332,18 @@ func TestCreateUserSendsActiveInternalSquads(t *testing.T) {
 	if got := gotBody["trafficLimitStrategy"]; got != "NO_RESET" {
 		t.Fatalf("body trafficLimitStrategy = %v, want NO_RESET", got)
 	}
+	if _, present := gotBody["tag"]; present {
+		t.Fatalf("tag should be omitted when empty, body=%v", gotBody)
+	}
+
+	// With a tag it must appear in the body.
+	gotBody = nil
+	if _, err := c.CreateUser(context.Background(), CreateUserSpec{Username: "alice", ExpireAt: expireAt, Tag: "MESSENGER"}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := gotBody["tag"]; got != "MESSENGER" {
+		t.Fatalf("body tag = %v, want MESSENGER", got)
+	}
 }
 
 func TestUpdateUserSendsOnlySetFields(t *testing.T) {
@@ -407,6 +419,29 @@ func TestUpdateUserSendsOnlySetFields(t *testing.T) {
 	sq, ok := gotBody["activeInternalSquads"].([]interface{})
 	if !ok || len(sq) != 2 || sq[0] != "sq-1" {
 		t.Fatalf("activeInternalSquads = %v", gotBody["activeInternalSquads"])
+	}
+	if _, present := gotBody["tag"]; present {
+		t.Fatalf("tag should be omitted when nil, body=%v", gotBody)
+	}
+
+	// Tag set: sent verbatim.
+	gotBody = nil
+	tag := "MESSENGER"
+	if err := c.UpdateUser(context.Background(), uuid, UserPatch{Tag: &tag}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if gotBody["tag"] != "MESSENGER" {
+		t.Fatalf("tag = %v, want MESSENGER", gotBody["tag"])
+	}
+
+	// Tag pointer to empty string: cleared via JSON null (the panel rejects "").
+	gotBody = nil
+	empty := ""
+	if err := c.UpdateUser(context.Background(), uuid, UserPatch{Tag: &empty}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if v, present := gotBody["tag"]; !present || v != nil {
+		t.Fatalf("tag = %v (present=%v), want explicit null", v, present)
 	}
 }
 

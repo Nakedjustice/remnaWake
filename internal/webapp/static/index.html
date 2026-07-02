@@ -586,6 +586,11 @@ const EN = {
   'Сначала выберите период. Затем откроется доступный способ оплаты или заявка администратору.': 'Choose a period first. Then the available payment method or admin request will open.',
   'Профиль': 'Profile',
   'Период': 'Period',
+  'Тариф': 'Plan',
+  '{gb} ГБ': '{gb} GB',
+  '{n} устр.': '{n} devices',
+  'безлимитный трафик': 'unlimited traffic',
+  'без лимита устройств': 'no device limit',
   '{months} мес.': '{months} mo.',
   '{months} мес. — {price}': '{months} mo. — {price}',
   '💳 Оплатить / продлить': '💳 Pay / renew',
@@ -752,6 +757,24 @@ const EN = {
   'Месяцев': 'Months',
   'Цена': 'Price',
   '💾 Сохранить тариф': '💾 Save tariff',
+  'Стандарт': 'Standard',
+  '🧩 Тарифные пресеты': '🧩 Tariff presets',
+  'Пресет задаёт стартовые настройки подписки: тег в панели, сквад, лимиты трафика и устройств. Они применяются к пользователю при каждом подтверждении оплаты этого тарифа.': 'A preset defines the subscription\'s starting settings: panel tag, squad, traffic and device limits. They are applied to the user every time a payment for this plan is confirmed.',
+  'Код (a-z, 0-9, до 16)': 'Code (a-z, 0-9, up to 16)',
+  'Название (видно пользователю)': 'Name (visible to users)',
+  'Тег в панели (A-Z, 0-9, _)': 'Panel tag (A-Z, 0-9, _)',
+  'Трафик, ГБ (0 = безлимит)': 'Traffic, GB (0 = unlimited)',
+  'Устройств (0 = безлимит)': 'Devices (0 = unlimited)',
+  '— сквад по умолчанию —': '— default squad —',
+  'сквад по умолчанию': 'default squad',
+  'тег {tag}': 'tag {tag}',
+  'Пресеты не заданы: продаётся только стандартный тариф.': 'No presets defined: only the standard plan is sold.',
+  'Добавить или обновить пресет:': 'Add or update a preset:',
+  '💾 Сохранить пресет': '💾 Save preset',
+  '✏️': '✏️',
+  'Удалить пресет «{name}» вместе с его ценами?': 'Delete the “{name}” preset together with its prices?',
+  'Код: строчные латинские буквы, цифры, «-», «_», до 16 символов (не «standard»).': 'Code: lowercase latin letters, digits, “-”, “_”, up to 16 characters (not “standard”).',
+  'Введите название пресета.': 'Enter a preset name.',
   'Введите количество месяцев и цену (целые ≥ 1).': 'Enter the number of months and a price (integers ≥ 1).',
   '💳 Реквизиты': '💳 Payment details',
   'Текст реквизитов': 'Payment details text',
@@ -1312,9 +1335,16 @@ function renderRenew(target, data) {
   wrap.appendChild(el('div', 'hint', t('Сначала выберите период. Затем откроется доступный способ оплаты или заявка администратору.')));
 
   let months = 0;
+  let plan = '';
+  const plans = data.plans || [];
   const context = el('div', 'renew-context');
   context.appendChild(el('div', 'label', t('Профиль')));
   context.appendChild(el('div', 'value', profileDisplayName(target)));
+  if (plans.length > 1) {
+    context.appendChild(el('div', 'label', t('Тариф')));
+  }
+  const planValue = plans.length > 1 ? el('div', 'value', '—') : null;
+  if (planValue) context.appendChild(planValue);
   context.appendChild(el('div', 'label', t('Период')));
   const periodValue = el('div', 'value', '—');
   context.appendChild(periodValue);
@@ -1322,9 +1352,19 @@ function renderRenew(target, data) {
 
   const pay = el('button', null, t('Оплатить и продлить'));
   const tariffs = data.tariffs || [];
-  if (tariffs.length) {
-    const grid = el('div', 'tariffs');
-    tariffs.forEach(tf => {
+  const planLimitsLabel = (p) => {
+    const parts = [];
+    parts.push(p.traffic_gb > 0 ? t('{gb} ГБ', { gb: p.traffic_gb }) : t('безлимитный трафик'));
+    parts.push(p.device_limit > 0 ? t('{n} устр.', { n: p.device_limit }) : t('без лимита устройств'));
+    return parts.join(' · ');
+  };
+  const grid = el('div', 'tariffs');
+  const fillMonths = (list) => {
+    grid.textContent = '';
+    months = 0;
+    periodValue.textContent = '—';
+    pay.disabled = true;
+    (list || []).forEach(tf => {
       const b = el('button', 'secondary');
       b.appendChild(el('div', null, t('{months} мес.', { months: tf.months })));
       b.appendChild(el('div', 'hint', tf.price_label));
@@ -1337,13 +1377,38 @@ function renderRenew(target, data) {
       };
       grid.appendChild(b);
     });
+  };
+
+  if (plans.length > 1) {
+    // Plan chips: selecting one swaps in its own months grid.
+    const planRow = el('div', 'tariffs');
+    const planHint = el('div', 'hint', '');
+    plans.forEach(p => {
+      const b = el('button', 'secondary');
+      b.appendChild(el('div', null, p.name));
+      b.appendChild(el('div', 'hint', planLimitsLabel(p)));
+      b.onclick = () => {
+        plan = p.code;
+        planRow.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
+        b.classList.add('selected');
+        planValue.textContent = p.name;
+        planHint.textContent = planLimitsLabel(p);
+        fillMonths(p.tariffs);
+      };
+      planRow.appendChild(b);
+    });
+    wrap.appendChild(planRow);
+    wrap.appendChild(planHint);
+    wrap.appendChild(grid);
+    pay.disabled = true;
+  } else if (tariffs.length) {
+    fillMonths(tariffs);
     wrap.appendChild(grid);
   } else {
     months = 1;
     periodValue.textContent = t('{months} мес.', { months });
+    pay.disabled = false;
   }
-
-  pay.disabled = tariffs.length > 0;
 
   const choicePanel = el('div', 'payment-step');
   choicePanel.hidden = true;
@@ -1404,6 +1469,7 @@ function renderRenew(target, data) {
     try {
       const body = { remnawave_id: target.remnawave_id, months };
       if (provider) body.provider = provider;
+      if (plan && plan !== 'standard') body.plan = plan;
       res = await api('/api/renew', { method: 'POST', body: JSON.stringify(body) });
     } catch (e) {
       err = e;
@@ -2340,22 +2406,48 @@ async function cabinetAction(path, payload) {
 function renderAdminTariffs(data) {
   const card = el('div', 'admin-card');
   card.appendChild(el('h2', null, t('📋 Тарифы')));
-  if ((data.tariffs || []).length) {
-    data.tariffs.forEach(tf => {
-      const item = el('div', 'admin-list-row');
-      const copy = el('div', 'admin-list-copy');
-      copy.appendChild(el('div', 'admin-list-title', t('{months} мес.', { months: tf.months })));
-      copy.appendChild(el('div', 'admin-list-meta', tf.price_label));
-      item.appendChild(copy);
-      const del = el('button', 'secondary', t('🗑 Удалить'));
-      del.onclick = () => adminAction('/api/admin/tariff/delete', { months: tf.months },
-        t('Удалить тариф на {months} мес.?', { months: tf.months }));
-      item.appendChild(del);
-      card.appendChild(item);
-    });
-  } else {
-    card.appendChild(el('div', 'hint', t('Тарифы не заданы.')));
+
+  // With custom presets a selector picks which plan's grid is edited; the
+  // built-in standard plan is the default and the only choice otherwise.
+  const plans = data.plans || [];
+  let plan = '';
+  const listBox = el('div');
+  if (plans.length) {
+    const planSelect = el('select');
+    planSelect.appendChild(Object.assign(el('option', null, t('Стандарт')), { value: '' }));
+    plans.forEach(p => planSelect.appendChild(Object.assign(el('option', null, p.name), { value: p.code })));
+    planSelect.onchange = () => { plan = planSelect.value; fillList(); };
+    card.appendChild(planSelect);
   }
+  card.appendChild(listBox);
+
+  const currentTariffs = () => {
+    if (!plan) return data.tariffs || [];
+    const p = plans.find(x => x.code === plan);
+    return (p && p.tariffs) || [];
+  };
+  const fillList = () => {
+    listBox.textContent = '';
+    const list = currentTariffs();
+    if (list.length) {
+      list.forEach(tf => {
+        const item = el('div', 'admin-list-row');
+        const copy = el('div', 'admin-list-copy');
+        copy.appendChild(el('div', 'admin-list-title', t('{months} мес.', { months: tf.months })));
+        copy.appendChild(el('div', 'admin-list-meta', tf.price_label));
+        item.appendChild(copy);
+        const del = el('button', 'secondary', t('🗑 Удалить'));
+        del.onclick = () => adminAction('/api/admin/tariff/delete', { plan, months: tf.months },
+          t('Удалить тариф на {months} мес.?', { months: tf.months }));
+        item.appendChild(del);
+        listBox.appendChild(item);
+      });
+    } else {
+      listBox.appendChild(el('div', 'hint', t('Тарифы не заданы.')));
+    }
+  };
+  fillList();
+
   card.appendChild(el('div', 'hint', t('Добавить или обновить тариф:')));
   const pair = el('div', 'admin-form-grid');
   const months = Object.assign(el('input'), { type: 'number', min: '1', placeholder: t('Месяцев') });
@@ -2367,7 +2459,101 @@ function renderAdminTariffs(data) {
   save.onclick = () => {
     const m = parseInt(months.value, 10), p = parseInt(price.value, 10);
     if (!(m >= 1) || !(p >= 1)) { tg.showAlert(t('Введите количество месяцев и цену (целые ≥ 1).')); return; }
-    adminAction('/api/admin/tariff', { months: m, price: p });
+    adminAction('/api/admin/tariff', { plan, months: m, price: p });
+  };
+  card.appendChild(save);
+  return card;
+}
+
+// renderAdminPlans is the preset editor: cheaper subscription variants with
+// their own tag, squad, traffic and device limits (prices are edited in the
+// tariff card via its plan selector).
+function renderAdminPlans(data) {
+  const card = el('div', 'admin-card');
+  card.appendChild(el('h2', null, t('🧩 Тарифные пресеты')));
+  card.appendChild(el('div', 'hint', t('Пресет задаёт стартовые настройки подписки: тег в панели, сквад, лимиты трафика и устройств. Они применяются к пользователю при каждом подтверждении оплаты этого тарифа.')));
+
+  const code = Object.assign(el('input'), { type: 'text', placeholder: t('Код (a-z, 0-9, до 16)'), maxLength: 16 });
+  const name = Object.assign(el('input'), { type: 'text', placeholder: t('Название (видно пользователю)') });
+  const tag = Object.assign(el('input'), { type: 'text', placeholder: t('Тег в панели (A-Z, 0-9, _)'), maxLength: 16 });
+  const traffic = Object.assign(el('input'), { type: 'number', min: '0', placeholder: t('Трафик, ГБ (0 = безлимит)') });
+  const devices = Object.assign(el('input'), { type: 'number', min: '0', placeholder: t('Устройств (0 = безлимит)') });
+  const squad = el('select');
+  squad.appendChild(Object.assign(el('option', null, t('Загрузка…')), { value: '' }));
+  squad.disabled = true;
+  const squadNames = {};
+  api('/api/admin/squads').then(res => {
+    squad.textContent = '';
+    squad.appendChild(Object.assign(el('option', null, t('— сквад по умолчанию —')), { value: '' }));
+    (res.squads || []).forEach(sq => {
+      squadNames[sq.uuid] = sq.name;
+      squad.appendChild(Object.assign(el('option', null, sq.name), { value: sq.uuid }));
+    });
+    squad.disabled = false;
+    fillList();
+  }).catch(() => {
+    squad.textContent = '';
+    squad.appendChild(Object.assign(el('option', null, t('Ошибка загрузки сквадов')), { value: '' }));
+  });
+
+  const listBox = el('div');
+  card.appendChild(listBox);
+  const fillList = () => {
+    listBox.textContent = '';
+    const plans = data.plans || [];
+    if (!plans.length) {
+      listBox.appendChild(el('div', 'hint', t('Пресеты не заданы: продаётся только стандартный тариф.')));
+      return;
+    }
+    plans.forEach(p => {
+      const item = el('div', 'admin-list-row');
+      const copy = el('div', 'admin-list-copy');
+      copy.appendChild(el('div', 'admin-list-title', p.name + ' (' + p.code + ')'));
+      const bits = [];
+      if (p.tag) bits.push(t('тег {tag}', { tag: p.tag }));
+      bits.push(p.traffic_gb > 0 ? t('{gb} ГБ', { gb: p.traffic_gb }) : t('безлимитный трафик'));
+      bits.push(p.device_limit > 0 ? t('{n} устр.', { n: p.device_limit }) : t('без лимита устройств'));
+      bits.push(p.squad_uuid ? (squadNames[p.squad_uuid] || p.squad_uuid) : t('сквад по умолчанию'));
+      copy.appendChild(el('div', 'admin-list-meta', bits.join(' · ')));
+      item.appendChild(copy);
+      const edit = el('button', 'secondary', t('✏️'));
+      edit.onclick = () => {
+        code.value = p.code; name.value = p.name; tag.value = p.tag || '';
+        traffic.value = p.traffic_gb || 0; devices.value = p.device_limit || 0;
+        squad.value = p.squad_uuid || '';
+      };
+      item.appendChild(edit);
+      const del = el('button', 'secondary', t('🗑 Удалить'));
+      del.onclick = () => adminAction('/api/admin/plan/delete', { code: p.code },
+        t('Удалить пресет «{name}» вместе с его ценами?', { name: p.name }));
+      item.appendChild(del);
+      listBox.appendChild(item);
+    });
+  };
+  fillList();
+
+  card.appendChild(el('div', 'hint', t('Добавить или обновить пресет:')));
+  const grid = el('div', 'admin-form-grid');
+  grid.appendChild(code);
+  grid.appendChild(name);
+  grid.appendChild(tag);
+  grid.appendChild(traffic);
+  grid.appendChild(devices);
+  card.appendChild(grid);
+  card.appendChild(squad);
+  const save = el('button', null, t('💾 Сохранить пресет'));
+  save.onclick = () => {
+    const c = code.value.trim().toLowerCase();
+    if (!/^[a-z0-9_-]{1,16}$/.test(c) || c === 'standard') { tg.showAlert(t('Код: строчные латинские буквы, цифры, «-», «_», до 16 символов (не «standard»).')); return; }
+    if (!name.value.trim()) { tg.showAlert(t('Введите название пресета.')); return; }
+    adminAction('/api/admin/plan', {
+      code: c,
+      name: name.value.trim(),
+      tag: tag.value.trim().toUpperCase(),
+      squad_uuid: squad.value,
+      traffic_gb: parseInt(traffic.value, 10) || 0,
+      device_limit: parseInt(devices.value, 10) || 0,
+    });
   };
   card.appendChild(save);
   return card;
@@ -3124,6 +3310,7 @@ function showAdminBilling() {
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Тарифы и оплата')));
   appEl.appendChild(renderAdminTariffs(data));
+  appEl.appendChild(renderAdminPlans(data));
   appEl.appendChild(renderAdminRequisites(data));
   statusEl.hidden = true;
   appEl.hidden = false;

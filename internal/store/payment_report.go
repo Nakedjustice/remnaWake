@@ -26,19 +26,19 @@ type PaymentReportFilter struct {
 // redeemer / invited username). Provider and Reference only apply to payments
 // and gifts (gift Reference is the code); invites leave them empty.
 type PaymentHistoryItem struct {
-	Kind                  string
-	ID                    int64
-	Username              string
-	TelegramID            int64
-	CounterpartyName      string
+	Kind                   string
+	ID                     int64
+	Username               string
+	TelegramID             int64
+	CounterpartyName       string
 	CounterpartyTelegramID int64
-	Months                int
-	Price                 int
-	Status                string
-	Provider              string
-	Reference             string
-	CreatedAt             time.Time
-	ResolvedAt            *time.Time
+	Months                 int
+	Price                  int
+	Status                 string
+	Provider               string
+	Reference              string
+	CreatedAt              time.Time
+	ResolvedAt             *time.Time
 }
 
 type PaymentDailyStat struct {

@@ -108,7 +108,7 @@ func (s *Service) beginGiftCodeFlow(ctx context.Context, chatID int64) {
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Реквизиты для оплаты:\n\n")+req)
 	}
 
-	tariffs, err := s.store.ListTariffs(ctx)
+	tariffs, err := s.store.ListTariffs(ctx, store.PlanStandard)
 	if err != nil {
 		s.logger.Error("gift: list tariffs failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
@@ -199,14 +199,14 @@ func (s *Service) handleGiftCodePick(ctx context.Context, cb *tg.CallbackQuery) 
 // price when configured, 0 in the no-tariffs fallback, ErrTariffUnknown when
 // tariffs exist but none matches the requested months.
 func (s *Service) giftPriceFor(ctx context.Context, months int) (int, error) {
-	tariff, err := s.store.GetTariff(ctx, months)
+	tariff, err := s.store.GetTariff(ctx, store.PlanStandard, months)
 	if err != nil {
 		return 0, fmt.Errorf("get tariff: %w", err)
 	}
 	if tariff != nil {
 		return tariff.Price, nil
 	}
-	all, err := s.store.ListTariffs(ctx)
+	all, err := s.store.ListTariffs(ctx, store.PlanStandard)
 	if err != nil {
 		return 0, fmt.Errorf("list tariffs: %w", err)
 	}

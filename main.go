@@ -453,6 +453,7 @@ func (f rwCreator) CreateUser(ctx context.Context, spec payments.CreateUserSpec)
 		TrafficLimitBytes:    spec.TrafficLimitBytes,
 		TrafficLimitStrategy: spec.TrafficLimitStrategy,
 		HwidDeviceLimit:      spec.HwidDeviceLimit,
+		Tag:                  spec.Tag,
 	})
 	if err != nil {
 		return nil, err
@@ -491,6 +492,7 @@ func (u rwUpdater) UpdateUser(ctx context.Context, uuid string, patch payments.U
 		TrafficLimitStrategy: patch.TrafficLimitStrategy,
 		Status:               patch.Status,
 		ActiveInternalSquads: patch.ActiveInternalSquads,
+		Tag:                  patch.Tag,
 	})
 }
 

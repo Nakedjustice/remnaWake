@@ -22,6 +22,8 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handlePay(ctx, cb)
 	case strings.HasPrefix(cb.Data, "pick:"):
 		return s.handlePick(ctx, cb)
+	case strings.HasPrefix(cb.Data, "pln:"):
+		return s.handlePlanPick(ctx, cb)
 	case strings.HasPrefix(cb.Data, "back:"):
 		return s.handleBack(ctx, cb)
 	case strings.HasPrefix(cb.Data, "ok:"):
@@ -129,7 +131,20 @@ func (s *Service) handlePay(ctx context.Context, cb *tg.CallbackQuery) bool {
 		_ = s.bot.SendPlain(ctx, cb.Message.Chat.ID, i18n.T("Реквизиты для оплаты:\n\n")+req)
 	}
 
-	tariffs, err := s.store.ListTariffs(ctx)
+	// With custom presets configured, let the user pick a plan first; the
+	// months keyboard follows from the pln: callback. With only the built-in
+	// standard plan the flow is unchanged.
+	if plans, err := s.listPlans(ctx); err != nil {
+		s.logger.Error("list plans failed", "err", err.Error())
+	} else if len(plans) > 1 {
+		if cb.Message != nil {
+			_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, s.planKeyboard(userID, plans))
+		}
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Выберите тариф."))
+		return true
+	}
+
+	tariffs, err := s.store.ListTariffs(ctx, store.PlanStandard)
 	if err != nil {
 		s.logger.Error("list tariffs failed", "err", err.Error())
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
@@ -138,21 +153,79 @@ func (s *Service) handlePay(ctx context.Context, cb *tg.CallbackQuery) bool {
 
 	if len(tariffs) == 0 {
 		// Fallback: behave like the old single-button flow (1 month).
-		s.createRequestAndNotify(ctx, cb, userID, 1, 0)
+		s.createRequestAndNotify(ctx, cb, userID, 1, 0, store.PlanStandard)
 		return true
 	}
 
 	// Show tariff options on the same message.
 	if cb.Message != nil {
-		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, s.tariffKeyboard(userID, tariffs))
+		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, s.tariffKeyboard(userID, store.PlanStandard, tariffs))
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Выберите количество месяцев."))
 	return true
 }
 
-func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
-	parts := strings.Split(strings.TrimPrefix(cb.Data, "pick:"), ":")
+// handlePlanPick shows the months keyboard for the preset the user picked from
+// the plan chooser (pln:<userID>:<plan>).
+func (s *Service) handlePlanPick(ctx context.Context, cb *tg.CallbackQuery) bool {
+	parts := strings.SplitN(strings.TrimPrefix(cb.Data, "pln:"), ":", 2)
 	if len(parts) != 2 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+	userID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+	plan, err := s.getPlan(ctx, parts[1])
+	if errors.Is(err, ErrPlanUnknown) {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
+		return true
+	}
+	if err != nil {
+		s.logger.Error("get plan failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+		return true
+	}
+
+	tariffs, err := s.store.ListTariffs(ctx, plan.Code)
+	if err != nil {
+		s.logger.Error("list tariffs failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+		return true
+	}
+	if len(tariffs) == 0 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
+		return true
+	}
+	if cb.Message != nil {
+		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, s.tariffKeyboard(userID, plan.Code, tariffs))
+	}
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Выберите количество месяцев."))
+	return true
+}
+
+// planKeyboard offers one button per purchasable preset (pln:<userID>:<code>).
+func (s *Service) planKeyboard(userID int64, plans []store.Plan) *tg.InlineKeyboardMarkup {
+	rows := make([][]tg.InlineKeyboardButton, 0, len(plans)+1)
+	for _, p := range plans {
+		rows = append(rows, []tg.InlineKeyboardButton{{
+			Text:         p.Name,
+			CallbackData: fmt.Sprintf("pln:%d:%s", userID, p.Code),
+		}})
+	}
+	rows = append(rows, []tg.InlineKeyboardButton{{
+		Text: i18n.T("← Назад"), CallbackData: fmt.Sprintf("back:%d", userID),
+	}})
+	return &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
+	// pick:<userID>:<months> (standard, incl. stale keyboards) or
+	// pick:<userID>:<months>:<plan> for custom presets.
+	parts := strings.Split(strings.TrimPrefix(cb.Data, "pick:"), ":")
+	if len(parts) != 2 && len(parts) != 3 {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
@@ -162,8 +235,12 @@ func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
+	plan := store.PlanStandard
+	if len(parts) == 3 {
+		plan = parts[2]
+	}
 
-	tariff, err := s.store.GetTariff(ctx, months)
+	tariff, err := s.store.GetTariff(ctx, plan, months)
 	if err != nil {
 		s.logger.Error("get tariff failed", "err", err.Error())
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
@@ -174,7 +251,7 @@ func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
 		return true
 	}
 
-	s.createRequestAndNotify(ctx, cb, userID, months, tariff.Price)
+	s.createRequestAndNotify(ctx, cb, userID, months, tariff.Price, plan)
 	return true
 }
 
@@ -193,7 +270,7 @@ func (s *Service) handleBack(ctx context.Context, cb *tg.CallbackQuery) bool {
 
 // createRequestAndNotify looks up the remembered user, writes a pending request,
 // clears the user's keyboard, and DMs all admins a confirm button.
-func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQuery, userID int64, months, price int) {
+func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQuery, userID int64, months, price int, plan string) {
 	u, err := s.store.GetNotifiedUser(ctx, userID)
 	if err != nil {
 		s.logger.Error("get notified user failed", "err", err.Error())
@@ -209,29 +286,29 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 	// route straight to the only enabled provider.
 	providers := s.enabledProviders()
 	if len(providers) > 1 {
-		s.promptProviderChoice(ctx, cb, userID, months, providers)
+		s.promptProviderChoice(ctx, cb, userID, months, plan, providers)
 		return
 	}
-	s.routeProvider(ctx, cb, u, userID, months, price, providers[0])
+	s.routeProvider(ctx, cb, u, userID, months, price, plan, providers[0])
 }
 
 // routeProvider dispatches a renewal to the given payment provider. Platega and
 // Telegram Stars are automatic; p2p falls back to the manual admin flow.
-func (s *Service) routeProvider(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, userID int64, months, price int, provider string) {
+func (s *Service) routeProvider(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, userID int64, months, price int, plan, provider string) {
 	switch provider {
 	case ProviderPlatega:
-		s.startPlategaAndPrompt(ctx, cb, u, months, price)
+		s.startPlategaAndPrompt(ctx, cb, u, months, price, plan)
 	case ProviderTelegramStars:
-		s.startStarsAndPrompt(ctx, cb, u, months, price)
+		s.startStarsAndPrompt(ctx, cb, u, months, price, plan)
 	default:
-		s.startP2PRequest(ctx, cb, u, userID, months, price)
+		s.startP2PRequest(ctx, cb, u, userID, months, price, plan)
 	}
 }
 
 // startP2PRequest runs the manual admin-confirmed flow: with the screenshot
 // requirement on it defers the request until the user attaches a payment photo,
 // otherwise it creates a pending request and DMs the admins a confirm button.
-func (s *Service) startP2PRequest(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, userID int64, months, price int) {
+func (s *Service) startP2PRequest(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, userID int64, months, price int, plan string) {
 	// With the screenshot requirement on, the request is deferred until the
 	// user sends a payment photo; nothing reaches the admins yet. A callback
 	// can arrive without its message (inaccessible/too old) — the tariff
@@ -243,11 +320,11 @@ func (s *Service) startP2PRequest(ctx context.Context, cb *tg.CallbackQuery, u *
 			_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 		}
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Прикрепите чек об оплате."))
-		s.startPayPhotoFlow(ctx, chatID, userID, months, price)
+		s.startPayPhotoFlow(ctx, chatID, userID, months, price, plan)
 		return
 	}
 
-	if _, err := s.createPaymentRequest(ctx, u, months, price, nil); err != nil {
+	if _, err := s.createPaymentRequest(ctx, u, months, price, plan, nil); err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return
 	}
@@ -260,13 +337,18 @@ func (s *Service) startP2PRequest(ctx context.Context, cb *tg.CallbackQuery, u *
 }
 
 // promptProviderChoice shows the user a keyboard with one button per enabled
-// provider; the choice arrives as a payvia:<userID>:<months>:<provider> callback.
-func (s *Service) promptProviderChoice(ctx context.Context, cb *tg.CallbackQuery, userID int64, months int, providers []string) {
+// provider; the choice arrives as a payvia:<userID>:<months>:<provider> callback
+// (with a trailing :<plan> element for custom presets).
+func (s *Service) promptProviderChoice(ctx context.Context, cb *tg.CallbackQuery, userID int64, months int, plan string, providers []string) {
 	rows := make([][]tg.InlineKeyboardButton, 0, len(providers))
 	for _, p := range providers {
+		data := fmt.Sprintf("payvia:%d:%d:%s", userID, months, p)
+		if plan != "" && plan != store.PlanStandard {
+			data += ":" + plan
+		}
 		rows = append(rows, []tg.InlineKeyboardButton{{
 			Text:         providerButtonLabel(p),
-			CallbackData: fmt.Sprintf("payvia:%d:%d:%s", userID, months, p),
+			CallbackData: data,
 		}})
 	}
 	kb := &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
@@ -294,8 +376,10 @@ func providerButtonLabel(provider string) string {
 // handlePayVia handles the user's payment-method choice from the provider picker
 // and routes the renewal to the chosen provider.
 func (s *Service) handlePayVia(ctx context.Context, cb *tg.CallbackQuery) bool {
+	// payvia:<userID>:<months>:<provider> (standard, incl. stale keyboards) or
+	// payvia:<userID>:<months>:<provider>:<plan> for custom presets.
 	parts := strings.Split(strings.TrimPrefix(cb.Data, "payvia:"), ":")
-	if len(parts) != 3 {
+	if len(parts) != 3 && len(parts) != 4 {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
@@ -306,13 +390,17 @@ func (s *Service) handlePayVia(ctx context.Context, cb *tg.CallbackQuery) bool {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
+	plan := store.PlanStandard
+	if len(parts) == 4 {
+		plan = parts[3]
+	}
 	// Reject a provider that is no longer enabled (stale keyboard).
 	if !s.providerAvailable(provider) || !s.isProviderEnabled(provider) {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот способ оплаты больше недоступен."))
 		return true
 	}
 
-	tariff, err := s.store.GetTariff(ctx, months)
+	tariff, err := s.store.GetTariff(ctx, plan, months)
 	if err != nil {
 		s.logger.Error("get tariff failed", "err", err.Error())
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
@@ -327,7 +415,7 @@ func (s *Service) handlePayVia(ctx context.Context, cb *tg.CallbackQuery) bool {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось найти данные. Дождитесь следующего уведомления."))
 		return true
 	}
-	s.routeProvider(ctx, cb, u, userID, months, tariff.Price, provider)
+	s.routeProvider(ctx, cb, u, userID, months, tariff.Price, plan, provider)
 	return true
 }
 
@@ -335,7 +423,7 @@ func (s *Service) handlePayVia(ctx context.Context, cb *tg.CallbackQuery) bool {
 // confirm button (a photo or document message when a payment confirmation
 // file is attached — att is nil in the plain flow). Shared by the chat
 // callback flow, the photo/document flow and the mini app API.
-func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUser, months, price int, att *receiptAttachment) (int64, error) {
+func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUser, months, price int, plan string, att *receiptAttachment) (int64, error) {
 	var fileID string
 	var isDoc bool
 	if att != nil {
@@ -344,7 +432,7 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 	reqID, err := s.store.CreatePaymentRequest(ctx, store.PaymentRequest{
 		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
 		TelegramID: u.TelegramID, Months: months, Price: price,
-		ExpireAt: u.ExpireAt, Status: "pending",
+		ExpireAt: u.ExpireAt, Status: "pending", Plan: plan,
 		ScreenshotFileID: fileID, ScreenshotIsDocument: isDoc,
 	})
 	if err != nil {
@@ -353,7 +441,7 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 	}
 
 	// Notify all admins with details + confirm button.
-	text := s.formatAdminRequest(u, months, price)
+	text := s.formatAdminRequest(ctx, u, months, price, plan)
 	if att != nil && att.note != "" {
 		text += "\n\n💬 " + att.note
 	}
@@ -498,16 +586,27 @@ func (s *Service) clearPayButtons(ctx context.Context, reqID int64) {
 	}
 }
 
-func (s *Service) tariffKeyboard(userID int64, tariffs []store.Tariff) *tg.InlineKeyboardMarkup {
+func (s *Service) tariffKeyboard(userID int64, plan string, tariffs []store.Tariff) *tg.InlineKeyboardMarkup {
+	custom := plan != "" && plan != store.PlanStandard
 	rows := make([][]tg.InlineKeyboardButton, 0, len(tariffs)+1)
 	for _, t := range tariffs {
+		data := fmt.Sprintf("pick:%d:%d", userID, t.Months)
+		if custom {
+			data += ":" + plan
+		}
 		rows = append(rows, []tg.InlineKeyboardButton{{
 			Text:         fmt.Sprintf(i18n.T("%d мес. — %s"), t.Months, s.priceLabel(t.Price)),
-			CallbackData: fmt.Sprintf("pick:%d:%d", userID, t.Months),
+			CallbackData: data,
 		}})
 	}
+	// Back from a custom plan's months returns to the plan chooser (pay:
+	// re-runs handlePay); the standard keyboard keeps its original target.
+	backData := fmt.Sprintf("back:%d", userID)
+	if custom {
+		backData = fmt.Sprintf("pay:%d", userID)
+	}
 	rows = append(rows, []tg.InlineKeyboardButton{{
-		Text: i18n.T("← Назад"), CallbackData: fmt.Sprintf("back:%d", userID),
+		Text: i18n.T("← Назад"), CallbackData: backData,
 	}})
 	return &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
@@ -627,7 +726,7 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 }
 
 func (s *Service) sendAdminTariffs(ctx context.Context, chatID int64) {
-	tariffs, err := s.store.ListTariffs(ctx)
+	text, any, err := s.formatTariffListing(ctx)
 	if err != nil {
 		s.logger.Error("admin: list tariffs failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения тарифов."))
@@ -638,20 +737,15 @@ func (s *Service) sendAdminTariffs(ctx context.Context, chatID int64) {
 			{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}},
 		},
 	}
-	if len(tariffs) == 0 {
+	if !any {
 		_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, i18n.T("Тарифы не заданы."), kb)
 		return
 	}
-	var b strings.Builder
-	b.WriteString(i18n.T("Тарифы:\n"))
-	for _, t := range tariffs {
-		b.WriteString(fmt.Sprintf(i18n.T("%d мес. — %s\n"), t.Months, s.priceLabel(t.Price)))
-	}
-	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, strings.TrimRight(b.String(), "\n"), kb)
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
 }
 
 func (s *Service) sendAdminDelList(ctx context.Context, chatID int64) {
-	tariffs, err := s.store.ListTariffs(ctx)
+	tariffs, err := s.store.ListTariffs(ctx, store.PlanStandard)
 	if err != nil {
 		s.logger.Error("admin: list tariffs for delete failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения тарифов."))
@@ -695,7 +789,7 @@ func (s *Service) handleAdminDelTariff(ctx context.Context, chatID int64, data s
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось распознать тариф."))
 		return
 	}
-	deleted, err := s.store.DeleteTariff(ctx, months)
+	deleted, err := s.store.DeleteTariff(ctx, store.PlanStandard, months)
 	if err != nil {
 		s.logger.Error("admin: delete tariff failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка удаления тарифа."))
@@ -913,7 +1007,7 @@ func (s *Service) startAddTariffFlow(ctx context.Context, chatID int64) {
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите количество месяцев (целое ≥ 1):"))
 }
 
-func (s *Service) formatAdminRequest(u *store.NotifiedUser, months, price int) string {
+func (s *Service) formatAdminRequest(ctx context.Context, u *store.NotifiedUser, months, price int, plan string) string {
 	var b strings.Builder
 	b.WriteString(i18n.T("💳 Заявка на оплату\n\n"))
 	b.WriteString(i18n.T("Клиент: ") + u.Username + "\n")
@@ -921,6 +1015,13 @@ func (s *Service) formatAdminRequest(u *store.NotifiedUser, months, price int) s
 	b.WriteString("UUID: " + u.UUID + "\n")
 	b.WriteString(fmt.Sprintf("Telegram ID: %d\n", u.TelegramID))
 	b.WriteString(i18n.T("Подписка до: ") + u.ExpireAt.Format("02.01.2006") + "\n")
+	if plan != "" && plan != store.PlanStandard {
+		name := plan
+		if p, err := s.getPlan(ctx, plan); err == nil {
+			name = p.Name
+		}
+		b.WriteString(i18n.T("Тариф: ") + name + "\n")
+	}
 	if price > 0 {
 		b.WriteString(fmt.Sprintf(i18n.T("Выбрано: %d мес. — %s"), months, s.priceLabel(price)))
 	} else {

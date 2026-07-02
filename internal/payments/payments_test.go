@@ -202,16 +202,26 @@ func (f *fakeCreator) CreateUser(_ context.Context, spec CreateUserSpec) (*Creat
 	return &CreatedUser{UUID: "fake-uuid", Username: spec.Username}, nil
 }
 
-// fakeUpdater records UpdateUser calls for the "Manage user" flow tests.
+// fakeUpdater records UpdateUser calls for the "Manage user" flow and the
+// confirm path (which extends and stamps the plan through one PATCH). When ext
+// is set, expiry patches are mirrored into it — including its injected error —
+// so extension assertions and panel-failure simulation keep working against
+// the extender fake regardless of which panel call carried the expiry.
 type fakeUpdater struct {
 	calls []UserPatch
 	uuids []string
 	err   error
+	ext   Extender
 }
 
-func (f *fakeUpdater) UpdateUser(_ context.Context, uuid string, patch UserPatch) error {
+func (f *fakeUpdater) UpdateUser(ctx context.Context, uuid string, patch UserPatch) error {
 	if f.err != nil {
 		return f.err
+	}
+	if f.ext != nil && patch.ExpireAt != nil {
+		if err := f.ext.ExtendSubscriptionByUUID(ctx, uuid, *patch.ExpireAt); err != nil {
+			return err
+		}
 	}
 	f.uuids = append(f.uuids, uuid)
 	f.calls = append(f.calls, patch)
@@ -262,7 +272,7 @@ func newTestService(t *testing.T) (*Service, *fakeBot, *fakeExtender, *store.Sto
 	bot := &fakeBot{}
 	ext := &fakeExtender{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, ext, &fakeCreator{}, &fakeUpdater{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false /*dryRun*/, logger)
+	svc := New(st, bot, ext, &fakeCreator{}, &fakeUpdater{ext: ext}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false /*dryRun*/, logger)
 	return svc, bot, ext, st
 }
 
@@ -304,7 +314,7 @@ func TestAdminSetListDeleteTariff(t *testing.T) {
 	if !svc.HandleAdminCommand(ctx, msg(1000, "/settariff 3 450")) {
 		t.Fatal("settariff should be handled")
 	}
-	got, _ := st.GetTariff(ctx, 3)
+	got, _ := st.GetTariff(ctx, store.PlanStandard, 3)
 	if got == nil || got.Price != 450 {
 		t.Fatalf("tariff not stored: %+v", got)
 	}
@@ -315,7 +325,7 @@ func TestAdminSetListDeleteTariff(t *testing.T) {
 	if !svc.HandleAdminCommand(ctx, msg(1000, "/deltariff 3")) {
 		t.Fatal("deltariff should be handled")
 	}
-	if again, _ := st.GetTariff(ctx, 3); again != nil {
+	if again, _ := st.GetTariff(ctx, store.PlanStandard, 3); again != nil {
 		t.Fatalf("tariff not deleted: %+v", again)
 	}
 	if len(bot.sent) < 3 {
@@ -357,8 +367,8 @@ func TestPayShowsTariffButtons(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	rememberAlice(t, st)
-	_ = st.UpsertTariff(ctx, 1, 150)
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 1, 150)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	if !svc.HandleCallback(ctx, cbq(777, "pay:42")) {
 		t.Fatal("pay should be handled")
@@ -406,7 +416,7 @@ func TestPickCreatesRequestAndNotifiesAdmin(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	rememberAlice(t, st)
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	if !svc.HandleCallback(ctx, cbq(777, "pick:42:3")) {
 		t.Fatal("pick should be handled")
@@ -679,7 +689,7 @@ func newTestServiceTwoAdmins(t *testing.T) (*Service, *fakeBot, *fakeExtender, *
 	bot := &fakeBot{}
 	ext := &fakeExtender{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(st, bot, ext, &fakeCreator{}, &fakeUpdater{}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000, 2000}, "₽", false, logger)
+	svc := New(st, bot, ext, &fakeCreator{}, &fakeUpdater{ext: ext}, &fakeFinder{}, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000, 2000}, "₽", false, logger)
 	return svc, bot, ext, st
 }
 

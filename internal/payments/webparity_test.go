@@ -153,7 +153,7 @@ func TestUploadRenewReceiptUploadsOnceAndReusesFileID(t *testing.T) {
 	svc, bot, _, st := newTestServiceTwoAdmins(t)
 	ctx := context.Background()
 	rememberAlice(t, st)
-	svc.startPayPhotoFlow(ctx, 777, 42, 1, 150)
+	svc.startPayPhotoFlow(ctx, 777, 42, 1, 150, store.PlanStandard)
 	if err := svc.UploadRenewReceipt(ctx, 777, WebReceipt{Filename: "receipt.png", ContentType: "image/png", Data: []byte("png"), Note: "paid"}); err != nil {
 		t.Fatalf("UploadRenewReceipt: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestUploadRenewReceiptValidationExpiryAndCleanup(t *testing.T) {
 	if err := svc.UploadRenewReceipt(ctx, 777, WebReceipt{Filename: "x.png", Data: []byte("x")}); !errors.Is(err, ErrReceiptSessionExpired) {
 		t.Fatalf("no session = %v", err)
 	}
-	svc.startPayPhotoFlow(ctx, 777, 42, 1, 150)
+	svc.startPayPhotoFlow(ctx, 777, 42, 1, 150, store.PlanStandard)
 	if err := svc.UploadRenewReceipt(ctx, 777, WebReceipt{Filename: "x.exe", Data: []byte("x")}); !errors.Is(err, ErrReceiptType) {
 		t.Fatalf("type = %v", err)
 	}
@@ -192,7 +192,7 @@ func TestUploadRenewReceiptSizeLimitsAndExpiredState(t *testing.T) {
 	rememberAlice(t, st)
 	base := time.Date(2026, 6, 21, 0, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return base }
-	svc.startPayPhotoFlow(ctx, 777, 42, 1, 150)
+	svc.startPayPhotoFlow(ctx, 777, 42, 1, 150, store.PlanStandard)
 	if err := svc.UploadRenewReceipt(ctx, 777, WebReceipt{Filename: "large.png", Data: make([]byte, maxReceiptPhotoSize+1)}); !errors.Is(err, ErrReceiptTooLarge) {
 		t.Fatalf("photo size=%v", err)
 	}

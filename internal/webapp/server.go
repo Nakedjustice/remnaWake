@@ -25,7 +25,7 @@ const initDataMaxAge = 24 * time.Hour
 // Cabinet is the subset of *payments.Service the mini app user API needs.
 type Cabinet interface {
 	CabinetData(ctx context.Context, telegramID int64) (*payments.WebCabinet, error)
-	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider string) (*payments.RenewResult, error)
+	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider, plan string) (*payments.RenewResult, error)
 	CreateGiftRequest(ctx context.Context, telegramID int64, months int) error
 	CreateInviteRequest(ctx context.Context, telegramID int64, username string) error
 	RegisterProfile(ctx context.Context, telegramID int64, query string) (*payments.WebRegistrationResult, error)
@@ -53,8 +53,10 @@ type Admin interface {
 	AdminDeleteInviteRequest(ctx context.Context, telegramID, id int64) error
 	AdminCheckUpdates(ctx context.Context, telegramID int64) (*payments.WebUpdateCheckResult, error)
 	AdminSetUpdateInterval(ctx context.Context, telegramID int64, interval string) error
-	AdminSetTariff(ctx context.Context, telegramID int64, months, price int) error
-	AdminDeleteTariff(ctx context.Context, telegramID int64, months int) error
+	AdminSetTariff(ctx context.Context, telegramID int64, plan string, months, price int) error
+	AdminDeleteTariff(ctx context.Context, telegramID int64, plan string, months int) error
+	AdminSetPlan(ctx context.Context, telegramID int64, in payments.WebAdminPlan) error
+	AdminDeletePlan(ctx context.Context, telegramID int64, code string) error
 	AdminSetRequisites(ctx context.Context, telegramID int64, text string) error
 	AdminSetRequireScreenshot(ctx context.Context, telegramID int64, on bool) error
 	AdminSetProviderEnabled(ctx context.Context, telegramID int64, provider string, on bool) error
@@ -157,6 +159,8 @@ func (s *Server) Handler() http.Handler {
 	}))
 	mux.HandleFunc("POST /api/admin/tariff", s.handleAdminSetTariff)
 	mux.HandleFunc("POST /api/admin/tariff/delete", s.handleAdminDeleteTariff)
+	mux.HandleFunc("POST /api/admin/plan", s.handleAdminSetPlan)
+	mux.HandleFunc("POST /api/admin/plan/delete", s.handleAdminDeletePlan)
 	mux.HandleFunc("POST /api/admin/requisites", s.handleAdminSetRequisites)
 	mux.HandleFunc("POST /api/admin/screenshot-toggle", s.handleAdminSetRequireScreenshot)
 	mux.HandleFunc("POST /api/admin/payment-provider", s.handleAdminSetPaymentProvider)
@@ -296,13 +300,14 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		RemnawaveID int64  `json:"remnawave_id"`
 		Months      int    `json:"months"`
 		Provider    string `json:"provider"`
+		Plan        string `json:"plan"` // "" = standard
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "malformed request body")
 		return
 	}
 
-	result, err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months, req.Provider)
+	result, err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months, req.Provider, req.Plan)
 	if errors.Is(err, payments.ErrScreenshotRequired) {
 		// Not an error for the user: the bot chat is waiting for the screenshot.
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "awaiting_screenshot"})
@@ -340,6 +345,8 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 		writeJSONError(w, http.StatusForbidden, "profile is not linked to this account")
 	case errors.Is(err, payments.ErrTariffUnknown):
 		writeJSONError(w, http.StatusBadRequest, "tariff not found")
+	case errors.Is(err, payments.ErrPlanUnknown):
+		writeJSONError(w, http.StatusBadRequest, "plan not found")
 	case errors.Is(err, payments.ErrBadInput):
 		writeJSONError(w, http.StatusBadRequest, "invalid input")
 	case errors.Is(err, payments.ErrInvalidProfileQuery), errors.Is(err, payments.ErrGiftInvalid), errors.Is(err, payments.ErrReceiptType):
@@ -565,8 +572,8 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 		writeJSONError(w, http.StatusForbidden, "доступ запрещён")
 	case errors.Is(err, payments.ErrBadInput):
 		writeJSONError(w, http.StatusBadRequest, "некорректные данные")
-	case errors.Is(err, payments.ErrTariffUnknown), errors.Is(err, payments.ErrRequestNotFound),
-		errors.Is(err, payments.ErrInfraServerUnknown):
+	case errors.Is(err, payments.ErrTariffUnknown), errors.Is(err, payments.ErrPlanUnknown),
+		errors.Is(err, payments.ErrRequestNotFound), errors.Is(err, payments.ErrInfraServerUnknown):
 		writeJSONError(w, http.StatusNotFound, "не найдено")
 	case errors.Is(err, payments.ErrRequestResolved):
 		writeJSONError(w, http.StatusConflict, "уже обработано")
@@ -747,14 +754,15 @@ func (s *Server) handleAdminSetTariff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Months int `json:"months"`
-		Price  int `json:"price"`
+		Plan   string `json:"plan"` // "" = standard
+		Months int    `json:"months"`
+		Price  int    `json:"price"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "malformed request body")
 		return
 	}
-	if err := s.admin.AdminSetTariff(r.Context(), userID, req.Months, req.Price); err != nil {
+	if err := s.admin.AdminSetTariff(r.Context(), userID, req.Plan, req.Months, req.Price); err != nil {
 		s.writeAdminError(w, "set tariff", userID, err)
 		return
 	}
@@ -767,14 +775,51 @@ func (s *Server) handleAdminDeleteTariff(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req struct {
-		Months int `json:"months"`
+		Plan   string `json:"plan"` // "" = standard
+		Months int    `json:"months"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "malformed request body")
 		return
 	}
-	if err := s.admin.AdminDeleteTariff(r.Context(), userID, req.Months); err != nil {
+	if err := s.admin.AdminDeleteTariff(r.Context(), userID, req.Plan, req.Months); err != nil {
 		s.writeAdminError(w, "delete tariff", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminSetPlan(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req payments.WebAdminPlan
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetPlan(r.Context(), userID, req); err != nil {
+		s.writeAdminError(w, "set plan", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminDeletePlan(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminDeletePlan(r.Context(), userID, req.Code); err != nil {
+		s.writeAdminError(w, "delete plan", userID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
