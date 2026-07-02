@@ -26,7 +26,7 @@ const plategaStatusConfirmed = "CONFIRMED"
 // opens a Platega transaction for it and returns the request id and the redirect
 // URL the user must open to pay. The transaction id is stored on the request so
 // the webhook and the "check payment" button can finalize it.
-func (s *Service) startPlategaPayment(ctx context.Context, u *store.NotifiedUser, months, price int) (int64, string, error) {
+func (s *Service) startPlategaPayment(ctx context.Context, u *store.NotifiedUser, months, price int, plan string) (int64, string, error) {
 	s.mu.Lock()
 	gw := s.platega
 	method := s.plategaMethod
@@ -40,7 +40,7 @@ func (s *Service) startPlategaPayment(ctx context.Context, u *store.NotifiedUser
 	reqID, err := s.store.CreatePaymentRequest(ctx, store.PaymentRequest{
 		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
 		TelegramID: u.TelegramID, Months: months, Price: price,
-		ExpireAt: u.ExpireAt, Status: "pending", Provider: ProviderPlatega,
+		ExpireAt: u.ExpireAt, Status: "pending", Provider: ProviderPlatega, Plan: plan,
 	})
 	if err != nil {
 		s.logger.Error("platega: create payment request failed", "err", err.Error())
@@ -68,13 +68,13 @@ func (s *Service) startPlategaPayment(ctx context.Context, u *store.NotifiedUser
 // startPlategaAndPrompt opens a Platega payment from a bot callback and sends the
 // user the «Оплатить» / «Проверить оплату» keyboard. Used by the pick / cabinet
 // flows when Platega is the active provider.
-func (s *Service) startPlategaAndPrompt(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, months, price int) {
+func (s *Service) startPlategaAndPrompt(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, months, price int, plan string) {
 	chatID := cb.From.ID
 	if cb.Message != nil {
 		chatID = cb.Message.Chat.ID
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
-	reqID, payURL, err := s.startPlategaPayment(ctx, u, months, price)
+	reqID, payURL, err := s.startPlategaPayment(ctx, u, months, price, plan)
 	if err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return

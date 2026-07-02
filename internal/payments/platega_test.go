@@ -118,7 +118,7 @@ func TestStartPlategaPaymentCreatesRequestAndReturnsURL(t *testing.T) {
 
 	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
-	_, url, err := svc.startPlategaPayment(ctx, u, 2, 300)
+	_, url, err := svc.startPlategaPayment(ctx, u, 2, 300, store.PlanStandard)
 	if err != nil {
 		t.Fatalf("startPlategaPayment: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestPlategaWebhookConfirmsAndIsIdempotent(t *testing.T) {
 
 	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
-	if _, _, err := svc.startPlategaPayment(ctx, u, 1, 150); err != nil {
+	if _, _, err := svc.startPlategaPayment(ctx, u, 1, 150, store.PlanStandard); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 
@@ -197,7 +197,7 @@ func TestPlategaCheckButtonConfirms(t *testing.T) {
 
 	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
-	if _, _, err := svc.startPlategaPayment(ctx, u, 1, 150); err != nil {
+	if _, _, err := svc.startPlategaPayment(ctx, u, 1, 150, store.PlanStandard); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 

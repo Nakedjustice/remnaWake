@@ -68,6 +68,16 @@ type WebTariff struct {
 	PriceLabel string `json:"price_label"`
 }
 
+// WebPlan is one tariff preset with its renewal options as shown in the mini
+// app. Zero traffic/device limits mean unlimited.
+type WebPlan struct {
+	Code        string      `json:"code"`
+	Name        string      `json:"name"`
+	TrafficGB   int         `json:"traffic_gb"`
+	DeviceLimit int         `json:"device_limit"`
+	Tariffs     []WebTariff `json:"tariffs,omitempty"`
+}
+
 // WebGift is one bought gift code as shown in the mini app.
 type WebGift struct {
 	Code             string `json:"code"`
@@ -138,14 +148,18 @@ type WebReceipt struct {
 
 // WebCabinet is the full /api/me payload for the mini app.
 type WebCabinet struct {
-	Linked     bool         `json:"linked"`
-	Lang       string       `json:"lang"`
-	IsAdmin    bool         `json:"is_admin,omitempty"`
-	Profiles   []WebProfile `json:"profiles,omitempty"`
-	Tariffs    []WebTariff  `json:"tariffs,omitempty"`
-	Requisites string       `json:"requisites,omitempty"`
-	Gifts      []WebGift    `json:"gifts,omitempty"`
-	Invites    *WebInvites  `json:"invites,omitempty"`
+	Linked   bool         `json:"linked"`
+	Lang     string       `json:"lang"`
+	IsAdmin  bool         `json:"is_admin,omitempty"`
+	Profiles []WebProfile `json:"profiles,omitempty"`
+	Tariffs  []WebTariff  `json:"tariffs,omitempty"`
+	// Plans lists every purchasable preset with its own price grid; the
+	// top-level Tariffs stays the standard plan's grid (the gift flow and
+	// older clients rely on it). Sent only when custom presets exist.
+	Plans      []WebPlan   `json:"plans,omitempty"`
+	Requisites string      `json:"requisites,omitempty"`
+	Gifts      []WebGift   `json:"gifts,omitempty"`
+	Invites    *WebInvites `json:"invites,omitempty"`
 	// Referral carries the personal referral link + stats, when the program is
 	// enabled. Reachable from the mini app and the bot.
 	Referral *WebReferral `json:"referral,omitempty"`
@@ -206,13 +220,14 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 		}
 	}
 
-	tariffs, err := s.store.ListTariffs(ctx)
+	tariffs, err := s.store.ListTariffs(ctx, store.PlanStandard)
 	if err != nil {
 		s.logger.Error("webapp: list tariffs failed", "err", err.Error())
 	}
 	for _, t := range tariffs {
 		out.Tariffs = append(out.Tariffs, WebTariff{Months: t.Months, Price: t.Price, PriceLabel: s.priceLabel(t.Price)})
 	}
+	out.Plans = s.webPlans(ctx, out.Tariffs)
 
 	s.mu.Lock()
 	out.Requisites = s.requisites
@@ -353,10 +368,15 @@ type RenewResult struct {
 	Providers []string `json:"providers,omitempty"`
 }
 
-func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider string) (*RenewResult, error) {
+func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider, plan string) (*RenewResult, error) {
 	if !s.isEnabled() {
 		return nil, ErrPaymentsDisabled
 	}
+	planDef, err := s.getPlan(ctx, plan)
+	if err != nil {
+		return nil, err
+	}
+	plan = planDef.Code
 	subs, err := s.finder.FindByTelegramID(ctx, telegramID)
 	if err != nil {
 		return nil, fmt.Errorf("find by telegram id: %w", err)
@@ -375,13 +395,16 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 		return nil, ErrProfileUnknown
 	}
 
+	// The months=1/price=0 fallback for an empty grid is a legacy standard-only
+	// behavior; a custom preset must always name an existing tariff.
 	price := 0
-	tariffs, err := s.store.ListTariffs(ctx)
+	tariffs, err := s.store.ListTariffs(ctx, plan)
 	if err != nil {
 		return nil, fmt.Errorf("list tariffs: %w", err)
 	}
-	if len(tariffs) > 0 {
-		tariff, err := s.store.GetTariff(ctx, months)
+	switch {
+	case len(tariffs) > 0:
+		tariff, err := s.store.GetTariff(ctx, plan, months)
 		if err != nil {
 			return nil, fmt.Errorf("get tariff: %w", err)
 		}
@@ -389,7 +412,9 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 			return nil, ErrTariffUnknown
 		}
 		price = tariff.Price
-	} else if months < 1 {
+	case plan != store.PlanStandard:
+		return nil, ErrTariffUnknown
+	case months < 1:
 		months = 1
 	}
 
@@ -420,14 +445,14 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 	case ProviderPlatega:
 		// Open an online transaction and return its pay URL for the mini app to
 		// open. The screenshot requirement does not apply (payment is automatic).
-		reqID, payURL, err := s.startPlategaPayment(ctx, u, months, price)
+		reqID, payURL, err := s.startPlategaPayment(ctx, u, months, price, plan)
 		if err != nil {
 			return nil, err
 		}
 		return &RenewResult{Status: ProviderPlatega, RequestID: reqID, PayURL: payURL}, nil
 	case ProviderTelegramStars:
 		// Create a Stars invoice link the mini app opens with openInvoice.
-		link, err := s.startStarsInvoiceLink(ctx, u, months, price)
+		link, err := s.startStarsInvoiceLink(ctx, u, months, price, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -437,11 +462,11 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 	// P2P: with the screenshot requirement on, the request is deferred (the mini
 	// app cannot upload photos to the bot, so the user finishes in the bot chat).
 	if s.getRequireScreenshot() {
-		s.startPayPhotoFlow(ctx, telegramID, sub.RemnawaveID, months, price)
+		s.startPayPhotoFlow(ctx, telegramID, sub.RemnawaveID, months, price, plan)
 		return nil, ErrScreenshotRequired
 	}
 
-	if _, err := s.createPaymentRequest(ctx, u, months, price, nil); err != nil {
+	if _, err := s.createPaymentRequest(ctx, u, months, price, plan, nil); err != nil {
 		return nil, err
 	}
 
@@ -515,7 +540,7 @@ func (s *Service) CreateInviteRequest(ctx context.Context, telegramID int64, use
 		return ErrNotLinked
 	}
 	price := 0
-	tariff, err := s.store.GetTariff(ctx, 1)
+	tariff, err := s.store.GetTariff(ctx, store.PlanStandard, 1)
 	if err != nil {
 		return fmt.Errorf("get tariff: %w", err)
 	}

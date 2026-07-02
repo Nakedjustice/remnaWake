@@ -75,20 +75,20 @@ func TestTariffsCRUD(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
 
-	if got, err := st.ListTariffs(ctx); err != nil || len(got) != 0 {
+	if got, err := st.ListTariffs(ctx, PlanStandard); err != nil || len(got) != 0 {
 		t.Fatalf("empty list: got %v err %v", got, err)
 	}
-	if err := st.UpsertTariff(ctx, 3, 450); err != nil {
+	if err := st.UpsertTariff(ctx, PlanStandard, 3, 450); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if err := st.UpsertTariff(ctx, 1, 150); err != nil {
+	if err := st.UpsertTariff(ctx, PlanStandard, 1, 150); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if err := st.UpsertTariff(ctx, 3, 500); err != nil { // update existing
+	if err := st.UpsertTariff(ctx, PlanStandard, 3, 500); err != nil { // update existing
 		t.Fatalf("upsert update: %v", err)
 	}
 
-	list, err := st.ListTariffs(ctx)
+	list, err := st.ListTariffs(ctx, PlanStandard)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -96,19 +96,19 @@ func TestTariffsCRUD(t *testing.T) {
 		t.Fatalf("unexpected list: %+v", list)
 	}
 
-	got, err := st.GetTariff(ctx, 3)
+	got, err := st.GetTariff(ctx, PlanStandard, 3)
 	if err != nil || got == nil || got.Price != 500 {
 		t.Fatalf("get: %+v err %v", got, err)
 	}
-	if missing, err := st.GetTariff(ctx, 99); err != nil || missing != nil {
+	if missing, err := st.GetTariff(ctx, PlanStandard, 99); err != nil || missing != nil {
 		t.Fatalf("get missing: %+v err %v", missing, err)
 	}
 
-	deleted, err := st.DeleteTariff(ctx, 3)
+	deleted, err := st.DeleteTariff(ctx, PlanStandard, 3)
 	if err != nil || !deleted {
 		t.Fatalf("delete: %v %v", deleted, err)
 	}
-	if again, err := st.DeleteTariff(ctx, 3); err != nil || again {
+	if again, err := st.DeleteTariff(ctx, PlanStandard, 3); err != nil || again {
 		t.Fatalf("delete missing: %v %v", again, err)
 	}
 }

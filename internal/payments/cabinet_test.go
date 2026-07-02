@@ -143,7 +143,7 @@ func TestSendCabinetShowsGiftAndInviteSummary(t *testing.T) {
 func TestCabinetPayShowsTariffsWithoutTouchingCabinetMessage(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
-	if err := st.UpsertTariff(ctx, 1, 100); err != nil {
+	if err := st.UpsertTariff(ctx, store.PlanStandard, 1, 100); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UpsertNotifiedUser(ctx, store.NotifiedUser{

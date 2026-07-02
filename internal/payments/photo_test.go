@@ -41,7 +41,7 @@ func TestPickWithScreenshotDefersRequest(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	rememberAlice(t, st)
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 	enableScreenshot(t, svc)
 
 	if !svc.HandleCallback(ctx, cbq(777, "pick:42:3")) {
@@ -71,7 +71,7 @@ func TestTextWhileAwaitingPhotoReminds(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	bot.sent = nil
 
 	if !svc.HandleText(ctx, msg(777, "вот оплата")) {
@@ -88,7 +88,7 @@ func TestTextWhileAwaitingPhotoReminds(t *testing.T) {
 func TestCancelClearsAwaitingPhoto(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
 	ctx := context.Background()
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 
 	if !svc.HandleText(ctx, msg(777, "/cancel")) {
 		t.Fatal("/cancel should be handled")
@@ -106,7 +106,7 @@ func TestPhotoCreatesRequestWithScreenshot(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	bot.sent = nil
 
 	if !svc.HandlePhoto(ctx, photoMsg(777, "small-id", "big-id")) {
@@ -142,7 +142,7 @@ func TestPdfDocumentCreatesRequestWithScreenshot(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	bot.sent = nil
 
 	if !svc.HandleDocument(ctx, docMsg(777, "pdf-id", "application/pdf", "receipt.pdf")) {
@@ -178,7 +178,7 @@ func TestPdfByFilenameAccepted(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 
 	// Some banks send PDFs with a generic octet-stream mime type.
 	if !svc.HandleDocument(ctx, docMsg(777, "pdf-id", "application/octet-stream", "Чек.PDF")) {
@@ -198,7 +198,7 @@ func TestNonPdfDocumentReminds(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	bot.sent = nil
 
 	if !svc.HandleDocument(ctx, docMsg(777, "zip-id", "application/zip", "archive.zip")) {
@@ -233,7 +233,7 @@ func TestConfirmClearsDocumentMessageButtons(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	if !svc.HandleDocument(ctx, docMsg(777, "pdf-id", "application/pdf", "receipt.pdf")) {
 		t.Fatal("pdf document should be handled")
 	}
@@ -261,7 +261,7 @@ func TestConfirmClearsPhotoMessageButtons(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	if !svc.HandlePhoto(ctx, photoMsg(777, "big-id")) {
 		t.Fatal("photo should be handled")
 	}
@@ -304,7 +304,7 @@ func TestPhotoAfterTTLGetsExpiryNotice(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	rememberAlice(t, st)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	bot.sent = nil
 	svc.now = func() time.Time { return time.Now().Add(payPhotoTTL + time.Minute) }
 
@@ -336,7 +336,7 @@ func TestDocumentAfterTTLGetsExpiryNotice(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	rememberAlice(t, st)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	bot.sent = nil
 	svc.now = func() time.Time { return time.Now().Add(payPhotoTTL + time.Minute) }
 
@@ -361,7 +361,7 @@ func TestImageDocumentAccepted(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 
 	if !svc.HandleDocument(ctx, docMsg(777, "img-id", "image/png", "screenshot.png")) {
 		t.Fatal("image document should be handled")
@@ -383,7 +383,7 @@ func TestImageByFilenameAccepted(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 
 	if !svc.HandleDocument(ctx, docMsg(777, "img-id", "application/octet-stream", "IMG_1234.JPG")) {
 		t.Fatal("image-by-filename should be handled")
@@ -404,7 +404,7 @@ func TestCancelCaptionAbortsReceipt(t *testing.T) {
 	enableScreenshot(t, svc)
 
 	// A photo captioned /cancel aborts instead of filing the request.
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	bot.sent = nil
 	m := photoMsg(777, "big-id")
 	m.Caption = "/cancel"
@@ -422,7 +422,7 @@ func TestCancelCaptionAbortsReceipt(t *testing.T) {
 	}
 
 	// Same for a document, even a non-PDF one.
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	bot.sent = nil
 	d := docMsg(777, "zip-id", "application/zip", "oops.zip")
 	d.Caption = " /cancel "
@@ -442,7 +442,7 @@ func TestReceiptCaptionForwardedToAdmins(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 
 	d := docMsg(777, "pdf-id", "application/pdf", "receipt.pdf")
 	d.Caption = "оплатил с карты жены"
@@ -461,7 +461,7 @@ func TestPickWithNilMessageStillRequiresReceipt(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	rememberAlice(t, st)
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 	enableScreenshot(t, svc)
 
 	cb := &tg.CallbackQuery{ID: "cb1", From: tg.User{ID: 777}, Data: "pick:42:3"}
@@ -482,7 +482,7 @@ func TestPickWithNilMessageStillRequiresReceipt(t *testing.T) {
 func TestMidFlowInputBeatsPayPhotoReminder(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
 	ctx := context.Background()
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	svc.setRedeem(777, &redeemState{giftID: 1, months: 1, awaitingUsername: true, createdAt: time.Now()})
 	bot.sent = nil
 
@@ -502,7 +502,7 @@ func TestAllAdminNotifyFailedReportsError(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	enableScreenshot(t, svc)
-	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450)
+	svc.startPayPhotoFlow(ctx, 777, 42, 3, 450, store.PlanStandard)
 	bot.sent = nil
 	bot.sendErrs = map[int64]error{1000: errors.New("telegram down")}
 
@@ -537,7 +537,7 @@ func TestPickAllAdminNotifyFailedAnswersError(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	rememberAlice(t, st)
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 	bot.sendErrs = map[int64]error{1000: errors.New("telegram down")}
 
 	if !svc.HandleCallback(ctx, cbq(777, "pick:42:3")) {
@@ -555,7 +555,7 @@ func TestPickWithoutScreenshotUnchanged(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	rememberAlice(t, st)
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	if !svc.HandleCallback(ctx, cbq(777, "pick:42:3")) {
 		t.Fatal("pick should be handled")
@@ -628,7 +628,7 @@ func TestWebRenewWithScreenshotRequired(t *testing.T) {
 	ctx := context.Background()
 	enableScreenshot(t, svc)
 
-	_, err = svc.CreateRenewRequest(ctx, 777, 42, 1, "")
+	_, err = svc.CreateRenewRequest(ctx, 777, 42, 1, "", "")
 	if !errors.Is(err, ErrScreenshotRequired) {
 		t.Fatalf("expected ErrScreenshotRequired, got %v", err)
 	}

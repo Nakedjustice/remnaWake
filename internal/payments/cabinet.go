@@ -207,7 +207,27 @@ func (s *Service) handleCabinetPay(ctx context.Context, cb *tg.CallbackQuery) bo
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Реквизиты для оплаты:\n\n")+req)
 	}
 
-	tariffs, err := s.store.ListTariffs(ctx)
+	// With custom presets configured, offer the plan chooser first; the pln:
+	// callback then swaps this message's keyboard for the months grid.
+	if plans, err := s.listPlans(ctx); err != nil {
+		s.logger.Error("cabinet: list plans failed", "err", err.Error())
+	} else if len(plans) > 1 {
+		rows := make([][]tg.InlineKeyboardButton, 0, len(plans)+1)
+		for _, p := range plans {
+			rows = append(rows, []tg.InlineKeyboardButton{{
+				Text:         p.Name,
+				CallbackData: fmt.Sprintf("pln:%d:%s", userID, p.Code),
+			}})
+		}
+		rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("Отмена"), CallbackData: "cab:cancel"}})
+		_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID,
+			i18n.T("💳 Продление подписки. Выберите тариф, после оплаты заявка уйдёт администратору:"),
+			&tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+		return true
+	}
+
+	tariffs, err := s.store.ListTariffs(ctx, store.PlanStandard)
 	if err != nil {
 		s.logger.Error("cabinet: list tariffs failed", "err", err.Error())
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
@@ -215,7 +235,7 @@ func (s *Service) handleCabinetPay(ctx context.Context, cb *tg.CallbackQuery) bo
 	}
 	if len(tariffs) == 0 {
 		// No tariffs configured: behave like the legacy single-option flow.
-		s.createRequestAndNotify(ctx, cb, userID, 1, 0)
+		s.createRequestAndNotify(ctx, cb, userID, 1, 0, store.PlanStandard)
 		return true
 	}
 

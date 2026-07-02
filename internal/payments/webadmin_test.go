@@ -23,8 +23,10 @@ func TestWebAdminRejectsNonAdmin(t *testing.T) {
 	calls := map[string]error{}
 	_, err := svc.AdminPanelData(ctx, userTG)
 	calls["AdminPanelData"] = err
-	calls["AdminSetTariff"] = svc.AdminSetTariff(ctx, userTG, 3, 300)
-	calls["AdminDeleteTariff"] = svc.AdminDeleteTariff(ctx, userTG, 3)
+	calls["AdminSetTariff"] = svc.AdminSetTariff(ctx, userTG, "", 3, 300)
+	calls["AdminDeleteTariff"] = svc.AdminDeleteTariff(ctx, userTG, "", 3)
+	calls["AdminSetPlan"] = svc.AdminSetPlan(ctx, userTG, WebAdminPlan{Code: "x", Name: "X"})
+	calls["AdminDeletePlan"] = svc.AdminDeletePlan(ctx, userTG, "x")
 	calls["AdminSetRequisites"] = svc.AdminSetRequisites(ctx, userTG, "x")
 	calls["AdminRevokeGiftCode"] = svc.AdminRevokeGiftCode(ctx, userTG, 1)
 	calls["AdminConfirmRequest"] = svc.AdminConfirmRequest(ctx, userTG, 1)
@@ -261,7 +263,7 @@ func TestAdminPanelData(t *testing.T) {
 	svc, _, _, st := newTestService(t)
 	ctx := context.Background()
 
-	if err := svc.AdminSetTariff(ctx, adminTG, 3, 450); err != nil {
+	if err := svc.AdminSetTariff(ctx, adminTG, "", 3, 450); err != nil {
 		t.Fatalf("set tariff: %v", err)
 	}
 	if err := svc.AdminSetRequisites(ctx, adminTG, "card 1234"); err != nil {
@@ -460,7 +462,7 @@ func TestAdminSetTariffValidatesInput(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	ctx := context.Background()
 	for _, tc := range [][2]int{{0, 100}, {-1, 100}, {3, 0}, {3, -5}} {
-		if err := svc.AdminSetTariff(ctx, adminTG, tc[0], tc[1]); !errors.Is(err, ErrBadInput) {
+		if err := svc.AdminSetTariff(ctx, adminTG, "", tc[0], tc[1]); !errors.Is(err, ErrBadInput) {
 			t.Errorf("months=%d price=%d: err = %v, want ErrBadInput", tc[0], tc[1], err)
 		}
 	}
@@ -470,13 +472,13 @@ func TestAdminDeleteTariff(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	if err := svc.AdminSetTariff(ctx, adminTG, 3, 450); err != nil {
+	if err := svc.AdminSetTariff(ctx, adminTG, "", 3, 450); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	if err := svc.AdminDeleteTariff(ctx, adminTG, 3); err != nil {
+	if err := svc.AdminDeleteTariff(ctx, adminTG, "", 3); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if err := svc.AdminDeleteTariff(ctx, adminTG, 3); !errors.Is(err, ErrTariffUnknown) {
+	if err := svc.AdminDeleteTariff(ctx, adminTG, "", 3); !errors.Is(err, ErrTariffUnknown) {
 		t.Fatalf("delete missing: err = %v, want ErrTariffUnknown", err)
 	}
 }

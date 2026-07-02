@@ -16,10 +16,22 @@ type Store struct {
 
 const schema = `
 CREATE TABLE IF NOT EXISTS tariffs (
-  months     INTEGER PRIMARY KEY,
+  plan       TEXT NOT NULL DEFAULT 'standard',
+  months     INTEGER NOT NULL,
   price      INTEGER NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (plan, months)
+);
+CREATE TABLE IF NOT EXISTS plans (
+  code         TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,
+  tag          TEXT NOT NULL DEFAULT '',
+  squad_uuid   TEXT NOT NULL DEFAULT '',
+  traffic_gb   INTEGER NOT NULL DEFAULT 0,
+  device_limit INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS notified_users (
   remnawave_user_id INTEGER PRIMARY KEY,
@@ -46,7 +58,8 @@ CREATE TABLE IF NOT EXISTS payment_requests (
   screenshot_file_id TEXT NOT NULL DEFAULT '',
   screenshot_is_document INTEGER NOT NULL DEFAULT 0,
   provider           TEXT NOT NULL DEFAULT 'p2p',
-  provider_txn_id    TEXT NOT NULL DEFAULT ''
+  provider_txn_id    TEXT NOT NULL DEFAULT '',
+  plan               TEXT NOT NULL DEFAULT 'standard'
 );
 CREATE TABLE IF NOT EXISTS invite_requests (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,6 +68,7 @@ CREATE TABLE IF NOT EXISTS invite_requests (
   new_username        TEXT NOT NULL,
   months              INTEGER NOT NULL DEFAULT 1,
   price               INTEGER NOT NULL DEFAULT 0,
+  plan                TEXT NOT NULL DEFAULT 'standard',
   status              TEXT NOT NULL,
   created_at          TEXT NOT NULL,
   resolved_at         TEXT
@@ -75,6 +89,7 @@ CREATE TABLE IF NOT EXISTS gift_codes (
   buyer_username       TEXT NOT NULL DEFAULT '',
   months               INTEGER NOT NULL,
   price                INTEGER NOT NULL DEFAULT 0,
+  plan                 TEXT NOT NULL DEFAULT 'standard',
   status               TEXT NOT NULL,
   redeemer_telegram_id INTEGER NOT NULL DEFAULT 0,
   redeemed_username    TEXT NOT NULL DEFAULT '',
@@ -180,6 +195,14 @@ func New(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate payment request indexes: %w", err)
 	}
+	if err := ensureTariffPlanColumn(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate tariffs plan column: %w", err)
+	}
+	if err := ensurePlanColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate plan columns: %w", err)
+	}
 	return &Store{db: db}, nil
 }
 
@@ -189,12 +212,11 @@ func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
 func parseTime(s string) (time.Time, error) { return time.Parse(time.RFC3339, s) }
 
-// ensurePaymentRequestColumns adds the payer_* columns to payment_requests when
-// an older database created the table without them. Idempotent.
-func ensurePaymentRequestColumns(db *sql.DB) error {
-	rows, err := db.Query(`PRAGMA table_info(payment_requests)`)
+// tableColumns returns the set of column names of table.
+func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -206,11 +228,18 @@ func ensurePaymentRequestColumns(db *sql.DB) error {
 			dflt             sql.NullString
 		)
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return err
+			return nil, err
 		}
 		existing[name] = true
 	}
-	if err := rows.Err(); err != nil {
+	return existing, rows.Err()
+}
+
+// ensurePaymentRequestColumns adds the payer_* columns to payment_requests when
+// an older database created the table without them. Idempotent.
+func ensurePaymentRequestColumns(db *sql.DB) error {
+	existing, err := tableColumns(db, "payment_requests")
+	if err != nil {
 		return err
 	}
 
@@ -241,6 +270,69 @@ func ensurePaymentRequestColumns(db *sql.DB) error {
 	}
 	if !existing["provider_txn_id"] {
 		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN provider_txn_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureTariffPlanColumn rebuilds the tariffs table with the composite
+// (plan, months) primary key when an older database still has months as the
+// sole key. SQLite cannot alter a primary key in place, so the table is
+// copied; existing rows become the 'standard' plan. Idempotent.
+func ensureTariffPlanColumn(db *sql.DB) error {
+	existing, err := tableColumns(db, "tariffs")
+	if err != nil {
+		return err
+	}
+	if existing["plan"] {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`
+		CREATE TABLE tariffs_new (
+		  plan       TEXT NOT NULL DEFAULT 'standard',
+		  months     INTEGER NOT NULL,
+		  price      INTEGER NOT NULL,
+		  created_at TEXT NOT NULL,
+		  updated_at TEXT NOT NULL,
+		  PRIMARY KEY (plan, months)
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO tariffs_new (plan, months, price, created_at, updated_at)
+		SELECT 'standard', months, price, created_at, updated_at FROM tariffs
+	`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DROP TABLE tariffs`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE tariffs_new RENAME TO tariffs`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ensurePlanColumns adds the plan column to the request tables when an older
+// database created them without it. Idempotent.
+func ensurePlanColumns(db *sql.DB) error {
+	for _, table := range []string{"payment_requests", "invite_requests", "gift_codes"} {
+		existing, err := tableColumns(db, table)
+		if err != nil {
+			return err
+		}
+		if existing["plan"] {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN plan TEXT NOT NULL DEFAULT 'standard'`); err != nil {
 			return err
 		}
 	}

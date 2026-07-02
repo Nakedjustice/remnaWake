@@ -156,6 +156,13 @@ func (c *Client) UpdateUser(ctx context.Context, uuid string, patch UserPatch) e
 	if patch.ActiveInternalSquads != nil {
 		payload["activeInternalSquads"] = *patch.ActiveInternalSquads
 	}
+	if patch.Tag != nil {
+		if *patch.Tag == "" {
+			payload["tag"] = nil
+		} else {
+			payload["tag"] = *patch.Tag
+		}
+	}
 	return c.patchUser(ctx, payload, "update user")
 }
 
@@ -215,6 +222,7 @@ type CreateUserSpec struct {
 	TrafficLimitBytes    int64
 	TrafficLimitStrategy string
 	HwidDeviceLimit      int
+	Tag                  string
 }
 
 func (c *Client) CreateUser(ctx context.Context, spec CreateUserSpec) (*User, error) {
@@ -232,6 +240,9 @@ func (c *Client) CreateUser(ctx context.Context, spec CreateUserSpec) (*User, er
 	}
 	if len(spec.SquadUUIDs) > 0 {
 		reqBody["activeInternalSquads"] = spec.SquadUUIDs
+	}
+	if spec.Tag != "" {
+		reqBody["tag"] = spec.Tag
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {

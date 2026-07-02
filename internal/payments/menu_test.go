@@ -67,8 +67,8 @@ func TestSendMenuWithWebAppHidesAllButRegister(t *testing.T) {
 func TestSendTariffsListsPrices(t *testing.T) {
 	svc, bot, _, st := newMenuService(t)
 	ctx := context.Background()
-	_ = st.UpsertTariff(ctx, 1, 150)
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 1, 150)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	if !svc.SendTariffs(ctx, 200) {
 		t.Fatal("tariffs should be sent")
@@ -95,7 +95,7 @@ func TestSendTariffsEmpty(t *testing.T) {
 func TestMenuTariffsButtonLists(t *testing.T) {
 	svc, bot, _, st := newMenuService(t)
 	ctx := context.Background()
-	_ = st.UpsertTariff(ctx, 6, 800)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 6, 800)
 
 	cb := &tg.CallbackQuery{ID: "c", From: tg.User{ID: 200},
 		Message: &tg.Message{MessageID: 5, Chat: tg.Chat{ID: 200}}, Data: "menu:tariffs"}

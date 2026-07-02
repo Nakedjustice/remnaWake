@@ -42,7 +42,7 @@ func TestCreateGiftRequestHappyPath(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	svc.finder = linkedFinder(42, "alice")
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	if err := svc.CreateGiftRequest(ctx, 42, 3); err != nil {
 		t.Fatalf("CreateGiftRequest: %v", err)
@@ -78,7 +78,7 @@ func TestCreateGiftRequestErrors(t *testing.T) {
 	svc, _, _, st := newTestService(t)
 	ctx := context.Background()
 	svc.finder = linkedFinder(42, "alice")
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	if err := svc.CreateGiftRequest(ctx, 42, 0); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("months=0: err=%v, want ErrBadInput", err)
@@ -119,7 +119,7 @@ func TestCreateInviteRequestHappyPath(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	svc.finder = linkedFinder(42, "alice")
-	_ = st.UpsertTariff(ctx, 1, 150)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 1, 150)
 
 	if err := svc.CreateInviteRequest(ctx, 42, "newbie_01"); err != nil {
 		t.Fatalf("CreateInviteRequest: %v", err)

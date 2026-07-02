@@ -45,11 +45,11 @@ func (s *Service) starsInvoiceContent(username string, months, price int) (title
 // startStarsPayment creates a pending Telegram Stars payment request (no admin
 // DM) and returns its id. The invoice itself is sent separately so both the
 // chat flow (SendInvoice) and the Mini App flow (CreateInvoiceLink) can reuse it.
-func (s *Service) startStarsPayment(ctx context.Context, u *store.NotifiedUser, months, price int) (int64, error) {
+func (s *Service) startStarsPayment(ctx context.Context, u *store.NotifiedUser, months, price int, plan string) (int64, error) {
 	reqID, err := s.store.CreatePaymentRequest(ctx, store.PaymentRequest{
 		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
 		TelegramID: u.TelegramID, Months: months, Price: price,
-		ExpireAt: u.ExpireAt, Status: "pending", Provider: ProviderTelegramStars,
+		ExpireAt: u.ExpireAt, Status: "pending", Provider: ProviderTelegramStars, Plan: plan,
 	})
 	if err != nil {
 		s.logger.Error("stars: create payment request failed", "err", err.Error())
@@ -72,13 +72,13 @@ func reqIDFromPayload(payload string) (int64, error) {
 // startStarsAndPrompt opens a Telegram Stars payment from a bot callback and
 // sends the user a native Stars invoice. Used by the pick / cabinet flows when
 // Telegram Stars is the chosen provider.
-func (s *Service) startStarsAndPrompt(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, months, price int) {
+func (s *Service) startStarsAndPrompt(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, months, price int, plan string) {
 	chatID := cb.From.ID
 	if cb.Message != nil {
 		chatID = cb.Message.Chat.ID
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
-	reqID, err := s.startStarsPayment(ctx, u, months, price)
+	reqID, err := s.startStarsPayment(ctx, u, months, price, plan)
 	if err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
 		return
@@ -98,8 +98,8 @@ func (s *Service) startStarsAndPrompt(ctx context.Context, cb *tg.CallbackQuery,
 
 // startStarsInvoiceLink opens a Telegram Stars payment for the Mini App and
 // returns an invoice link the app opens with Telegram.WebApp.openInvoice.
-func (s *Service) startStarsInvoiceLink(ctx context.Context, u *store.NotifiedUser, months, price int) (string, error) {
-	reqID, err := s.startStarsPayment(ctx, u, months, price)
+func (s *Service) startStarsInvoiceLink(ctx context.Context, u *store.NotifiedUser, months, price int, plan string) (string, error) {
+	reqID, err := s.startStarsPayment(ctx, u, months, price, plan)
 	if err != nil {
 		return "", err
 	}

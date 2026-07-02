@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
+	"github.com/Nakedjustice/remnaWake/internal/store"
 )
 
 // WebAdminGift is one active gift code as shown in the mini app admin panel.
@@ -78,9 +79,25 @@ type WebAdminTrialRequest struct {
 	CreatedAt  string `json:"created_at"` // DD.MM.YYYY
 }
 
+// WebAdminPlan is one admin-defined tariff preset as shown (and edited) in the
+// mini app admin panel. The squad is exposed as a UUID; the frontend maps it
+// to a name via the squad list it already loads for the default-squad picker.
+type WebAdminPlan struct {
+	Code        string      `json:"code"`
+	Name        string      `json:"name"`
+	Tag         string      `json:"tag"`
+	SquadUUID   string      `json:"squad_uuid"`
+	TrafficGB   int         `json:"traffic_gb"`
+	DeviceLimit int         `json:"device_limit"`
+	Tariffs     []WebTariff `json:"tariffs,omitempty"`
+}
+
 // WebAdminPanel is the full /api/admin payload for the mini app.
 type WebAdminPanel struct {
-	Tariffs        []WebTariff             `json:"tariffs"`
+	Tariffs []WebTariff `json:"tariffs"`
+	// Plans lists the custom tariff presets (the built-in standard plan is the
+	// top-level Tariffs grid and is not editable here).
+	Plans          []WebAdminPlan          `json:"plans,omitempty"`
 	Requisites     string                  `json:"requisites"`
 	GiftBuyers     []WebAdminGiftBuyer     `json:"gift_buyers"`
 	Requests       []WebAdminRequest       `json:"requests"`
@@ -154,12 +171,26 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	}
 	out := &WebAdminPanel{}
 
-	tariffs, err := s.store.ListTariffs(ctx)
+	allTariffs, err := s.store.ListAllTariffs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list tariffs: %w", err)
 	}
-	for _, t := range tariffs {
-		out.Tariffs = append(out.Tariffs, WebTariff{Months: t.Months, Price: t.Price, PriceLabel: s.priceLabel(t.Price)})
+	tariffsByPlan := map[string][]WebTariff{}
+	for _, t := range allTariffs {
+		tariffsByPlan[t.Plan] = append(tariffsByPlan[t.Plan], WebTariff{Months: t.Months, Price: t.Price, PriceLabel: s.priceLabel(t.Price)})
+	}
+	out.Tariffs = tariffsByPlan[store.PlanStandard]
+
+	plans, err := s.store.ListPlans(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list plans: %w", err)
+	}
+	for _, p := range plans {
+		out.Plans = append(out.Plans, WebAdminPlan{
+			Code: p.Code, Name: p.Name, Tag: p.Tag, SquadUUID: p.SquadUUID,
+			TrafficGB: p.TrafficGB, DeviceLimit: p.DeviceLimit,
+			Tariffs: tariffsByPlan[p.Code],
+		})
 	}
 
 	s.mu.Lock()
@@ -347,31 +378,109 @@ func (s *Service) AdminSetUpdateInterval(ctx context.Context, telegramID int64, 
 	return checker.SetInterval(ctx, interval)
 }
 
-// AdminSetTariff adds or updates a tariff from the mini app admin panel.
-func (s *Service) AdminSetTariff(ctx context.Context, telegramID int64, months, price int) error {
+// AdminSetTariff adds or updates a tariff from the mini app admin panel. An
+// empty plan targets the built-in standard grid; a custom plan must exist.
+func (s *Service) AdminSetTariff(ctx context.Context, telegramID int64, plan string, months, price int) error {
 	if err := s.adminGuard(telegramID); err != nil {
 		return err
 	}
 	if months < 1 || price < 1 {
 		return ErrBadInput
 	}
-	if err := s.store.UpsertTariff(ctx, months, price); err != nil {
+	planDef, err := s.getPlan(ctx, plan)
+	if err != nil {
+		return err
+	}
+	if err := s.store.UpsertTariff(ctx, planDef.Code, months, price); err != nil {
 		return fmt.Errorf("upsert tariff: %w", err)
 	}
 	return nil
 }
 
 // AdminDeleteTariff removes a tariff from the mini app admin panel.
-func (s *Service) AdminDeleteTariff(ctx context.Context, telegramID int64, months int) error {
+func (s *Service) AdminDeleteTariff(ctx context.Context, telegramID int64, plan string, months int) error {
 	if err := s.adminGuard(telegramID); err != nil {
 		return err
 	}
-	deleted, err := s.store.DeleteTariff(ctx, months)
+	planDef, err := s.getPlan(ctx, plan)
+	if err != nil {
+		return err
+	}
+	deleted, err := s.store.DeleteTariff(ctx, planDef.Code, months)
 	if err != nil {
 		return fmt.Errorf("delete tariff: %w", err)
 	}
 	if !deleted {
 		return ErrTariffUnknown
+	}
+	return nil
+}
+
+// AdminSetPlan creates or updates a custom tariff preset from the mini app
+// admin panel. The built-in standard plan is not editable; the tag must match
+// the panel's tag rules (uppercase) or be empty; a non-empty squad UUID must
+// name an existing internal squad.
+func (s *Service) AdminSetPlan(ctx context.Context, telegramID int64, in WebAdminPlan) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	code := strings.ToLower(strings.TrimSpace(in.Code))
+	name := strings.TrimSpace(in.Name)
+	tag := strings.ToUpper(strings.TrimSpace(in.Tag))
+	if code == store.PlanStandard || !planCodePattern.MatchString(code) {
+		return ErrBadInput
+	}
+	if name == "" || in.TrafficGB < 0 || in.DeviceLimit < 0 {
+		return ErrBadInput
+	}
+	if tag != "" && !planTagPattern.MatchString(tag) {
+		return ErrBadInput
+	}
+	squadUUID := strings.TrimSpace(in.SquadUUID)
+	if squadUUID != "" {
+		if s.squads == nil {
+			return ErrPanelUnavailable
+		}
+		squads, err := s.squads.GetInternalSquads(ctx)
+		if err != nil {
+			s.logger.Error("set plan: list squads failed", "err", err.Error())
+			return fmt.Errorf("%w: %v", ErrPanelUnavailable, err)
+		}
+		known := false
+		for _, sq := range squads {
+			if sq.UUID == squadUUID {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return ErrBadInput
+		}
+	}
+	if err := s.store.UpsertPlan(ctx, store.Plan{
+		Code: code, Name: name, Tag: tag, SquadUUID: squadUUID,
+		TrafficGB: in.TrafficGB, DeviceLimit: in.DeviceLimit,
+	}); err != nil {
+		return fmt.Errorf("upsert plan: %w", err)
+	}
+	return nil
+}
+
+// AdminDeletePlan removes a custom tariff preset together with its price grid.
+func (s *Service) AdminDeletePlan(ctx context.Context, telegramID int64, code string) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	code = strings.ToLower(strings.TrimSpace(code))
+	if code == "" || code == store.PlanStandard {
+		return ErrBadInput
+	}
+	deleted, err := s.store.DeletePlan(ctx, code)
+	if err != nil {
+		return fmt.Errorf("delete plan: %w", err)
+	}
+	if !deleted {
+		return ErrPlanUnknown
 	}
 	return nil
 }

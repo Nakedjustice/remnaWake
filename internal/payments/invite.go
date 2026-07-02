@@ -123,7 +123,7 @@ func (s *Service) handleInviteUsernameInput(ctx context.Context, m *tg.Message) 
 		return true
 	}
 
-	tariff, err := s.store.GetTariff(ctx, 1)
+	tariff, err := s.store.GetTariff(ctx, store.PlanStandard, 1)
 	if err != nil {
 		s.logger.Error("invite: get tariff failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))

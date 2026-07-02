@@ -59,7 +59,7 @@ func TestGiftCodePurchaseHappyPath(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	seedBuyer(svc, 555)
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	if !svc.StartGiftCodeFlow(ctx, msg(555, "/gift")) {
 		t.Fatal("/gift should be handled")
@@ -101,7 +101,7 @@ func TestGiftCodeApproveSendsDeepLink(t *testing.T) {
 	ctx := context.Background()
 	seedBuyer(svc, 555)
 	svc.SetBotUsername("testbot")
-	_ = st.UpsertTariff(ctx, 3, 450)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 3, 450)
 
 	svc.StartGiftCodeFlow(ctx, msg(555, "/gift"))
 	svc.HandleCallback(ctx, &tg.CallbackQuery{ID: "c", From: tg.User{ID: 555},

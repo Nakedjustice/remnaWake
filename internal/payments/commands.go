@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
+	"github.com/Nakedjustice/remnaWake/internal/store"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
@@ -189,7 +190,7 @@ func (s *Service) consumeTariffPrice(ctx context.Context, chatID int64, text str
 	months := s.adminInput[chatID].pendingMonths
 	delete(s.adminInput, chatID)
 	s.mu.Unlock()
-	if err := s.store.UpsertTariff(ctx, months, price); err != nil {
+	if err := s.store.UpsertTariff(ctx, store.PlanStandard, months, price); err != nil {
 		s.logger.Error("upsert tariff failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения тарифа."))
 		return true
@@ -199,22 +200,17 @@ func (s *Service) consumeTariffPrice(ctx context.Context, chatID int64, text str
 }
 
 func (s *Service) cmdListTariffs(ctx context.Context, chatID int64) {
-	tariffs, err := s.store.ListTariffs(ctx)
+	text, any, err := s.formatTariffListing(ctx)
 	if err != nil {
 		s.logger.Error("list tariffs failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения тарифов."))
 		return
 	}
-	if len(tariffs) == 0 {
+	if !any {
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Тарифы не заданы. Добавьте: /settariff <месяцев> <цена>"))
 		return
 	}
-	var b strings.Builder
-	b.WriteString(i18n.T("Тарифы:\n"))
-	for _, t := range tariffs {
-		b.WriteString(fmt.Sprintf(i18n.T("%d мес. — %s\n"), t.Months, s.priceLabel(t.Price)))
-	}
-	_ = s.bot.SendPlain(ctx, chatID, strings.TrimRight(b.String(), "\n"))
+	_ = s.bot.SendPlain(ctx, chatID, text)
 }
 
 func (s *Service) cmdSetTariff(ctx context.Context, chatID int64, fields []string) {
@@ -228,7 +224,7 @@ func (s *Service) cmdSetTariff(ctx context.Context, chatID int64, fields []strin
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Месяцев — целое ≥ 1, цена — целое ≥ 0. Пример: /settariff 3 450"))
 		return
 	}
-	if err := s.store.UpsertTariff(ctx, months, price); err != nil {
+	if err := s.store.UpsertTariff(ctx, store.PlanStandard, months, price); err != nil {
 		s.logger.Error("upsert tariff failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения тарифа."))
 		return
@@ -291,7 +287,7 @@ func (s *Service) cmdDelTariff(ctx context.Context, chatID int64, fields []strin
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Месяцев — целое ≥ 1. Пример: /deltariff 3"))
 		return
 	}
-	deleted, err := s.store.DeleteTariff(ctx, months)
+	deleted, err := s.store.DeleteTariff(ctx, store.PlanStandard, months)
 	if err != nil {
 		s.logger.Error("delete tariff failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка удаления тарифа."))

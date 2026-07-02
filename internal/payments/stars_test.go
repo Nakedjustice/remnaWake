@@ -70,7 +70,7 @@ func TestStartStarsAndPromptSendsInvoice(t *testing.T) {
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	cb := &tg.CallbackQuery{ID: "cb1", From: tg.User{ID: 555},
 		Message: &tg.Message{MessageID: 1, Chat: tg.Chat{ID: 555}}}
-	svc.startStarsAndPrompt(ctx, cb, u, 2, 300)
+	svc.startStarsAndPrompt(ctx, cb, u, 2, 300, store.PlanStandard)
 
 	if len(bot.invoices) != 1 {
 		t.Fatalf("invoices = %d, want 1", len(bot.invoices))
@@ -103,7 +103,7 @@ func TestStartStarsAndPromptWithdrawsOnSendError(t *testing.T) {
 	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	cb := &tg.CallbackQuery{ID: "cb1", From: tg.User{ID: 555}}
-	svc.startStarsAndPrompt(ctx, cb, u, 1, 100)
+	svc.startStarsAndPrompt(ctx, cb, u, 1, 100, store.PlanStandard)
 
 	// The dangling pending request must have been withdrawn (id 1 not present).
 	if got, _ := st.GetPaymentRequest(ctx, 1); got != nil {
@@ -118,7 +118,7 @@ func TestPreCheckoutAcksPendingAndRejectsStale(t *testing.T) {
 
 	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
-	reqID, err := svc.startStarsPayment(ctx, u, 1, 100) // 2 stars
+	reqID, err := svc.startStarsPayment(ctx, u, 1, 100, store.PlanStandard) // 2 stars
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestSuccessfulPaymentConfirmsAndIsIdempotent(t *testing.T) {
 
 	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
-	reqID, err := svc.startStarsPayment(ctx, u, 1, 100)
+	reqID, err := svc.startStarsPayment(ctx, u, 1, 100, store.PlanStandard)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestHandlePayViaRoutesToStars(t *testing.T) {
 	if err := st.UpsertNotifiedUser(ctx, u); err != nil {
 		t.Fatalf("remember user: %v", err)
 	}
-	if err := st.UpsertTariff(ctx, 2, 300); err != nil {
+	if err := st.UpsertTariff(ctx, store.PlanStandard, 2, 300); err != nil {
 		t.Fatalf("tariff: %v", err)
 	}
 
@@ -273,11 +273,11 @@ func TestCreateRenewRequestStarsReturnsInvoiceLink(t *testing.T) {
 		555: {{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
 			ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
-	if err := st.UpsertTariff(ctx, 1, 100); err != nil {
+	if err := st.UpsertTariff(ctx, store.PlanStandard, 1, 100); err != nil {
 		t.Fatalf("tariff: %v", err)
 	}
 
-	res, err := svc.CreateRenewRequest(ctx, 555, 7, 1, "")
+	res, err := svc.CreateRenewRequest(ctx, 555, 7, 1, "", "")
 	if err != nil {
 		t.Fatalf("renew: %v", err)
 	}
@@ -297,12 +297,12 @@ func TestCreateRenewRequestChoosesProvider(t *testing.T) {
 		555: {{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
 			ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
-	if err := st.UpsertTariff(ctx, 1, 100); err != nil {
+	if err := st.UpsertTariff(ctx, store.PlanStandard, 1, 100); err != nil {
 		t.Fatalf("tariff: %v", err)
 	}
 
 	// p2p + stars enabled, no provider chosen -> chooser.
-	res, err := svc.CreateRenewRequest(ctx, 555, 7, 1, "")
+	res, err := svc.CreateRenewRequest(ctx, 555, 7, 1, "", "")
 	if err != nil {
 		t.Fatalf("renew: %v", err)
 	}
