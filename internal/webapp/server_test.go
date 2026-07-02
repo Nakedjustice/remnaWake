@@ -17,21 +17,22 @@ import (
 )
 
 type fakeCabinet struct {
-	data        *payments.WebCabinet
-	renewErr    error
-	renewResult *payments.RenewResult
-	renewed     []int64
-	giftErr     error
-	gifted      []int
-	inviteErr   error
-	invited     []string
-	notifErr    error
-	notifSet    []string // "<kind>:<muted>" per call
-	trialErr    error
-	trialResult *payments.WebTrialResult
-	trialNames  []string
-	parityErr   error
-	receipt     payments.WebReceipt
+	data           *payments.WebCabinet
+	renewErr       error
+	renewResult    *payments.RenewResult
+	renewed        []int64
+	renewConfirmed []bool
+	giftErr        error
+	gifted         []int
+	inviteErr      error
+	invited        []string
+	notifErr       error
+	notifSet       []string // "<kind>:<muted>" per call
+	trialErr       error
+	trialResult    *payments.WebTrialResult
+	trialNames     []string
+	parityErr      error
+	receipt        payments.WebReceipt
 }
 
 func TestWebParityJSONRoutes(t *testing.T) {
@@ -110,8 +111,9 @@ func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabi
 	return f.data, nil
 }
 
-func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int, _, _ string) (*payments.RenewResult, error) {
+func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int, _, _ string, planChangeConfirmed bool) (*payments.RenewResult, error) {
 	f.renewed = append(f.renewed, remnawaveID)
+	f.renewConfirmed = append(f.renewConfirmed, planChangeConfirmed)
 	return f.renewResult, f.renewErr
 }
 
@@ -527,6 +529,38 @@ func TestHandleRenewAwaitingScreenshot(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if got["status"] != "awaiting_screenshot" {
+		t.Fatalf("unexpected payload: %v", got)
+	}
+}
+
+func TestHandleRenewPlanChangePreview(t *testing.T) {
+	cab := &fakeCabinet{renewResult: &payments.RenewResult{
+		Status: payments.RenewStatusPlanChangePreview,
+		PlanChange: &payments.PlanChangePreview{
+			Kind:            payments.PlanChangeUpgradeRecalculation,
+			CurrentPlan:     "Basic",
+			TargetPlan:      "Standard",
+			CurrentExpireAt: "01.09.2026",
+			NewExpireAt:     "24.07.2026",
+		},
+	}}
+	srv := newTestServer(cab)
+	req := httptest.NewRequest("POST", "/api/renew", strings.NewReader(`{"remnawave_id":7,"months":1,"plan_change_confirmed":true}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if len(cab.renewConfirmed) != 1 || !cab.renewConfirmed[0] {
+		t.Fatalf("plan_change_confirmed was not forwarded: %+v", cab.renewConfirmed)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	change, _ := got["plan_change"].(map[string]any)
+	if got["status"] != payments.RenewStatusPlanChangePreview || change["new_expire_at"] != "24.07.2026" {
 		t.Fatalf("unexpected payload: %v", got)
 	}
 }

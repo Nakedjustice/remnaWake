@@ -93,6 +93,192 @@ func TestConfirmStampsStandardPlan(t *testing.T) {
 	}
 }
 
+func TestConfirmProratesRemainingTimeOnUpgrade(t *testing.T) {
+	svc, _, ext, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	if err := st.UpsertPlan(ctx, store.Plan{
+		Code: "basic", Name: "Базовый", Tag: "BASIC", TrafficGB: 30, DeviceLimit: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 3, Price: 300, ExpireAt: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+		Plan: "basic",
+	})
+	if err != nil {
+		t.Fatalf("create previous: %v", err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(ctx, prevID, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)); err != nil || !ok {
+		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
+	}
+
+	// Existing cheap time: 2026-06-01 -> 2026-09-01 = 92 days.
+	// Basic was paid at 100/month, standard is 400/month, so the remaining time
+	// is worth 23 standard days. Buying 1 standard month yields 2026-07-24.
+	upgradeID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 1, Price: 400, ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+		Plan: store.PlanStandard,
+	})
+	if err != nil {
+		t.Fatalf("create upgrade: %v", err)
+	}
+	_, newExpireAt, err := svc.confirmPaymentRequest(ctx, upgradeID)
+	if err != nil {
+		t.Fatalf("confirm upgrade: %v", err)
+	}
+
+	want := time.Date(2026, 7, 24, 0, 0, 0, 0, time.UTC)
+	if !newExpireAt.Equal(want) {
+		t.Fatalf("newExpireAt = %s, want %s", newExpireAt, want)
+	}
+	if ext.calls != 1 || ext.uuid != "uuid-42" || !ext.expire.Equal(want) {
+		t.Fatalf("panel expiry = %s calls=%d uuid=%q, want %s / uuid-42", ext.expire, ext.calls, ext.uuid, want)
+	}
+}
+
+func TestConfirmDoesNotProrateSamePlanRenewal(t *testing.T) {
+	svc, _, ext, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 1, Price: 400, ExpireAt: now, Plan: store.PlanStandard,
+	})
+	if err != nil {
+		t.Fatalf("create previous: %v", err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(ctx, prevID, now.Add(-24*time.Hour)); err != nil || !ok {
+		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
+	}
+
+	reqID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 1, Price: 400, ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+		Plan: store.PlanStandard,
+	})
+	if err != nil {
+		t.Fatalf("create renewal: %v", err)
+	}
+	_, newExpireAt, err := svc.confirmPaymentRequest(ctx, reqID)
+	if err != nil {
+		t.Fatalf("confirm renewal: %v", err)
+	}
+
+	want := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	if !newExpireAt.Equal(want) || !ext.expire.Equal(want) {
+		t.Fatalf("newExpireAt = %s panel = %s, want %s", newExpireAt, ext.expire, want)
+	}
+}
+
+func TestRenewalPlanChangePreviewUpgrade(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	if err := st.UpsertPlan(ctx, store.Plan{Code: "basic", Name: "Базовый"}); err != nil {
+		t.Fatal(err)
+	}
+	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 3, Price: 300, ExpireAt: now, Plan: "basic",
+	})
+	if err != nil {
+		t.Fatalf("create previous: %v", err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(ctx, prevID, now.Add(-24*time.Hour)); err != nil || !ok {
+		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
+	}
+
+	req := &store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 1, Price: 400, ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+		Plan: store.PlanStandard,
+	}
+	preview := svc.renewalPlanChangePreview(ctx, req, true)
+	if preview == nil || preview.Kind != PlanChangeUpgradeRecalculation {
+		t.Fatalf("preview = %+v, want upgrade recalculation", preview)
+	}
+	if preview.CurrentPlan != "Базовый" || preview.TargetPlan != "Стандарт" {
+		t.Fatalf("plan names = %q -> %q", preview.CurrentPlan, preview.TargetPlan)
+	}
+	if preview.NewExpireAt != "24.07.2026" {
+		t.Fatalf("new expiry = %q, want 24.07.2026", preview.NewExpireAt)
+	}
+}
+
+func TestRenewalPlanChangePreviewDowngrade(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	if err := st.UpsertPlan(ctx, store.Plan{Code: "basic", Name: "Базовый"}); err != nil {
+		t.Fatal(err)
+	}
+	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 1, Price: 400, ExpireAt: now, Plan: store.PlanStandard,
+	})
+	if err != nil {
+		t.Fatalf("create previous: %v", err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(ctx, prevID, now.Add(-24*time.Hour)); err != nil || !ok {
+		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
+	}
+
+	req := &store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 1, Price: 100, ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+		Plan: "basic",
+	}
+	newExpireAt, preview := svc.renewalPlanChange(ctx, req, true)
+	want := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	if !newExpireAt.Equal(want) {
+		t.Fatalf("newExpireAt = %s, want %s", newExpireAt, want)
+	}
+	if preview == nil || preview.Kind != PlanChangeDowngradeImmediate {
+		t.Fatalf("preview = %+v, want downgrade immediate", preview)
+	}
+	if preview.NewExpireAt != "01.10.2026" {
+		t.Fatalf("preview expiry = %q, want 01.10.2026", preview.NewExpireAt)
+	}
+}
+
+func TestRenewalPlanChangePreviewSamePlanNil(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 1, Price: 400, ExpireAt: now, Plan: store.PlanStandard,
+	})
+	if err != nil {
+		t.Fatalf("create previous: %v", err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(ctx, prevID, now.Add(-24*time.Hour)); err != nil || !ok {
+		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
+	}
+
+	req := &store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 1, Price: 400, ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+		Plan: store.PlanStandard,
+	}
+	if preview := svc.renewalPlanChangePreview(ctx, req, true); preview != nil {
+		t.Fatalf("same-plan preview = %+v, want nil", preview)
+	}
+}
+
 // TestConfirmDeletedPlanExtendsOnly verifies that a plan deleted between
 // purchase and confirm never silently alters limits: only the expiry is
 // patched and the confirm still succeeds.
@@ -238,6 +424,107 @@ func TestPayViaCarriesPlan(t *testing.T) {
 	}
 }
 
+func TestBotPlanChangeRequiresConfirmation(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	if err := st.UpsertPlan(ctx, store.Plan{Code: "basic", Name: "Базовый"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.UpsertTariff(ctx, "basic", 3, 300)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 1, 400)
+	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 3, Price: 300, ExpireAt: now, Plan: "basic",
+	})
+	if err != nil {
+		t.Fatalf("create previous: %v", err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(ctx, prevID, now.Add(-24*time.Hour)); err != nil || !ok {
+		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
+	}
+	if err := st.UpsertNotifiedUser(ctx, store.NotifiedUser{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("remember: %v", err)
+	}
+
+	if !svc.HandleCallback(ctx, cbq(777, "pick:42:1")) {
+		t.Fatal("pick should be handled")
+	}
+	recs, _ := st.ListPaymentRequestsByStatus(ctx, "pending")
+	if len(recs) != 0 {
+		t.Fatalf("request created before confirmation: %+v", recs)
+	}
+	edit := bot.edits[len(bot.edits)-1]
+	if !strings.Contains(edit.Text, "Переход на более дорогой тариф") {
+		t.Fatalf("warning text missing upgrade copy:\n%s", edit.Text)
+	}
+	if edit.Keyboard == nil || edit.Keyboard.InlineKeyboard[0][0].CallbackData != "chgv:42:1:p2p:standard" {
+		t.Fatalf("confirmation keyboard = %+v", edit.Keyboard)
+	}
+
+	if !svc.HandleCallback(ctx, cbq(777, "chgv:42:1:p2p:standard")) {
+		t.Fatal("confirmation should be handled")
+	}
+	recs, _ = st.ListPaymentRequestsByStatus(ctx, "pending")
+	if len(recs) != 1 || recs[0].Plan != store.PlanStandard || recs[0].Price != 400 {
+		t.Fatalf("confirmed request = %+v", recs)
+	}
+}
+
+func TestStalePayViaPlanChangeRequiresConfirmation(t *testing.T) {
+	svc, bot, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	if err := st.UpsertPlan(ctx, store.Plan{Code: "basic", Name: "Базовый"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.UpsertTariff(ctx, "basic", 3, 300)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 1, 400)
+	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 3, Price: 300, ExpireAt: now, Plan: "basic",
+	})
+	if err != nil {
+		t.Fatalf("create previous: %v", err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(ctx, prevID, now.Add(-24*time.Hour)); err != nil || !ok {
+		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
+	}
+	if err := st.UpsertNotifiedUser(ctx, store.NotifiedUser{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("remember: %v", err)
+	}
+
+	if !svc.HandleCallback(ctx, cbq(777, "payvia:42:1:p2p")) {
+		t.Fatal("payvia should be handled")
+	}
+	recs, _ := st.ListPaymentRequestsByStatus(ctx, "pending")
+	if len(recs) != 0 {
+		t.Fatalf("stale provider callback created request before confirmation: %+v", recs)
+	}
+	edit := bot.edits[len(bot.edits)-1]
+	if edit.Keyboard == nil || edit.Keyboard.InlineKeyboard[0][0].CallbackData != "chgv:42:1:p2p:standard" {
+		t.Fatalf("provider confirmation keyboard = %+v", edit.Keyboard)
+	}
+
+	if !svc.HandleCallback(ctx, cbq(777, "chgv:42:1:p2p:standard")) {
+		t.Fatal("provider confirmation should be handled")
+	}
+	recs, _ = st.ListPaymentRequestsByStatus(ctx, "pending")
+	if len(recs) != 1 || recs[0].Plan != store.PlanStandard || recs[0].Price != 400 {
+		t.Fatalf("confirmed request = %+v", recs)
+	}
+}
+
 // TestCabinetDataPlans verifies /api/me carries the preset list (standard
 // first, each with its own grid) only when custom presets exist.
 func TestCabinetDataPlans(t *testing.T) {
@@ -292,7 +579,7 @@ func TestCreateRenewRequestWithPlan(t *testing.T) {
 	}
 	_ = st.UpsertTariff(ctx, "messenger", 3, 250)
 
-	if _, err := svc.CreateRenewRequest(ctx, 777, 42, 3, "", "messenger"); err != nil {
+	if _, err := svc.CreateRenewRequest(ctx, 777, 42, 3, "", "messenger", false); err != nil {
 		t.Fatalf("renew with plan: %v", err)
 	}
 	reqs, _ := st.ListPaymentRequestsByStatus(ctx, "pending")
@@ -300,17 +587,67 @@ func TestCreateRenewRequestWithPlan(t *testing.T) {
 		t.Fatalf("request = %+v", reqs)
 	}
 
-	if _, err := svc.CreateRenewRequest(ctx, 777, 42, 6, "", "messenger"); !errors.Is(err, ErrTariffUnknown) {
+	if _, err := svc.CreateRenewRequest(ctx, 777, 42, 6, "", "messenger", false); !errors.Is(err, ErrTariffUnknown) {
 		t.Fatalf("missing months must return ErrTariffUnknown, got %v", err)
 	}
-	if _, err := svc.CreateRenewRequest(ctx, 777, 42, 3, "", "nope"); !errors.Is(err, ErrPlanUnknown) {
+	if _, err := svc.CreateRenewRequest(ctx, 777, 42, 3, "", "nope", false); !errors.Is(err, ErrPlanUnknown) {
 		t.Fatalf("unknown plan must return ErrPlanUnknown, got %v", err)
 	}
 	// The legacy no-tariffs fallback stays standard-only: a custom plan without
 	// a grid cannot fall back to months=1/price=0.
 	_, _ = st.DeleteTariff(ctx, "messenger", 3)
-	if _, err := svc.CreateRenewRequest(ctx, 777, 42, 1, "", "messenger"); !errors.Is(err, ErrTariffUnknown) {
+	if _, err := svc.CreateRenewRequest(ctx, 777, 42, 1, "", "messenger", false); !errors.Is(err, ErrTariffUnknown) {
 		t.Fatalf("empty custom grid must return ErrTariffUnknown, got %v", err)
+	}
+}
+
+func TestCreateRenewRequestPlanChangePreviewRequiresConfirmation(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
+		777: {{RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+			ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}},
+	}}
+	if err := st.UpsertPlan(ctx, store.Plan{Code: "basic", Name: "Базовый"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.UpsertTariff(ctx, "basic", 3, 300)
+	_ = st.UpsertTariff(ctx, store.PlanStandard, 1, 400)
+	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		Months: 3, Price: 300, ExpireAt: now, Plan: "basic",
+	})
+	if err != nil {
+		t.Fatalf("create previous: %v", err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(ctx, prevID, now.Add(-24*time.Hour)); err != nil || !ok {
+		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
+	}
+
+	res, err := svc.CreateRenewRequest(ctx, 777, 42, 1, "", "", false)
+	if err != nil {
+		t.Fatalf("renew preview: %v", err)
+	}
+	if res == nil || res.Status != RenewStatusPlanChangePreview || res.PlanChange == nil || res.PlanChange.Kind != PlanChangeUpgradeRecalculation {
+		t.Fatalf("preview response = %+v", res)
+	}
+	recs, _ := st.ListPaymentRequestsByStatus(ctx, "pending")
+	if len(recs) != 0 {
+		t.Fatalf("preview created request: %+v", recs)
+	}
+
+	res, err = svc.CreateRenewRequest(ctx, 777, 42, 1, "", "", true)
+	if err != nil {
+		t.Fatalf("renew confirmed: %v", err)
+	}
+	if res == nil || res.Status != "" {
+		t.Fatalf("confirmed response = %+v", res)
+	}
+	recs, _ = st.ListPaymentRequestsByStatus(ctx, "pending")
+	if len(recs) != 1 || recs[0].Plan != store.PlanStandard || recs[0].Price != 400 {
+		t.Fatalf("confirmed request = %+v", recs)
 	}
 }
 

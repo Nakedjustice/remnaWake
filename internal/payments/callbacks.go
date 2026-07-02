@@ -38,6 +38,10 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleCabinetPay(ctx, cb)
 	case strings.HasPrefix(cb.Data, "plcheck:"):
 		return s.handlePlategaCheck(ctx, cb)
+	case strings.HasPrefix(cb.Data, "chg:"):
+		return s.handlePlanChangeConfirm(ctx, cb)
+	case strings.HasPrefix(cb.Data, "chgv:"):
+		return s.handlePlanChangeProviderConfirm(ctx, cb)
 	case strings.HasPrefix(cb.Data, "payvia:"):
 		return s.handlePayVia(ctx, cb)
 	case cb.Data == "cab:cancel":
@@ -153,7 +157,7 @@ func (s *Service) handlePay(ctx context.Context, cb *tg.CallbackQuery) bool {
 
 	if len(tariffs) == 0 {
 		// Fallback: behave like the old single-button flow (1 month).
-		s.createRequestAndNotify(ctx, cb, userID, 1, 0, store.PlanStandard)
+		s.createRequestAndNotify(ctx, cb, userID, 1, 0, store.PlanStandard, false)
 		return true
 	}
 
@@ -251,7 +255,7 @@ func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
 		return true
 	}
 
-	s.createRequestAndNotify(ctx, cb, userID, months, tariff.Price, plan)
+	s.createRequestAndNotify(ctx, cb, userID, months, tariff.Price, plan, false)
 	return true
 }
 
@@ -270,7 +274,7 @@ func (s *Service) handleBack(ctx context.Context, cb *tg.CallbackQuery) bool {
 
 // createRequestAndNotify looks up the remembered user, writes a pending request,
 // clears the user's keyboard, and DMs all admins a confirm button.
-func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQuery, userID int64, months, price int, plan string) {
+func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQuery, userID int64, months, price int, plan string, planChangeConfirmed bool) {
 	u, err := s.store.GetNotifiedUser(ctx, userID)
 	if err != nil {
 		s.logger.Error("get notified user failed", "err", err.Error())
@@ -286,10 +290,10 @@ func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQue
 	// route straight to the only enabled provider.
 	providers := s.enabledProviders()
 	if len(providers) > 1 {
-		s.promptProviderChoice(ctx, cb, userID, months, plan, providers)
+		s.routeProviderWithPlanChangeGate(ctx, cb, u, userID, months, price, plan, "", planChangeConfirmed)
 		return
 	}
-	s.routeProvider(ctx, cb, u, userID, months, price, plan, providers[0])
+	s.routeProviderWithPlanChangeGate(ctx, cb, u, userID, months, price, plan, providers[0], planChangeConfirmed)
 }
 
 // routeProvider dispatches a renewal to the given payment provider. Platega and
@@ -303,6 +307,33 @@ func (s *Service) routeProvider(ctx context.Context, cb *tg.CallbackQuery, u *st
 	default:
 		s.startP2PRequest(ctx, cb, u, userID, months, price, plan)
 	}
+}
+
+// routeProviderWithPlanChangeGate forces plan switches through an explicit
+// confirmation before any payment provider can create an invoice/request.
+func (s *Service) routeProviderWithPlanChangeGate(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, userID int64, months, price int, plan, provider string, planChangeConfirmed bool) {
+	if !planChangeConfirmed {
+		req := &store.PaymentRequest{
+			RemnawaveID: u.RemnawaveID,
+			UUID:        u.UUID,
+			Username:    u.Username,
+			TelegramID:  u.TelegramID,
+			Months:      months,
+			Price:       price,
+			ExpireAt:    u.ExpireAt,
+			Plan:        plan,
+		}
+		if preview := s.renewalPlanChangePreview(ctx, req, true); preview != nil {
+			s.promptPlanChangeConfirm(ctx, cb, userID, months, plan, provider, preview)
+			return
+		}
+	}
+
+	if provider == "" {
+		s.promptProviderChoice(ctx, cb, userID, months, plan, s.enabledProviders(), planChangeConfirmed)
+		return
+	}
+	s.routeProvider(ctx, cb, u, userID, months, price, plan, provider)
 }
 
 // startP2PRequest runs the manual admin-confirmed flow: with the screenshot
@@ -337,13 +368,15 @@ func (s *Service) startP2PRequest(ctx context.Context, cb *tg.CallbackQuery, u *
 }
 
 // promptProviderChoice shows the user a keyboard with one button per enabled
-// provider; the choice arrives as a payvia:<userID>:<months>:<provider> callback
-// (with a trailing :<plan> element for custom presets).
-func (s *Service) promptProviderChoice(ctx context.Context, cb *tg.CallbackQuery, userID int64, months int, plan string, providers []string) {
+// provider. Confirmed plan-change flows add :<plan>:ok so stale provider
+// keyboards still pass through the confirmation gate.
+func (s *Service) promptProviderChoice(ctx context.Context, cb *tg.CallbackQuery, userID int64, months int, plan string, providers []string, planChangeConfirmed bool) {
 	rows := make([][]tg.InlineKeyboardButton, 0, len(providers))
 	for _, p := range providers {
 		data := fmt.Sprintf("payvia:%d:%d:%s", userID, months, p)
-		if plan != "" && plan != store.PlanStandard {
+		if planChangeConfirmed {
+			data += ":" + normalizePlan(plan) + ":ok"
+		} else if plan != "" && plan != store.PlanStandard {
 			data += ":" + plan
 		}
 		rows = append(rows, []tg.InlineKeyboardButton{{
@@ -357,6 +390,38 @@ func (s *Service) promptProviderChoice(ctx context.Context, cb *tg.CallbackQuery
 			i18n.T("Выберите способ оплаты:"), kb)
 	} else {
 		_, _ = s.bot.SendPlainWithKeyboard(ctx, cb.From.ID, i18n.T("Выберите способ оплаты:"), kb)
+	}
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+}
+
+func (s *Service) promptPlanChangeConfirm(ctx context.Context, cb *tg.CallbackQuery, userID int64, months int, plan, provider string, preview *PlanChangePreview) {
+	var text string
+	switch preview.Kind {
+	case PlanChangeDowngradeImmediate:
+		text = fmt.Sprintf(
+			i18n.T("⚠️ Переход на более дешёвый тариф\n\nВы переходите с «%s» на «%s». Оставшееся время не будет пересчитано: срок после покупки на %d мес. будет до %s. После подтверждения оплаты лимиты нового тарифа применятся сразу.\n\nПродолжить?"),
+			preview.CurrentPlan, preview.TargetPlan, months, preview.NewExpireAt,
+		)
+	default:
+		text = fmt.Sprintf(
+			i18n.T("⚠️ Переход на более дорогой тариф\n\nВы переходите с «%s» на «%s». Оставшееся время до %s будет пересчитано по цене. После покупки на %d мес. подписка будет действовать до %s.\n\nПродолжить?"),
+			preview.CurrentPlan, preview.TargetPlan, preview.CurrentExpireAt, months, preview.NewExpireAt,
+		)
+	}
+
+	plan = normalizePlan(plan)
+	confirmData := fmt.Sprintf("chg:%d:%d:%s", userID, months, plan)
+	if provider != "" {
+		confirmData = fmt.Sprintf("chgv:%d:%d:%s:%s", userID, months, provider, plan)
+	}
+	kb := &tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{{
+		{Text: i18n.T("✅ Продолжить"), CallbackData: confirmData},
+		{Text: i18n.T("Отмена"), CallbackData: "cab:cancel"},
+	}}}
+	if cb.Message != nil {
+		_ = s.bot.EditMessageText(ctx, cb.Message.Chat.ID, cb.Message.MessageID, text, kb)
+	} else {
+		_, _ = s.bot.SendPlainWithKeyboard(ctx, cb.From.ID, text, kb)
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
 }
@@ -378,8 +443,9 @@ func providerButtonLabel(provider string) string {
 func (s *Service) handlePayVia(ctx context.Context, cb *tg.CallbackQuery) bool {
 	// payvia:<userID>:<months>:<provider> (standard, incl. stale keyboards) or
 	// payvia:<userID>:<months>:<provider>:<plan> for custom presets.
+	// Confirmed plan-change provider choices use payvia:<userID>:<months>:<provider>:<plan>:ok.
 	parts := strings.Split(strings.TrimPrefix(cb.Data, "payvia:"), ":")
-	if len(parts) != 3 && len(parts) != 4 {
+	if len(parts) != 3 && len(parts) != 4 && len(parts) != 5 {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
@@ -394,12 +460,88 @@ func (s *Service) handlePayVia(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if len(parts) == 4 {
 		plan = parts[3]
 	}
+	planChangeConfirmed := false
+	if len(parts) == 5 {
+		if parts[4] != "ok" {
+			_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+			return true
+		}
+		plan = parts[3]
+		planChangeConfirmed = true
+	}
 	// Reject a provider that is no longer enabled (stale keyboard).
 	if !s.providerAvailable(provider) || !s.isProviderEnabled(provider) {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот способ оплаты больше недоступен."))
 		return true
 	}
 
+	tariff, err := s.store.GetTariff(ctx, plan, months)
+	if err != nil {
+		s.logger.Error("get tariff failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+		return true
+	}
+	if tariff == nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
+		return true
+	}
+	u, err := s.store.GetNotifiedUser(ctx, userID)
+	if err != nil || u == nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось найти данные. Дождитесь следующего уведомления."))
+		return true
+	}
+	s.routeProviderWithPlanChangeGate(ctx, cb, u, userID, months, tariff.Price, plan, provider, planChangeConfirmed)
+	return true
+}
+
+func (s *Service) handlePlanChangeConfirm(ctx context.Context, cb *tg.CallbackQuery) bool {
+	// chg:<userID>:<months>:<plan>
+	parts := strings.Split(strings.TrimPrefix(cb.Data, "chg:"), ":")
+	if len(parts) != 3 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+	userID, err1 := strconv.ParseInt(parts[0], 10, 64)
+	months, err2 := strconv.Atoi(parts[1])
+	plan := parts[2]
+	if err1 != nil || err2 != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+
+	tariff, err := s.store.GetTariff(ctx, plan, months)
+	if err != nil {
+		s.logger.Error("get tariff failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+		return true
+	}
+	if tariff == nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
+		return true
+	}
+	s.createRequestAndNotify(ctx, cb, userID, months, tariff.Price, plan, true)
+	return true
+}
+
+func (s *Service) handlePlanChangeProviderConfirm(ctx context.Context, cb *tg.CallbackQuery) bool {
+	// chgv:<userID>:<months>:<provider>:<plan>
+	parts := strings.Split(strings.TrimPrefix(cb.Data, "chgv:"), ":")
+	if len(parts) != 4 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+	userID, err1 := strconv.ParseInt(parts[0], 10, 64)
+	months, err2 := strconv.Atoi(parts[1])
+	provider := parts[2]
+	plan := parts[3]
+	if err1 != nil || err2 != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+	if !s.providerAvailable(provider) || !s.isProviderEnabled(provider) {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот способ оплаты больше недоступен."))
+		return true
+	}
 	tariff, err := s.store.GetTariff(ctx, plan, months)
 	if err != nil {
 		s.logger.Error("get tariff failed", "err", err.Error())

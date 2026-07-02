@@ -355,8 +355,8 @@ func (s *Service) ClaimTrial(ctx context.Context, telegramID int64, username str
 // method was chosen (or a chooser to render) and any URL/link to open.
 type RenewResult struct {
 	RequestID int64 `json:"request_id,omitempty"`
-	// Status is "" (P2P request sent), "choose_provider", "platega" or
-	// "telegram_stars".
+	// Status is "" (P2P request sent), "plan_change_preview",
+	// "choose_provider", "platega" or "telegram_stars".
 	Status string `json:"status,omitempty"`
 	// PayURL is the Platega redirect URL, set when Status == "platega".
 	PayURL string `json:"payment_url,omitempty"`
@@ -365,10 +365,11 @@ type RenewResult struct {
 	InvoiceURL string `json:"invoice_url,omitempty"`
 	// Providers lists the enabled providers to choose from, set when
 	// Status == "choose_provider".
-	Providers []string `json:"providers,omitempty"`
+	Providers  []string           `json:"providers,omitempty"`
+	PlanChange *PlanChangePreview `json:"plan_change,omitempty"`
 }
 
-func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider, plan string) (*RenewResult, error) {
+func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider, plan string, planChangeConfirmed bool) (*RenewResult, error) {
 	if !s.isEnabled() {
 		return nil, ErrPaymentsDisabled
 	}
@@ -418,18 +419,6 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 		months = 1
 	}
 
-	// Resolve the provider: when none is requested and several are enabled, ask
-	// the mini app to render a chooser; otherwise validate the requested one.
-	enabled := s.enabledProviders()
-	if provider == "" {
-		if len(enabled) > 1 {
-			return &RenewResult{Status: "choose_provider", Providers: enabled}, nil
-		}
-		provider = enabled[0]
-	} else if !s.providerAvailable(provider) || !s.isProviderEnabled(provider) {
-		return nil, ErrBadInput
-	}
-
 	u := &store.NotifiedUser{
 		RemnawaveID: sub.RemnawaveID,
 		UUID:        sub.UUID,
@@ -439,6 +428,29 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 	}
 	if err := s.store.UpsertNotifiedUser(ctx, *u); err != nil {
 		s.logger.Error("webapp: remember user failed", "err", err.Error(), "user_id", sub.RemnawaveID)
+	}
+
+	previewReq := &store.PaymentRequest{
+		RemnawaveID: sub.RemnawaveID, UUID: sub.UUID, Username: sub.Username,
+		TelegramID: telegramID, Months: months, Price: price, ExpireAt: sub.ExpireAt,
+		Plan: plan,
+	}
+	if preview := s.renewalPlanChangePreview(ctx, previewReq, true); preview != nil && !planChangeConfirmed {
+		return &RenewResult{Status: RenewStatusPlanChangePreview, PlanChange: preview}, nil
+	}
+
+	if provider != "" && (!s.providerAvailable(provider) || !s.isProviderEnabled(provider)) {
+		return nil, ErrBadInput
+	}
+
+	// Resolve the provider: when none is requested and several are enabled, ask
+	// the mini app to render a chooser; otherwise validate the requested one.
+	enabled := s.enabledProviders()
+	if provider == "" {
+		if len(enabled) > 1 {
+			return &RenewResult{Status: "choose_provider", Providers: enabled}, nil
+		}
+		provider = enabled[0]
 	}
 
 	switch provider {

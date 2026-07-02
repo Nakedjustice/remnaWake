@@ -64,7 +64,7 @@ func TestNewMigratesPaymentRequestIndexes(t *testing.T) {
 		}
 		indexes[name] = true
 	}
-	for _, name := range []string{"idx_payment_requests_created_at", "idx_payment_requests_status_resolved", "idx_payment_requests_provider", "idx_payment_requests_provider_txn"} {
+	for _, name := range []string{"idx_payment_requests_created_at", "idx_payment_requests_status_resolved", "idx_payment_requests_uuid_status_resolved", "idx_payment_requests_provider", "idx_payment_requests_provider_txn"} {
 		if !indexes[name] {
 			t.Errorf("missing migrated index %s", name)
 		}

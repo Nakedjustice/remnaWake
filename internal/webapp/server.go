@@ -25,7 +25,7 @@ const initDataMaxAge = 24 * time.Hour
 // Cabinet is the subset of *payments.Service the mini app user API needs.
 type Cabinet interface {
 	CabinetData(ctx context.Context, telegramID int64) (*payments.WebCabinet, error)
-	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider, plan string) (*payments.RenewResult, error)
+	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider, plan string, planChangeConfirmed bool) (*payments.RenewResult, error)
 	CreateGiftRequest(ctx context.Context, telegramID int64, months int) error
 	CreateInviteRequest(ctx context.Context, telegramID int64, username string) error
 	RegisterProfile(ctx context.Context, telegramID int64, query string) (*payments.WebRegistrationResult, error)
@@ -297,17 +297,18 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		RemnawaveID int64  `json:"remnawave_id"`
-		Months      int    `json:"months"`
-		Provider    string `json:"provider"`
-		Plan        string `json:"plan"` // "" = standard
+		RemnawaveID         int64  `json:"remnawave_id"`
+		Months              int    `json:"months"`
+		Provider            string `json:"provider"`
+		Plan                string `json:"plan"` // "" = standard
+		PlanChangeConfirmed bool   `json:"plan_change_confirmed"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "malformed request body")
 		return
 	}
 
-	result, err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months, req.Provider, req.Plan)
+	result, err := s.cabinet.CreateRenewRequest(r.Context(), userID, req.RemnawaveID, req.Months, req.Provider, req.Plan, req.PlanChangeConfirmed)
 	if errors.Is(err, payments.ErrScreenshotRequired) {
 		// Not an error for the user: the bot chat is waiting for the screenshot.
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "awaiting_screenshot"})
@@ -333,6 +334,9 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(result.Providers) > 0 {
 			resp["providers"] = result.Providers
+		}
+		if result.PlanChange != nil {
+			resp["plan_change"] = result.PlanChange
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)

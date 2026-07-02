@@ -277,7 +277,7 @@ func TestCreateRenewRequestStarsReturnsInvoiceLink(t *testing.T) {
 		t.Fatalf("tariff: %v", err)
 	}
 
-	res, err := svc.CreateRenewRequest(ctx, 555, 7, 1, "", "")
+	res, err := svc.CreateRenewRequest(ctx, 555, 7, 1, "", "", false)
 	if err != nil {
 		t.Fatalf("renew: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestCreateRenewRequestChoosesProvider(t *testing.T) {
 	}
 
 	// p2p + stars enabled, no provider chosen -> chooser.
-	res, err := svc.CreateRenewRequest(ctx, 555, 7, 1, "", "")
+	res, err := svc.CreateRenewRequest(ctx, 555, 7, 1, "", "", false)
 	if err != nil {
 		t.Fatalf("renew: %v", err)
 	}

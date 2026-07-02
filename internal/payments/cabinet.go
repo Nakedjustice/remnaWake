@@ -235,7 +235,7 @@ func (s *Service) handleCabinetPay(ctx context.Context, cb *tg.CallbackQuery) bo
 	}
 	if len(tariffs) == 0 {
 		// No tariffs configured: behave like the legacy single-option flow.
-		s.createRequestAndNotify(ctx, cb, userID, 1, 0, store.PlanStandard)
+		s.createRequestAndNotify(ctx, cb, userID, 1, 0, store.PlanStandard, false)
 		return true
 	}
 

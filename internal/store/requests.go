@@ -130,6 +130,46 @@ func (s *Store) GetPaymentRequestByProviderTxn(ctx context.Context, txnID string
 	return &r, nil
 }
 
+// LatestConfirmedPaymentRequestByUUID returns the most recent confirmed
+// payment for a panel user. It is used as the local source of truth for the
+// currently paid plan when prorating an upgrade.
+func (s *Store) LatestConfirmedPaymentRequestByUUID(ctx context.Context, uuid string) (*PaymentRequest, error) {
+	if uuid == "" {
+		return nil, nil
+	}
+	var (
+		r         PaymentRequest
+		exp       string
+		created   string
+		confirmed sql.NullString
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
+			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
+			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan
+		FROM payment_requests
+		WHERE uuid = ? AND status = 'confirmed'
+		ORDER BY confirmed_at DESC, id DESC
+		LIMIT 1
+	`, uuid).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
+		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
+		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.ExpireAt, _ = parseTime(exp)
+	r.CreatedAt, _ = parseTime(created)
+	if confirmed.Valid {
+		if ts, e := parseTime(confirmed.String); e == nil {
+			r.ConfirmedAt = &ts
+		}
+	}
+	return &r, nil
+}
+
 // SetPaymentRequestProviderTxn records the external gateway transaction id on a
 // request right after the gateway transaction is created.
 func (s *Store) SetPaymentRequestProviderTxn(ctx context.Context, id int64, txnID string) error {
