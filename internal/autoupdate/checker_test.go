@@ -9,9 +9,11 @@ import (
 type fakeFetcher struct {
 	digest string
 	err    error
+	calls  int
 }
 
 func (f *fakeFetcher) Digest(ctx context.Context, ref string) (string, error) {
+	f.calls++
 	return f.digest, f.err
 }
 
@@ -99,6 +101,47 @@ func TestCheckerRestartReplacesPersistedBaseline(t *testing.T) {
 	}
 	if store[settingNotifiedDigest] != "sha256:latest" {
 		t.Fatalf("notified digest = %q, want sha256:latest", store[settingNotifiedDigest])
+	}
+}
+
+func TestCheckerSnapshotPersistsLastResultAndIsReadOnly(t *testing.T) {
+	ctx := context.Background()
+	fetch := &fakeFetcher{digest: "sha256:aaa"}
+	store := memSettings{}
+	notifier := &recordingNotifier{}
+	c := NewChecker(fetch, store, notifier, "img:main", time.Hour, nil)
+
+	if _, err := c.CheckNow(ctx); err != nil {
+		t.Fatalf("initial CheckNow: %v", err)
+	}
+	snap, err := c.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if snap.Status != CheckStatusBaselineInitialized || snap.Baseline != "sha256:aaa" || snap.Remote != "sha256:aaa" || snap.CheckedAt.IsZero() {
+		t.Fatalf("unexpected initial snapshot: %+v", snap)
+	}
+	calls := fetch.calls
+	if _, err := c.Snapshot(ctx); err != nil {
+		t.Fatalf("second Snapshot: %v", err)
+	}
+	if fetch.calls != calls {
+		t.Fatalf("Snapshot called Digest: calls=%d want %d", fetch.calls, calls)
+	}
+
+	fetch.digest = "sha256:bbb"
+	if _, err := c.CheckNow(ctx); err != nil {
+		t.Fatalf("update CheckNow: %v", err)
+	}
+	snap, err = c.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("Snapshot after update: %v", err)
+	}
+	if snap.Status != CheckStatusUpdateAvailable || snap.Baseline != "sha256:aaa" || snap.Remote != "sha256:bbb" {
+		t.Fatalf("unexpected update snapshot: %+v", snap)
+	}
+	if len(notifier.calls) != 1 {
+		t.Fatalf("update should notify once, got %+v", notifier.calls)
 	}
 }
 

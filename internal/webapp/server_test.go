@@ -98,7 +98,7 @@ func TestEmbeddedFrontendContainsNativeParityFlows(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	body := w.Body.String()
-	for _, want := range []string{"/api/register", "/api/gift/redeem", "/api/receipt", "/api/platega/check", "localStorage.setItem(checkKey"} {
+	for _, want := range []string{"/api/register", "/api/gift/redeem", "/api/receipt", "/api/platega/check", "/api/admin/action-center", "localStorage.setItem(checkKey"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("frontend missing %q", want)
 		}
@@ -172,17 +172,22 @@ type adminCall struct {
 }
 
 type fakeAdmin struct {
-	panel       *payments.WebAdminPanel
-	stats       *payments.WebAdminStats
-	report      *payments.WebPaymentReport
-	proxyHealth *payments.WebProxyHealth
-	err         error
-	calls       []adminCall
+	panel        *payments.WebAdminPanel
+	actionCenter *payments.WebAdminActionCenter
+	stats        *payments.WebAdminStats
+	report       *payments.WebPaymentReport
+	proxyHealth  *payments.WebProxyHealth
+	err          error
+	calls        []adminCall
 }
 
 func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.WebAdminPanel, error) {
 	f.calls = append(f.calls, adminCall{Name: "panel", A: tgID})
 	return f.panel, f.err
+}
+func (f *fakeAdmin) AdminActionCenter(_ context.Context, tgID int64) (*payments.WebAdminActionCenter, error) {
+	f.calls = append(f.calls, adminCall{Name: "action-center", A: tgID})
+	return f.actionCenter, f.err
 }
 func (f *fakeAdmin) AdminStatsData(_ context.Context, tgID int64) (*payments.WebAdminStats, error) {
 	f.calls = append(f.calls, adminCall{Name: "stats", A: tgID})
@@ -749,6 +754,71 @@ func TestHandleAdminOK(t *testing.T) {
 	}
 	if got.Requisites != "card 1234" || len(got.Tariffs) != 1 || len(got.Requests) != 1 {
 		t.Fatalf("unexpected payload: %+v", got)
+	}
+}
+
+func TestHandleAdminActionCenterAuth(t *testing.T) {
+	srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: payments.ErrNotAdmin})
+	for _, auth := range []string{"", "tma garbage"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/action-center", nil)
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("auth %q: status = %d, want 401", auth, w.Code)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/action-center", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("non-admin: status = %d, want 403; body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleAdminActionCenterOK(t *testing.T) {
+	adm := &fakeAdmin{actionCenter: &payments.WebAdminActionCenter{
+		GeneratedAt: "2026-07-03T12:00:00Z",
+		Summary:     payments.WebAdminActionSummary{Total: 1, Warning: 1},
+		Items: []payments.WebAdminActionItem{{
+			ID:       "pending_payments",
+			Category: "payments",
+			Severity: "warning",
+			Title:    "Заявки на оплату ждут решения",
+			Detail:   "Откройте список заявок на оплату.",
+			Count:    2,
+			Target:   "payment_requests",
+		}},
+		Sources: []payments.WebAdminActionSource{
+			{Name: "local_store", Status: "ok"},
+			{Name: "remnawave", Status: "degraded", Error: "panel down"},
+		},
+	}}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/action-center", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var got payments.WebAdminActionCenter
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Summary.Total != 1 || len(got.Items) != 1 || got.Items[0].Target != "payment_requests" {
+		t.Fatalf("unexpected action-center payload: %+v", got)
+	}
+	if len(got.Sources) != 2 || got.Sources[1].Status != "degraded" || got.Sources[1].Error == "" {
+		t.Fatalf("missing degraded source metadata: %+v", got.Sources)
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "action-center" || adm.calls[0].A != 42 {
+		t.Fatalf("unexpected service calls: %+v", adm.calls)
 	}
 }
 

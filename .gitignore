@@ -17,4 +17,6 @@ AGENTS.md
 # Build & coverage artifacts
 /bot
 /bin/
+.cache/
+dev-bot.db
 *.out

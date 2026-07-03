@@ -185,6 +185,7 @@ type UpdateChecker interface {
 	CheckNow(ctx context.Context) (autoupdate.CheckResult, error)
 	Interval() time.Duration
 	SetInterval(ctx context.Context, interval time.Duration) error
+	Snapshot(ctx context.Context) (autoupdate.CheckSnapshot, error)
 }
 
 type adminInputStep int

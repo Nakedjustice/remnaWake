@@ -45,6 +45,7 @@ type Cabinet interface {
 // payments.ErrNotAdmin otherwise.
 type Admin interface {
 	AdminPanelData(ctx context.Context, telegramID int64) (*payments.WebAdminPanel, error)
+	AdminActionCenter(ctx context.Context, telegramID int64) (*payments.WebAdminActionCenter, error)
 	AdminStatsData(ctx context.Context, telegramID int64) (*payments.WebAdminStats, error)
 	AdminProxyHealth(ctx context.Context, telegramID int64) (*payments.WebProxyHealth, error)
 	AdminSetProxyNotification(ctx context.Context, telegramID int64, name, address, subName string, muted bool) error
@@ -140,6 +141,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/support/send", s.handleSupportSend)
 	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
+	mux.HandleFunc("GET /api/admin/action-center", s.handleAdminActionCenter)
 	mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
 	mux.HandleFunc("GET /api/admin/proxy-health", s.handleAdminProxyHealth)
 	mux.HandleFunc("POST /api/admin/proxy-notification", s.handleAdminSetProxyNotification)
@@ -660,6 +662,19 @@ func (s *Server) handleAdminPanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, panel)
+}
+
+func (s *Server) handleAdminActionCenter(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	center, err := s.admin.AdminActionCenter(r.Context(), userID)
+	if err != nil {
+		s.writeAdminError(w, "action center", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, center)
 }
 
 func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {

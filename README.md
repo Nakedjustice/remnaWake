@@ -348,7 +348,10 @@ Admins also get a **Statistics** page with panel user totals, gift-code counts,
 and pending invites. Its payment report provides 7/30/90-day revenue,
 conversion and provider breakdowns, a daily trend, and searchable, paginated
 renewal history for P2P, Platega, and Telegram Stars. Gateway transaction IDs
-are shown when available.
+are shown when available. The admin hub starts with a read-only **Action Center**
+that groups pending queues, expiring or low-traffic users, proxy/infra/provider
+alerts, and last-known update status, linking each item to the existing detail
+page.
 
 **Requirements** — served by the bot on `WEBAPP_LISTEN` (default `:8080`).
 Telegram only opens Mini Apps over **HTTPS**, so put a reverse proxy

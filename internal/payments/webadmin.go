@@ -651,15 +651,15 @@ func toWebUserRow(sub *Subscriber) WebUserRow {
 }
 
 // AdminListUsersByCohort returns the panel users behind one admin dashboard
-// tile. The cohort is classified with the same rules as AdminStatsData (via
-// classifyUser) so each returned list matches its tile count exactly. An empty
-// cohort (or "total") returns every user; an unknown cohort is rejected.
+// tile. The core cohorts are classified with the same rules as AdminStatsData
+// (via classifyUser) so each returned list matches its tile count exactly. An
+// empty cohort (or "total") returns every user; an unknown cohort is rejected.
 func (s *Service) AdminListUsersByCohort(ctx context.Context, telegramID int64, cohort string) ([]WebUserRow, error) {
 	if err := s.adminGuard(telegramID); err != nil {
 		return nil, err
 	}
 	switch cohort {
-	case "", "total", "active", "expiring_soon", "expired", "linked":
+	case "", "total", "active", "expiring_soon", "expired", "linked", "low_traffic":
 	default:
 		return nil, ErrBadInput
 	}
@@ -683,6 +683,8 @@ func (s *Service) AdminListUsersByCohort(ctx context.Context, telegramID int64, 
 			keep = c.expired
 		case "linked":
 			keep = c.linked
+		case "low_traffic":
+			keep = c.active && lowTrafficUser(&subs[i])
 		}
 		if keep {
 			out = append(out, toWebUserRow(&subs[i]))

@@ -346,6 +346,25 @@
   .admin-count { min-width: 24px; padding: 3px 8px; border-radius: 999px; background: var(--accent-soft);
     color: var(--accent); text-align: center; font-size: 12px; font-weight: 800; }
   .admin-chevron { color: var(--hint); font-size: 22px; font-weight: 400; line-height: 1; }
+  .action-center .admin-section-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .action-center-panel { overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .action-source-warning { margin: 0 0 8px; padding: 10px 12px; border: 1px solid rgba(255, 210, 61, 0.26);
+    border-radius: 14px; background: var(--tint-pending); color: var(--tone-expiring); font-size: 12.5px; font-weight: 800; line-height: 1.35; }
+  .action-empty { padding: 16px; }
+  .action-empty-title { font-size: 15px; font-weight: 800; margin-bottom: 3px; }
+  .action-empty-meta { color: var(--hint); font-size: 13px; line-height: 1.45; }
+  .action-item { display: flex; width: 100%; min-height: 66px; align-items: center; gap: 12px; margin: 0;
+    padding: 13px 14px; border: 0; border-radius: 0; border-top: 1px solid var(--border);
+    background: transparent; color: var(--text); text-align: left; box-shadow: none; }
+  .action-item:first-child { border-top: 0; }
+  .action-item:active { background: var(--surface-2); }
+  .action-item.critical .admin-nav-icon { background: var(--tint-expired); color: var(--tone-expired); }
+  .action-item.warning .admin-nav-icon { background: var(--tint-pending); color: var(--tone-expiring); }
+  .action-copy { flex: 1; min-width: 0; }
+  .action-title { font-size: 14.5px; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+  .action-detail { margin-top: 2px; color: var(--hint); font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
+  .action-meta { display: grid; justify-items: end; gap: 6px; flex: none; }
+  .action-severity { color: var(--hint); font-size: 10px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
   .admin-page-title { font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
   .admin-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-bottom: 12px; }
   .admin-card-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
@@ -848,6 +867,35 @@ const EN = {
   '— не выбран —': '— none —',
   'Ошибка загрузки сквадов': 'Failed to load squads',
   '⚙️ Админ-панель': '⚙️ Admin panel',
+  'Что требует внимания': 'Needs attention',
+  'Ничего срочного': 'Nothing urgent',
+  'Все ключевые очереди пусты.': 'All key queues are clear.',
+  'Часть источников временно недоступна.': 'Some sources are temporarily unavailable.',
+  'Критично': 'Critical',
+  'Внимание': 'Warning',
+  'Инфо': 'Info',
+  'Заявки на оплату ждут решения': 'Payment requests need review',
+  'Откройте список заявок на оплату.': 'Open the payment request queue.',
+  'Заявки на подарки ждут решения': 'Gift requests need review',
+  'Откройте список заявок на подарки.': 'Open the gift request queue.',
+  'Приглашения ждут одобрения': 'Invites need approval',
+  'Откройте список заявок на приглашения.': 'Open the invite request queue.',
+  'Пробные периоды ждут одобрения': 'Trial requests need approval',
+  'Откройте список заявок на пробный период.': 'Open the trial request queue.',
+  'Есть отклонённые онлайн-платежи': 'Online payments were rejected',
+  'Проверьте историю платежей за 7 дней.': 'Review the last 7 days of payments.',
+  'Подписки скоро истекают': 'Subscriptions are expiring soon',
+  'Откройте пользователей, истекающих в ближайшие 7 дней.': 'Open users expiring within 7 days.',
+  'Пользователи почти исчерпали трафик': 'Users are nearly out of traffic',
+  'Осталось 10% трафика или меньше.': '10% traffic or less remains.',
+  'Прокси недоступны': 'Proxies are down',
+  'Откройте состояние прокси.': 'Open proxy health.',
+  'Просрочены оплаты серверов': 'Server payments are overdue',
+  'Откройте инфраструктуру.': 'Open infrastructure.',
+  'Скоро нужно оплатить серверы': 'Server payments are due soon',
+  'Доступно обновление': 'Update available',
+  'Откройте настройки обновлений.': 'Open update settings.',
+  'Слабый трафик': 'Low traffic',
   'Заявки': 'Requests',
   'Заявки на оплату': 'Payment requests',
   'Заявки на подарки': 'Gift requests',
@@ -2351,15 +2399,19 @@ async function showCabinet() {
 // adminData caches the latest /api/admin payload so the admin hub and its
 // sub-views render from the same data without re-fetching on every navigation.
 let adminData = null;
+let adminActionCenter = null;
 let adminPaymentFilters = { days: 30, status: 'all', provider: 'all', kind: 'all', query: '', page: 1 };
 
-// showAdmin (re)loads /api/admin and renders the admin hub.
+// showAdmin (re)loads the admin payloads and renders the admin hub.
 async function showAdmin() {
   hideDock();
   document.body.classList.add('theme-neon-tokyo');
   showLoadingView('admin', t('⚙️ Админ-панель'), title => adminPageTop(title, showCabinet));
   try {
-    adminData = await api('/api/admin');
+    [adminData, adminActionCenter] = await Promise.all([
+      api('/api/admin'),
+      api('/api/admin/action-center'),
+    ]);
   } catch (e) { tg.showAlert(e.message); return; }
   renderAdminHome();
 }
@@ -3433,6 +3485,124 @@ function adminNavSection(title, items) {
   return section;
 }
 
+function actionCenterIcon(item) {
+  switch (item.target) {
+    case 'payment_requests':
+    case 'payments':
+      return ADMIN_ICONS.payments;
+    case 'gift_requests':
+      return ADMIN_ICONS.gift;
+    case 'invite_requests':
+      return ADMIN_ICONS.userPlus;
+    case 'trial_requests':
+      return ADMIN_ICONS.clock;
+    case 'users':
+      return ADMIN_ICONS.users;
+    case 'proxy_health':
+      return ADMIN_ICONS.activity;
+    case 'infra':
+      return ADMIN_ICONS.server;
+    case 'updates':
+      return ADMIN_ICONS.sliders;
+    default:
+      return ADMIN_ICONS.activity;
+  }
+}
+
+function actionSeverityLabel(severity) {
+  if (severity === 'critical') return t('Критично');
+  if (severity === 'warning') return t('Внимание');
+  return t('Инфо');
+}
+
+function openActionCenterItem(item) {
+  const filter = item.filter || {};
+  switch (item.target) {
+    case 'payment_requests':
+      showAdminPaymentRequests();
+      return;
+    case 'gift_requests':
+      showAdminGiftRequests(renderAdminHome);
+      return;
+    case 'invite_requests':
+      showAdminInviteRequests(renderAdminHome);
+      return;
+    case 'trial_requests':
+      showAdminTrialRequests();
+      return;
+    case 'users':
+      showUserAdmin({ cohort: filter.cohort || '', title: t(item.title || 'Управление пользователями'), onBack: renderAdminHome });
+      return;
+    case 'proxy_health':
+      showAdminProxyHealth();
+      return;
+    case 'infra':
+      showAdminServers();
+      return;
+    case 'payments':
+      adminPaymentFilters = {
+        days: parseInt(filter.days, 10) || 7,
+        status: filter.status || 'all',
+        provider: filter.provider || 'all',
+        kind: filter.kind || 'all',
+        query: filter.query || '',
+        page: 1,
+      };
+      showAdminStats();
+      return;
+    case 'updates':
+      showAdminSettings();
+      return;
+    default:
+      renderAdminHome();
+  }
+}
+
+function renderActionCenter(center) {
+  const section = el('section', 'admin-section action-center');
+  const items = (center && center.items) || [];
+  const summary = center && center.summary ? center.summary : {};
+  const label = el('div', 'admin-section-label');
+  label.appendChild(el('span', null, t('Что требует внимания')));
+  if (summary.total || items.length) label.appendChild(el('span', null, String(summary.total || items.length)));
+  section.appendChild(label);
+
+  const degraded = ((center && center.sources) || []).filter(src => src.status === 'degraded');
+  if (degraded.length) section.appendChild(el('div', 'action-source-warning', t('Часть источников временно недоступна.')));
+
+  const panel = el('div', 'action-center-panel');
+  if (!items.length) {
+    const empty = el('div', 'action-empty');
+    empty.appendChild(el('div', 'action-empty-title', t('Ничего срочного')));
+    empty.appendChild(el('div', 'action-empty-meta', t('Все ключевые очереди пусты.')));
+    panel.appendChild(empty);
+    section.appendChild(panel);
+    return section;
+  }
+
+  items.forEach(item => {
+    const button = el('button', 'action-item ' + (item.severity || 'info'));
+    const iconSpan = el('span', 'admin-nav-icon');
+    iconSpan.appendChild(svg(actionCenterIcon(item)));
+    button.appendChild(iconSpan);
+
+    const copy = el('div', 'action-copy');
+    copy.appendChild(el('div', 'action-title', t(item.title || '')));
+    if (item.detail) copy.appendChild(el('div', 'action-detail', t(item.detail)));
+    button.appendChild(copy);
+
+    const meta = el('div', 'action-meta');
+    meta.appendChild(el('span', 'action-severity', actionSeverityLabel(item.severity)));
+    if (item.count) meta.appendChild(el('span', 'admin-count', String(item.count)));
+    button.appendChild(meta);
+    button.appendChild(el('span', 'admin-chevron', '›'));
+    button.onclick = () => openActionCenterItem(item);
+    panel.appendChild(button);
+  });
+  section.appendChild(panel);
+  return section;
+}
+
 // renderAdminHome is the compact, grouped admin navigation hub.
 function renderAdminHome() {
   currentRender = renderAdminHome;
@@ -3442,6 +3612,7 @@ function renderAdminHome() {
 
   const shell = el('div', 'admin-shell');
   shell.appendChild(adminPageTop(t('⚙️ Админ-панель'), showCabinet));
+  shell.appendChild(renderActionCenter(adminActionCenter || {}));
   shell.appendChild(adminNavSection(t('Заявки'), [
     { icon: ADMIN_ICONS.payments, label: t('Заявки на оплату'), count: (data.requests || []).length, action: showAdminPaymentRequests },
     { icon: ADMIN_ICONS.gift, label: t('Заявки на подарки'), count: (data.gift_requests || []).length, action: showAdminGiftRequests },
