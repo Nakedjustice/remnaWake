@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -37,6 +38,44 @@ type PaymentRequest struct {
 	// Plan is the tariff preset code the buyer picked; its panel settings are
 	// stamped onto the user when the request is confirmed.
 	Plan string
+	// Kind selects the product being bought: "subscription" (default) or
+	// "traffic_extension".
+	Kind                  string
+	TrafficGB             int
+	BaseTrafficLimitBytes int64
+	ExtraTrafficBytes     int64
+	ExtensionExpiresAt    *time.Time
+	ExtensionRestoredAt   *time.Time
+}
+
+const (
+	PaymentKindSubscription     = "subscription"
+	PaymentKindTrafficExtension = "traffic_extension"
+)
+
+type nullTimeScanner struct {
+	dst **time.Time
+}
+
+func newNullTimeScanner(dst **time.Time) *nullTimeScanner {
+	return &nullTimeScanner{dst: dst}
+}
+
+func (s *nullTimeScanner) Scan(value any) error {
+	var ns sql.NullString
+	if err := ns.Scan(value); err != nil {
+		return err
+	}
+	if !ns.Valid || ns.String == "" {
+		*s.dst = nil
+		return nil
+	}
+	ts, err := parseTime(ns.String)
+	if err != nil {
+		return fmt.Errorf("parse time: %w", err)
+	}
+	*s.dst = &ts
+	return nil
 }
 
 func (s *Store) CreatePaymentRequest(ctx context.Context, r PaymentRequest) (int64, error) {
@@ -49,15 +88,28 @@ func (s *Store) CreatePaymentRequest(ctx context.Context, r PaymentRequest) (int
 	if plan == "" {
 		plan = PlanStandard
 	}
+	kind := r.Kind
+	if kind == "" {
+		kind = PaymentKindSubscription
+	}
+	var expiresAt, restoredAt any
+	if r.ExtensionExpiresAt != nil {
+		expiresAt = formatTime(*r.ExtensionExpiresAt)
+	}
+	if r.ExtensionRestoredAt != nil {
+		restoredAt = formatTime(*r.ExtensionRestoredAt)
+	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO payment_requests
 			(remnawave_user_id, uuid, username, telegram_id, months, price, expire_at,
 			 status, created_at, payer_telegram_id, payer_username, screenshot_file_id,
-			 screenshot_is_document, provider, provider_txn_id, plan)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 screenshot_is_document, provider, provider_txn_id, plan, kind, traffic_gb,
+			 base_traffic_limit_bytes, extra_traffic_bytes, extension_expires_at, extension_restored_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.RemnawaveID, r.UUID, r.Username, r.TelegramID, r.Months, r.Price,
 		formatTime(r.ExpireAt), "pending", now, r.PayerTelegramID, r.PayerUsername, r.ScreenshotFileID,
-		r.ScreenshotIsDocument, provider, r.ProviderTxnID, plan)
+		r.ScreenshotIsDocument, provider, r.ProviderTxnID, plan, kind, r.TrafficGB,
+		r.BaseTrafficLimitBytes, r.ExtraTrafficBytes, expiresAt, restoredAt)
 	if err != nil {
 		return 0, err
 	}
@@ -73,11 +125,15 @@ func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentReques
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan
+			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
+			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
+			extension_expires_at, extension_restored_at
 		FROM payment_requests WHERE id = ?
 	`, id).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
 		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
-		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan)
+		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,
+		&r.Kind, &r.TrafficGB, &r.BaseTrafficLimitBytes, &r.ExtraTrafficBytes,
+		newNullTimeScanner(&r.ExtensionExpiresAt), newNullTimeScanner(&r.ExtensionRestoredAt))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -109,11 +165,15 @@ func (s *Store) GetPaymentRequestByProviderTxn(ctx context.Context, txnID string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan
+			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
+			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
+			extension_expires_at, extension_restored_at
 		FROM payment_requests WHERE provider_txn_id = ?
 	`, txnID).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
 		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
-		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan)
+		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,
+		&r.Kind, &r.TrafficGB, &r.BaseTrafficLimitBytes, &r.ExtraTrafficBytes,
+		newNullTimeScanner(&r.ExtensionExpiresAt), newNullTimeScanner(&r.ExtensionRestoredAt))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -190,7 +250,9 @@ func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan
+			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
+			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
+			extension_expires_at, extension_restored_at
 		FROM payment_requests WHERE status = ? ORDER BY id
 	`, status)
 	if err != nil {
@@ -208,7 +270,9 @@ func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) 
 		if err := rows.Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID,
 			&r.Months, &r.Price, &exp, &r.Status, &created, &confirmed,
 			&r.PayerTelegramID, &r.PayerUsername, &r.ScreenshotFileID,
-			&r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan); err != nil {
+			&r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,
+			&r.Kind, &r.TrafficGB, &r.BaseTrafficLimitBytes, &r.ExtraTrafficBytes,
+			newNullTimeScanner(&r.ExtensionExpiresAt), newNullTimeScanner(&r.ExtensionRestoredAt)); err != nil {
 			return nil, err
 		}
 		r.ExpireAt, _ = parseTime(exp)

@@ -37,6 +37,8 @@ type WebAdminRequest struct {
 	ID         int64  `json:"id"`
 	Username   string `json:"username"`
 	Months     int    `json:"months"`
+	Kind       string `json:"kind,omitempty"`
+	TrafficGB  int    `json:"traffic_gb,omitempty"`
 	Price      int    `json:"price"`
 	PriceLabel string `json:"price_label,omitempty"`
 	ExpireAt   string `json:"expire_at,omitempty"` // DD.MM.YYYY
@@ -94,7 +96,8 @@ type WebAdminPlan struct {
 
 // WebAdminPanel is the full /api/admin payload for the mini app.
 type WebAdminPanel struct {
-	Tariffs []WebTariff `json:"tariffs"`
+	Tariffs           []WebTariff                 `json:"tariffs"`
+	TrafficExtensions []WebTrafficExtensionOption `json:"traffic_extensions,omitempty"`
 	// Plans lists the custom tariff presets (the built-in standard plan is the
 	// top-level Tariffs grid and is not editable here).
 	Plans          []WebAdminPlan          `json:"plans,omitempty"`
@@ -180,6 +183,7 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 		tariffsByPlan[t.Plan] = append(tariffsByPlan[t.Plan], WebTariff{Months: t.Months, Price: t.Price, PriceLabel: s.priceLabel(t.Price)})
 	}
 	out.Tariffs = tariffsByPlan[store.PlanStandard]
+	out.TrafficExtensions = s.webTrafficExtensionOptions(ctx)
 
 	plans, err := s.store.ListPlans(ctx)
 	if err != nil {
@@ -273,6 +277,8 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 			ID:            r.ID,
 			Username:      r.Username,
 			Months:        r.Months,
+			Kind:          r.Kind,
+			TrafficGB:     r.TrafficGB,
 			Price:         r.Price,
 			CreatedAt:     r.CreatedAt.Format("02.01.2006"),
 			HasScreenshot: r.ScreenshotFileID != "",
@@ -412,6 +418,33 @@ func (s *Service) AdminDeleteTariff(ctx context.Context, telegramID int64, plan 
 	}
 	if !deleted {
 		return ErrTariffUnknown
+	}
+	return nil
+}
+
+func (s *Service) AdminSetTrafficExtensionOption(ctx context.Context, telegramID int64, trafficGB, price int) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	if trafficGB < 1 || price < 1 {
+		return ErrBadInput
+	}
+	if err := s.store.UpsertTrafficExtensionOption(ctx, trafficGB, price); err != nil {
+		return fmt.Errorf("upsert traffic extension option: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) AdminDeleteTrafficExtensionOption(ctx context.Context, telegramID int64, trafficGB int) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	deleted, err := s.store.DeleteTrafficExtensionOption(ctx, trafficGB)
+	if err != nil {
+		return fmt.Errorf("delete traffic extension option: %w", err)
+	}
+	if !deleted {
+		return ErrTrafficExtensionUnknown
 	}
 	return nil
 }
@@ -759,6 +792,9 @@ func (s *Service) AdminUpdateUser(ctx context.Context, telegramID int64, req Web
 		}
 		bytesLimit := *req.TrafficGB * bytesPerGB
 		patch.TrafficLimitBytes = &bytesLimit
+		if err := s.store.MarkActiveTrafficExtensionsRestored(ctx, req.UUID, s.now()); err != nil {
+			s.logger.Error("mark traffic extension superseded failed", "uuid", req.UUID, "err", err.Error())
+		}
 	}
 	if req.ResetStrategy != nil {
 		if !validTrafficResetStrategy(*req.ResetStrategy) {
@@ -868,9 +904,15 @@ func (s *Service) AdminConfirmRequest(ctx context.Context, telegramID, reqID int
 		return err
 	}
 	if req.TelegramID != 0 {
-		_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
-			i18n.T("✅ Подписка «%s» продлена на %d мес. до %s."),
-			req.Username, req.Months, newExpireAt.Format("02.01.2006")))
+		if req.Kind == store.PaymentKindTrafficExtension {
+			_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
+				i18n.T("✅ Для «%s» добавлено %d ГБ трафика до %s."),
+				req.Username, req.TrafficGB, newExpireAt.Format("02.01.2006")))
+		} else {
+			_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
+				i18n.T("✅ Подписка «%s» продлена на %d мес. до %s."),
+				req.Username, req.Months, newExpireAt.Format("02.01.2006")))
+		}
 	}
 	return nil
 }

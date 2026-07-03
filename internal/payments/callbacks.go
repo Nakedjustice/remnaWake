@@ -36,6 +36,10 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleMenuCabinet(ctx, cb)
 	case strings.HasPrefix(cb.Data, "cab:pay:"):
 		return s.handleCabinetPay(ctx, cb)
+	case strings.HasPrefix(cb.Data, "tex:pay:"):
+		return s.handleTrafficExtensionPay(ctx, cb)
+	case strings.HasPrefix(cb.Data, "tex:pick:"):
+		return s.handleTrafficExtensionPick(ctx, cb)
 	case strings.HasPrefix(cb.Data, "plcheck:"):
 		return s.handlePlategaCheck(ctx, cb)
 	case strings.HasPrefix(cb.Data, "chg:"):
@@ -674,9 +678,15 @@ func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool 
 	// app confirm path; the shared confirmPaymentRequest stays silent because the
 	// automatic Stars/Platega flows send their own message).
 	if req.TelegramID != 0 {
-		_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
-			i18n.T("✅ Подписка «%s» продлена на %d мес. до %s."),
-			req.Username, req.Months, newExpireAt.Format("02.01.2006")))
+		if req.Kind == store.PaymentKindTrafficExtension {
+			_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
+				i18n.T("✅ Для «%s» добавлено %d ГБ трафика до %s."),
+				req.Username, req.TrafficGB, newExpireAt.Format("02.01.2006")))
+		} else {
+			_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
+				i18n.T("✅ Подписка «%s» продлена на %d мес. до %s."),
+				req.Username, req.Months, newExpireAt.Format("02.01.2006")))
+		}
 	}
 
 	if s.dryRun {
@@ -684,9 +694,15 @@ func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool 
 		return true
 	}
 
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("✅ Подписка продлена!"))
-	_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(i18n.T("✅ Подписка для %s продлена на %d мес. до %s"),
-		req.Username, req.Months, newExpireAt.Format("02.01.2006")))
+	if req.Kind == store.PaymentKindTrafficExtension {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("✅ Трафик добавлен!"))
+		_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(i18n.T("✅ Для %s добавлено %d ГБ трафика до %s"),
+			req.Username, req.TrafficGB, newExpireAt.Format("02.01.2006")))
+	} else {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("✅ Подписка продлена!"))
+		_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(i18n.T("✅ Подписка для %s продлена на %d мес. до %s"),
+			req.Username, req.Months, newExpireAt.Format("02.01.2006")))
+	}
 	return true
 }
 
@@ -711,9 +727,15 @@ func (s *Service) handleReject(ctx context.Context, cb *tg.CallbackQuery) bool {
 	}
 
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка отклонена."))
-	_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(
-		i18n.T("❌ Заявка на продление «%s» на %d мес. отклонена."),
-		req.Username, req.Months))
+	if req.Kind == store.PaymentKindTrafficExtension {
+		_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(
+			i18n.T("❌ Заявка на докупку %d ГБ для «%s» отклонена."),
+			req.TrafficGB, req.Username))
+	} else {
+		_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(
+			i18n.T("❌ Заявка на продление «%s» на %d мес. отклонена."),
+			req.Username, req.Months))
+	}
 	return true
 }
 
@@ -769,6 +791,8 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.sendAdminStats(ctx, chatID)
 	case cb.Data == "adm:del_list":
 		s.sendAdminDelList(ctx, chatID)
+	case cb.Data == "adm:traffic_ext":
+		s.cmdListTrafficExtensions(ctx, chatID)
 	case cb.Data == "adm:req":
 		s.sendAdminRequisites(ctx, chatID)
 	case strings.HasPrefix(cb.Data, "adm:del:"):

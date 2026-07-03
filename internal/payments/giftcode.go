@@ -315,6 +315,8 @@ func resolveErrorText(err error) string {
 		return i18n.T("Заявка не найдена.")
 	case errors.Is(err, ErrRequestResolved):
 		return i18n.T("Заявка уже обработана.")
+	case errors.Is(err, ErrTrafficExtensionActive):
+		return i18n.T("В этом месяце трафик уже докуплен.")
 	default:
 		return i18n.T("Ошибка, попробуйте позже.")
 	}

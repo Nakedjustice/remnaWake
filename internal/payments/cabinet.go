@@ -90,6 +90,16 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 				Text:         label,
 				CallbackData: fmt.Sprintf("cab:pay:%d", subs[i].RemnawaveID),
 			}})
+			if subs[i].TrafficLimitBytes > 0 {
+				tlabel := i18n.T("📊 Докупить трафик")
+				if len(subs) > 1 {
+					tlabel = fmt.Sprintf(i18n.T("📊 Трафик для «%s»"), subs[i].Username)
+				}
+				rows = append(rows, []tg.InlineKeyboardButton{{
+					Text:         tlabel,
+					CallbackData: fmt.Sprintf("tex:pay:%d", subs[i].RemnawaveID),
+				}})
+			}
 		}
 		rows = append(rows,
 			[]tg.InlineKeyboardButton{{Text: i18n.T("🎁 Подарить подписку"), CallbackData: "menu:gift"}},
@@ -261,6 +271,121 @@ func (s *Service) handleCabinetCancel(ctx context.Context, cb *tg.CallbackQuery)
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Отменено."))
+	return true
+}
+
+func (s *Service) handleTrafficExtensionPay(ctx context.Context, cb *tg.CallbackQuery) bool {
+	userID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "tex:pay:"), 10, 64)
+	if err != nil || cb.Message == nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать профиль."))
+		return true
+	}
+	opts, err := s.store.ListTrafficExtensionOptions(ctx)
+	if err != nil {
+		s.logger.Error("traffic extension: list options failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+		return true
+	}
+	if len(opts) == 0 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Опции докупки трафика пока не заданы."))
+		return true
+	}
+	rows := make([][]tg.InlineKeyboardButton, 0, len(opts)+1)
+	for _, o := range opts {
+		rows = append(rows, []tg.InlineKeyboardButton{{
+			Text:         fmt.Sprintf(i18n.T("+%d ГБ — %s"), o.TrafficGB, s.priceLabel(o.Price)),
+			CallbackData: fmt.Sprintf("tex:pick:%d:%d", userID, o.TrafficGB),
+		}})
+	}
+	rows = append(rows, []tg.InlineKeyboardButton{{Text: i18n.T("Отмена"), CallbackData: "cab:cancel"}})
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, cb.Message.Chat.ID,
+		i18n.T("📊 Выберите пакет трафика. Он действует 30 дней после оплаты:"),
+		&tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	return true
+}
+
+func (s *Service) handleTrafficExtensionPick(ctx context.Context, cb *tg.CallbackQuery) bool {
+	parts := strings.Split(strings.TrimPrefix(cb.Data, "tex:pick:"), ":")
+	if len(parts) != 2 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+	userID, err1 := strconv.ParseInt(parts[0], 10, 64)
+	trafficGB, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+	opt, err := s.store.GetTrafficExtensionOption(ctx, trafficGB)
+	if err != nil {
+		s.logger.Error("traffic extension: get option failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+		return true
+	}
+	if opt == nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Эта опция больше недоступна."))
+		return true
+	}
+	subs, err := s.finder.FindByTelegramID(ctx, cb.From.ID)
+	if err != nil {
+		s.logger.Error("traffic extension: find user failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+		return true
+	}
+	var sub *Subscriber
+	for i := range subs {
+		if subs[i].RemnawaveID == userID {
+			sub = &subs[i]
+			break
+		}
+	}
+	if sub == nil || sub.TrafficLimitBytes <= 0 {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Докупка трафика недоступна для этого профиля."))
+		return true
+	}
+	u := &store.NotifiedUser{RemnawaveID: sub.RemnawaveID, UUID: sub.UUID, Username: sub.Username, TelegramID: cb.From.ID, ExpireAt: sub.ExpireAt}
+	_ = s.store.UpsertNotifiedUser(ctx, *u)
+	providers := s.enabledProviders()
+	if cb.Message != nil {
+		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
+	}
+	switch providers[0] {
+	case ProviderPlatega:
+		reqID, payURL, err := s.startPlategaTrafficExtension(ctx, u, trafficGB, opt.Price, sub.TrafficLimitBytes)
+		if err != nil {
+			_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, resolveErrorText(err))
+			return true
+		}
+		_, _ = s.bot.SendPlainWithKeyboard(ctx, cb.From.ID, fmt.Sprintf(
+			i18n.T("💳 Оплата %s за +%d ГБ. Нажмите «Оплатить», а после оплаты — «Проверить оплату»."),
+			s.priceLabel(opt.Price), trafficGB), s.plategaPayKeyboard(reqID, payURL))
+	case ProviderTelegramStars:
+		reqID, err := s.startStarsTrafficExtension(ctx, u, trafficGB, opt.Price, sub.TrafficLimitBytes)
+		if err != nil {
+			_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, resolveErrorText(err))
+			return true
+		}
+		title, desc, prices := s.starsTrafficInvoiceContent(u.Username, trafficGB, opt.Price)
+		if _, err := s.bot.SendInvoice(ctx, cb.From.ID, title, desc, starsPayload(reqID), prices); err != nil {
+			if _, derr := s.store.DeletePendingPaymentRequest(ctx, reqID); derr != nil {
+				s.logger.Error("stars: withdraw traffic request failed", "req_id", reqID, "err", derr.Error())
+			}
+			_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+			return true
+		}
+	default:
+		if s.getRequireScreenshot() {
+			s.startTrafficPayPhotoFlow(ctx, cb.From.ID, userID, trafficGB, opt.Price, sub.TrafficLimitBytes)
+		} else if _, err := s.createTrafficExtensionPaymentRequest(ctx, u, trafficGB, opt.Price, sub.TrafficLimitBytes, ProviderP2P, nil); err != nil {
+			_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, resolveErrorText(err))
+			return true
+		} else {
+			_ = s.bot.SendPlain(ctx, cb.From.ID, fmt.Sprintf(
+				i18n.T("✅ Заявка на докупку %d ГБ отправлена администратору."), trafficGB))
+		}
+	}
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
 	return true
 }
 

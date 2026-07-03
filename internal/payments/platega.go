@@ -65,6 +65,41 @@ func (s *Service) startPlategaPayment(ctx context.Context, u *store.NotifiedUser
 	return reqID, redirect, nil
 }
 
+func (s *Service) startPlategaTrafficExtension(ctx context.Context, u *store.NotifiedUser, trafficGB, price int, baseBytes int64) (int64, string, error) {
+	s.mu.Lock()
+	gw := s.platega
+	method := s.plategaMethod
+	currency := s.plategaCurrency
+	returnURL := s.plategaReturnURL
+	s.mu.Unlock()
+	if gw == nil {
+		return 0, "", ErrPaymentsDisabled
+	}
+
+	reqID, err := s.createTrafficExtensionPaymentRequest(ctx, u, trafficGB, price, baseBytes, ProviderPlatega, nil)
+	if err != nil {
+		if errors.Is(err, ErrTrafficExtensionActive) {
+			return 0, "", err
+		}
+		return 0, "", fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
+	}
+	desc := fmt.Sprintf(i18n.T("Докупка %d ГБ трафика для «%s»."), trafficGB, u.Username)
+	payload := plategaPayloadPrefix + strconv.FormatInt(reqID, 10)
+	txnID, redirect, err := gw.CreateTransaction(ctx, method, float64(price), currency, desc, returnURL, payload)
+	if err != nil {
+		s.logger.Error("platega: create traffic transaction failed", "req_id", reqID, "err", err.Error())
+		if _, derr := s.store.DeletePendingPaymentRequest(ctx, reqID); derr != nil {
+			s.logger.Error("platega: withdraw traffic request failed", "req_id", reqID, "err", derr.Error())
+		}
+		return 0, "", err
+	}
+	if err := s.store.SetPaymentRequestProviderTxn(ctx, reqID, txnID); err != nil {
+		s.logger.Error("platega: store txn id failed", "req_id", reqID, "txn", txnID, "err", err.Error())
+		return 0, "", err
+	}
+	return reqID, redirect, nil
+}
+
 // startPlategaAndPrompt opens a Platega payment from a bot callback and sends the
 // user the «Оплатить» / «Проверить оплату» keyboard. Used by the pick / cabinet
 // flows when Platega is the active provider.
@@ -139,9 +174,15 @@ func (s *Service) finalizePlategaByTxn(ctx context.Context, txnID string) error 
 	}
 
 	if confirmed.TelegramID != 0 {
-		_ = s.bot.SendPlain(ctx, confirmed.TelegramID, fmt.Sprintf(
-			i18n.T("✅ Оплата получена! Подписка для «%s» продлена до %s."),
-			confirmed.Username, newExpireAt.Format("02.01.2006")))
+		if confirmed.Kind == store.PaymentKindTrafficExtension {
+			_ = s.bot.SendPlain(ctx, confirmed.TelegramID, fmt.Sprintf(
+				i18n.T("✅ Оплата получена! Для «%s» добавлено %d ГБ трафика до %s."),
+				confirmed.Username, confirmed.TrafficGB, newExpireAt.Format("02.01.2006")))
+		} else {
+			_ = s.bot.SendPlain(ctx, confirmed.TelegramID, fmt.Sprintf(
+				i18n.T("✅ Оплата получена! Подписка для «%s» продлена до %s."),
+				confirmed.Username, newExpireAt.Format("02.01.2006")))
+		}
 	}
 	return nil
 }

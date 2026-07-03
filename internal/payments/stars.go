@@ -42,6 +42,14 @@ func (s *Service) starsInvoiceContent(username string, months, price int) (title
 	return title, desc, prices
 }
 
+func (s *Service) starsTrafficInvoiceContent(username string, trafficGB, price int) (title, desc string, prices []tg.LabeledPrice) {
+	title = i18n.T("Докупка трафика")
+	desc = fmt.Sprintf(i18n.T("Докупка %d ГБ трафика для «%s»."), trafficGB, username)
+	label := fmt.Sprintf(i18n.T("+%d ГБ"), trafficGB)
+	prices = []tg.LabeledPrice{{Label: label, Amount: s.starsAmount(price)}}
+	return title, desc, prices
+}
+
 // startStarsPayment creates a pending Telegram Stars payment request (no admin
 // DM) and returns its id. The invoice itself is sent separately so both the
 // chat flow (SendInvoice) and the Mini App flow (CreateInvoiceLink) can reuse it.
@@ -56,6 +64,10 @@ func (s *Service) startStarsPayment(ctx context.Context, u *store.NotifiedUser, 
 		return 0, err
 	}
 	return reqID, nil
+}
+
+func (s *Service) startStarsTrafficExtension(ctx context.Context, u *store.NotifiedUser, trafficGB, price int, baseBytes int64) (int64, error) {
+	return s.createTrafficExtensionPaymentRequest(ctx, u, trafficGB, price, baseBytes, ProviderTelegramStars, nil)
 }
 
 // starsPayload builds the invoice payload that correlates a successful_payment
@@ -109,6 +121,23 @@ func (s *Service) startStarsInvoiceLink(ctx context.Context, u *store.NotifiedUs
 		s.logger.Error("stars: create invoice link failed", "req_id", reqID, "err", err.Error())
 		if _, derr := s.store.DeletePendingPaymentRequest(ctx, reqID); derr != nil {
 			s.logger.Error("stars: withdraw request failed", "req_id", reqID, "err", derr.Error())
+		}
+		return "", err
+	}
+	return link, nil
+}
+
+func (s *Service) startStarsTrafficExtensionLink(ctx context.Context, u *store.NotifiedUser, trafficGB, price int, baseBytes int64) (string, error) {
+	reqID, err := s.startStarsTrafficExtension(ctx, u, trafficGB, price, baseBytes)
+	if err != nil {
+		return "", err
+	}
+	title, desc, prices := s.starsTrafficInvoiceContent(u.Username, trafficGB, price)
+	link, err := s.bot.CreateInvoiceLink(ctx, title, desc, starsPayload(reqID), prices)
+	if err != nil {
+		s.logger.Error("stars: create traffic invoice link failed", "req_id", reqID, "err", err.Error())
+		if _, derr := s.store.DeletePendingPaymentRequest(ctx, reqID); derr != nil {
+			s.logger.Error("stars: withdraw traffic request failed", "req_id", reqID, "err", derr.Error())
 		}
 		return "", err
 	}
@@ -198,9 +227,15 @@ func (s *Service) HandleSuccessfulPayment(ctx context.Context, m *tg.Message) bo
 	}
 
 	if confirmed.TelegramID != 0 {
-		_ = s.bot.SendPlain(ctx, confirmed.TelegramID, fmt.Sprintf(
-			i18n.T("✅ Оплата получена! Подписка для «%s» продлена до %s."),
-			confirmed.Username, newExpireAt.Format("02.01.2006")))
+		if confirmed.Kind == store.PaymentKindTrafficExtension {
+			_ = s.bot.SendPlain(ctx, confirmed.TelegramID, fmt.Sprintf(
+				i18n.T("✅ Оплата получена! Для «%s» добавлено %d ГБ трафика до %s."),
+				confirmed.Username, confirmed.TrafficGB, newExpireAt.Format("02.01.2006")))
+		} else {
+			_ = s.bot.SendPlain(ctx, confirmed.TelegramID, fmt.Sprintf(
+				i18n.T("✅ Оплата получена! Подписка для «%s» продлена до %s."),
+				confirmed.Username, newExpireAt.Format("02.01.2006")))
+		}
 	}
 	return true
 }
