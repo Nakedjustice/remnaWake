@@ -202,6 +202,7 @@ func main() {
 			return
 		}
 		pay.RunInfraPaymentReminders(ctx)
+		pay.RunTrafficExtensionResets(ctx)
 		if n, err := db.DeleteResolvedGiftCodes(ctx); err != nil {
 			logger.Error("gift cleanup failed", "err", err.Error())
 		} else if n > 0 {

@@ -48,17 +48,18 @@ var (
 
 // WebProfile is one linked subscription as shown in the mini app.
 type WebProfile struct {
-	RemnawaveID     int64  `json:"remnawave_id"`
-	UUID            string `json:"uuid,omitempty"`
-	Username        string `json:"username"`
-	Status          string `json:"status"`
-	StatusLabel     string `json:"status_label"`
-	ExpireAt        string `json:"expire_at,omitempty"` // DD.MM.YYYY
-	DaysLeft        int    `json:"days_left"`
-	HwidLimit       int    `json:"hwid_limit"`                // 0 = unlimited
-	TrafficLimitGB  int64  `json:"traffic_limit_gb"`          // 0 = unlimited
-	UsedTrafficGB   string `json:"used_traffic_gb,omitempty"` // formatted GB, e.g. "1.3"
-	SubscriptionURL string `json:"subscription_url,omitempty"`
+	RemnawaveID      int64                     `json:"remnawave_id"`
+	UUID             string                    `json:"uuid,omitempty"`
+	Username         string                    `json:"username"`
+	Status           string                    `json:"status"`
+	StatusLabel      string                    `json:"status_label"`
+	ExpireAt         string                    `json:"expire_at,omitempty"` // DD.MM.YYYY
+	DaysLeft         int                       `json:"days_left"`
+	HwidLimit        int                       `json:"hwid_limit"`                // 0 = unlimited
+	TrafficLimitGB   int64                     `json:"traffic_limit_gb"`          // 0 = unlimited
+	UsedTrafficGB    string                    `json:"used_traffic_gb,omitempty"` // formatted GB, e.g. "1.3"
+	SubscriptionURL  string                    `json:"subscription_url,omitempty"`
+	TrafficExtension *WebTrafficExtensionState `json:"traffic_extension,omitempty"`
 }
 
 // WebTariff is one renewal option as shown in the mini app.
@@ -148,11 +149,12 @@ type WebReceipt struct {
 
 // WebCabinet is the full /api/me payload for the mini app.
 type WebCabinet struct {
-	Linked   bool         `json:"linked"`
-	Lang     string       `json:"lang"`
-	IsAdmin  bool         `json:"is_admin,omitempty"`
-	Profiles []WebProfile `json:"profiles,omitempty"`
-	Tariffs  []WebTariff  `json:"tariffs,omitempty"`
+	Linked            bool                        `json:"linked"`
+	Lang              string                      `json:"lang"`
+	IsAdmin           bool                        `json:"is_admin,omitempty"`
+	Profiles          []WebProfile                `json:"profiles,omitempty"`
+	Tariffs           []WebTariff                 `json:"tariffs,omitempty"`
+	TrafficExtensions []WebTrafficExtensionOption `json:"traffic_extensions,omitempty"`
 	// Plans lists every purchasable preset with its own price grid; the
 	// top-level Tariffs stays the standard plan's grid (the gift flow and
 	// older clients rely on it). Sent only when custom presets exist.
@@ -199,6 +201,12 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 		if sub.UsedTrafficBytes > 0 {
 			p.UsedTrafficGB = strconv.FormatFloat(float64(sub.UsedTrafficBytes)/float64(bytesPerGB), 'f', 2, 64)
 		}
+		if active, err := s.store.ActiveTrafficExtensionForUUID(ctx, sub.UUID, now); err == nil && active != nil && active.ExtensionExpiresAt != nil {
+			p.TrafficExtension = &WebTrafficExtensionState{
+				TrafficGB: active.TrafficGB,
+				ExpiresAt: active.ExtensionExpiresAt.Format("02.01.2006"),
+			}
+		}
 		if !sub.ExpireAt.IsZero() {
 			p.ExpireAt = sub.ExpireAt.Format("02.01.2006")
 			if sub.ExpireAt.After(now) {
@@ -228,6 +236,7 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 		out.Tariffs = append(out.Tariffs, WebTariff{Months: t.Months, Price: t.Price, PriceLabel: s.priceLabel(t.Price)})
 	}
 	out.Plans = s.webPlans(ctx, out.Tariffs)
+	out.TrafficExtensions = s.webTrafficExtensionOptions(ctx)
 
 	s.mu.Lock()
 	out.Requisites = s.requisites
@@ -485,6 +494,85 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 	_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
 		i18n.T("✅ Заявка на продление «%s» на %d мес. отправлена администратору. После подтверждения оплаты подписка будет продлена."),
 		sub.Username, months))
+	return &RenewResult{}, nil
+}
+
+func (s *Service) CreateTrafficExtensionRequest(ctx context.Context, telegramID, remnawaveID int64, trafficGB int, provider string) (*RenewResult, error) {
+	if !s.isEnabled() {
+		return nil, ErrPaymentsDisabled
+	}
+	opt, err := s.store.GetTrafficExtensionOption(ctx, trafficGB)
+	if err != nil {
+		return nil, fmt.Errorf("get traffic extension option: %w", err)
+	}
+	if opt == nil {
+		return nil, ErrTrafficExtensionUnknown
+	}
+	subs, err := s.finder.FindByTelegramID(ctx, telegramID)
+	if err != nil {
+		return nil, fmt.Errorf("find by telegram id: %w", err)
+	}
+	if len(subs) == 0 {
+		return nil, ErrNotLinked
+	}
+	var sub *Subscriber
+	for i := range subs {
+		if subs[i].RemnawaveID == remnawaveID {
+			sub = &subs[i]
+			break
+		}
+	}
+	if sub == nil {
+		return nil, ErrProfileUnknown
+	}
+	if sub.TrafficLimitBytes <= 0 {
+		return nil, ErrTrafficExtensionUnavailable
+	}
+	u := &store.NotifiedUser{
+		RemnawaveID: sub.RemnawaveID,
+		UUID:        sub.UUID,
+		Username:    sub.Username,
+		TelegramID:  telegramID,
+		ExpireAt:    sub.ExpireAt,
+	}
+	if err := s.store.UpsertNotifiedUser(ctx, *u); err != nil {
+		s.logger.Error("webapp: remember user failed", "err", err.Error(), "user_id", sub.RemnawaveID)
+	}
+
+	enabled := s.enabledProviders()
+	if provider == "" {
+		if len(enabled) > 1 {
+			return &RenewResult{Status: "choose_provider", Providers: enabled}, nil
+		}
+		provider = enabled[0]
+	} else if !s.providerAvailable(provider) || !s.isProviderEnabled(provider) {
+		return nil, ErrBadInput
+	}
+
+	switch provider {
+	case ProviderPlatega:
+		reqID, payURL, err := s.startPlategaTrafficExtension(ctx, u, trafficGB, opt.Price, sub.TrafficLimitBytes)
+		if err != nil {
+			return nil, err
+		}
+		return &RenewResult{Status: ProviderPlatega, RequestID: reqID, PayURL: payURL}, nil
+	case ProviderTelegramStars:
+		link, err := s.startStarsTrafficExtensionLink(ctx, u, trafficGB, opt.Price, sub.TrafficLimitBytes)
+		if err != nil {
+			return nil, err
+		}
+		return &RenewResult{Status: ProviderTelegramStars, InvoiceURL: link}, nil
+	}
+	if s.getRequireScreenshot() {
+		s.startTrafficPayPhotoFlow(ctx, telegramID, sub.RemnawaveID, trafficGB, opt.Price, sub.TrafficLimitBytes)
+		return nil, ErrScreenshotRequired
+	}
+	if _, err := s.createTrafficExtensionPaymentRequest(ctx, u, trafficGB, opt.Price, sub.TrafficLimitBytes, ProviderP2P, nil); err != nil {
+		return nil, err
+	}
+	_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
+		i18n.T("✅ Заявка на докупку %d ГБ для «%s» отправлена администратору."),
+		trafficGB, sub.Username))
 	return &RenewResult{}, nil
 }
 

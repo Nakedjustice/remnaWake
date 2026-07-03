@@ -1540,6 +1540,96 @@ function renderRenew(target, data) {
   return wrap;
 }
 
+function renderTrafficExtensions(target, data) {
+  const options = data.traffic_extensions || [];
+  if (!options.length || !(target.traffic_limit_gb > 0)) return null;
+  const wrap = el('div', 'card');
+  wrap.appendChild(el('h2', null, t('📊 Докупить трафик')));
+  const hint = target.traffic_extension
+    ? t('Уже активен пакет +{gb} ГБ до {date}. Новый пакет можно купить после окончания.', { gb: target.traffic_extension.traffic_gb, date: target.traffic_extension.expires_at })
+    : t('Пакет действует 30 дней после оплаты. Можно купить один пакет в месяц.');
+  wrap.appendChild(el('div', 'hint', hint));
+  const grid = el('div', 'tariffs');
+  const choicePanel = el('div', 'payment-step'); choicePanel.hidden = true;
+  choicePanel.appendChild(el('div', 'payment-step-title', t('Выберите способ оплаты')));
+  const choiceBox = el('div', 'tariffs'); choicePanel.appendChild(choiceBox);
+  const receiptBox = el('div', 'payment-step'); receiptBox.hidden = true;
+  receiptBox.appendChild(el('div', 'payment-step-title', t('Прикрепите чек')));
+  receiptBox.appendChild(el('div', 'hint', t('Администратор подтвердит оплату после получения чека.')));
+  const receiptFile = Object.assign(el('input'), { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/heic,.pdf,.heic' });
+  const receiptNote = Object.assign(el('input'), { type: 'text', placeholder: t('Комментарий (необязательно)') });
+  const receiptSend = el('button', null, t('📤 Отправить чек'));
+  receiptSend.onclick = async () => {
+    if (!receiptFile.files.length) return tg.showAlert(t('📸 Прикрепите чек'));
+    const form = new FormData(); form.append('file', receiptFile.files[0]); form.append('note', receiptNote.value.trim());
+    try {
+      await withButtonLoading(receiptSend, t('Отправка…'), () => api('/api/receipt', { method: 'POST', body: form }));
+      receiptSend.textContent = t('✅ Чек отправлен'); receiptSend.disabled = true; receiptFile.disabled = true; receiptNote.disabled = true;
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  receiptBox.appendChild(receiptFile); receiptBox.appendChild(receiptNote); receiptBox.appendChild(receiptSend);
+
+  const checkKey = 'platega_traffic_' + target.remnawave_id;
+  const checkPanel = el('div', 'payment-step'); checkPanel.hidden = !localStorage.getItem(checkKey);
+  checkPanel.appendChild(el('div', 'payment-step-title', t('Проверка оплаты')));
+  const check = el('button', 'secondary', t('🔄 Проверить оплату'));
+  check.onclick = async () => {
+    const requestID = Number(localStorage.getItem(checkKey)); if (!requestID) return;
+    try {
+      const res = await withButtonLoading(check, t('Проверяю оплату…'), () =>
+        api('/api/platega/check', { method: 'POST', body: JSON.stringify({ request_id: requestID }) }));
+      if (res.status === 'confirmed') { localStorage.removeItem(checkKey); check.textContent = t('✅ Оплата подтверждена.'); check.disabled = true; cabinetData = await api('/api/me'); }
+      else tg.showAlert(t('Оплата ещё не подтверждена.'));
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  checkPanel.appendChild(check);
+
+  const buy = async (trafficGB, provider, button) => {
+    choicePanel.hidden = true; choiceBox.textContent = ''; receiptBox.hidden = true;
+    const b = button || activeButton();
+    setButtonLoading(b, true, t('Отправка…'));
+    let res, err;
+    try {
+      const body = { remnawave_id: target.remnawave_id, traffic_gb: trafficGB };
+      if (provider) body.provider = provider;
+      res = await api('/api/traffic-extension', { method: 'POST', body: JSON.stringify(body) });
+    } catch (e) { err = e; }
+    finally { if (b && b.isConnected) setButtonLoading(b, false); }
+    if (err) return tg.showAlert(err.message);
+    if (res.status === 'choose_provider') {
+      (res.providers || []).forEach(id => {
+        const pb = el('button', 'secondary', providerLabel(id));
+        pb.onclick = () => buy(trafficGB, id, pb);
+        choiceBox.appendChild(pb);
+      });
+      choicePanel.hidden = false;
+    } else if (res.status === 'awaiting_screenshot') {
+      receiptBox.hidden = false;
+    } else if (res.status === 'platega' && res.payment_url) {
+      if (res.request_id) { localStorage.setItem(checkKey, String(res.request_id)); checkPanel.hidden = false; }
+      tg.openLink(res.payment_url);
+      tg.showAlert(t('Откроется страница оплаты. После оплаты услуга применится автоматически.'));
+    } else if (res.status === 'telegram_stars' && res.invoice_url) {
+      tg.openInvoice(res.invoice_url, (st) => { if (st === 'paid') tg.showAlert(t('Оплата прошла! Трафик добавлен.')); });
+    } else {
+      tg.showAlert(t('Заявка отправлена администратору. После оплаты и подтверждения трафик будет добавлен.'));
+    }
+  };
+  options.forEach(opt => {
+    const b = el('button', 'secondary');
+    b.appendChild(el('div', null, t('+{gb} ГБ', { gb: opt.traffic_gb })));
+    b.appendChild(el('div', 'hint', opt.price_label));
+    b.disabled = !!target.traffic_extension;
+    b.onclick = () => buy(opt.traffic_gb, '', b);
+    grid.appendChild(b);
+  });
+  wrap.appendChild(grid);
+  wrap.appendChild(choicePanel);
+  wrap.appendChild(receiptBox);
+  wrap.appendChild(checkPanel);
+  return wrap;
+}
+
 // providerLabel mirrors the bot's providerButtonLabel for the mini-app chooser.
 function providerLabel(id) {
   switch (id) {
@@ -2078,6 +2168,8 @@ function showRenew() {
     appEl.appendChild(card);
   } else {
     appEl.appendChild(renderRenew(profile, data));
+    const traffic = renderTrafficExtensions(profile, data);
+    if (traffic) appEl.appendChild(traffic);
   }
   if (data.requisites) {
     const card = el('div', 'card');
@@ -2495,6 +2587,48 @@ function renderAdminTariffs(data) {
   return card;
 }
 
+function renderAdminTrafficExtensions(data) {
+  const card = el('div', 'admin-card');
+  card.appendChild(el('h2', null, t('📊 Докупка трафика')));
+  card.appendChild(el('div', 'hint', t('Пакеты добавляют трафик на 30 дней. Пользователь может купить один пакет в месяц.')));
+  const listBox = el('div');
+  const fillList = () => {
+    listBox.textContent = '';
+    const list = data.traffic_extensions || [];
+    if (!list.length) {
+      listBox.appendChild(el('div', 'hint', t('Опции докупки трафика не заданы.')));
+      return;
+    }
+    list.forEach(opt => {
+      const item = el('div', 'admin-list-row');
+      const copy = el('div', 'admin-list-copy');
+      copy.appendChild(el('div', 'admin-list-title', t('+{gb} ГБ', { gb: opt.traffic_gb })));
+      copy.appendChild(el('div', 'admin-list-meta', opt.price_label));
+      item.appendChild(copy);
+      const del = el('button', 'secondary', t('🗑 Удалить'));
+      del.onclick = () => adminAction('/api/admin/traffic-extension/delete', { traffic_gb: opt.traffic_gb },
+        t('Удалить опцию +{gb} ГБ?', { gb: opt.traffic_gb }));
+      item.appendChild(del);
+      listBox.appendChild(item);
+    });
+  };
+  fillList();
+  card.appendChild(listBox);
+  card.appendChild(el('div', 'hint', t('Добавить или обновить пакет:')));
+  const pair = el('div', 'admin-form-grid');
+  const gb = Object.assign(el('input'), { type: 'number', min: '1', placeholder: t('Трафик, ГБ') });
+  const price = Object.assign(el('input'), { type: 'number', min: '1', placeholder: t('Цена') });
+  pair.appendChild(gb); pair.appendChild(price); card.appendChild(pair);
+  const save = el('button', null, t('💾 Сохранить пакет'));
+  save.onclick = () => {
+    const g = parseInt(gb.value, 10), p = parseInt(price.value, 10);
+    if (!(g >= 1) || !(p >= 1)) { tg.showAlert(t('Введите GB и цену (целые ≥ 1).')); return; }
+    adminAction('/api/admin/traffic-extension', { traffic_gb: g, price: p });
+  };
+  card.appendChild(save);
+  return card;
+}
+
 // renderAdminPlans is the preset editor: cheaper subscription variants with
 // their own tag, squad, traffic and device limits (prices are edited in the
 // tariff card via its plan selector).
@@ -2738,7 +2872,8 @@ function renderAdminRequests(data) {
   data.requests.forEach(r => {
     const item = el('div', 'admin-card admin-request');
     const info = el('div', 'admin-request-copy');
-    let line = `${r.username} — ${t('{months} мес.', { months: r.months })}`;
+    const isTraffic = r.kind === 'traffic_extension';
+    let line = isTraffic ? `${r.username} — ${t('+{gb} ГБ', { gb: r.traffic_gb })}` : `${r.username} — ${t('{months} мес.', { months: r.months })}`;
     if (r.price_label) line += ` (${r.price_label})`;
     info.appendChild(el('div', 'admin-card-title', line));
     let st = t('заявка от {date}', { date: r.created_at });
@@ -2750,7 +2885,8 @@ function renderAdminRequests(data) {
     const ok = el('button', 'admin-icon-btn', '✓');
     ok.setAttribute('aria-label', t('Подтвердить'));
     ok.onclick = () => adminAction('/api/admin/request/confirm', { id: r.id },
-      t('Подтвердить оплату «{username}» на {months} мес.?', { username: r.username, months: r.months }));
+      isTraffic ? t('Подтвердить оплату «{username}» за +{gb} ГБ?', { username: r.username, gb: r.traffic_gb })
+        : t('Подтвердить оплату «{username}» на {months} мес.?', { username: r.username, months: r.months }));
     const rej = el('button', 'admin-icon-btn reject', '×');
     rej.setAttribute('aria-label', t('Отклонить'));
     rej.onclick = () => adminAction('/api/admin/request/reject', { id: r.id },
@@ -3340,6 +3476,7 @@ function showAdminBilling() {
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Тарифы и оплата')));
   appEl.appendChild(renderAdminTariffs(data));
+  appEl.appendChild(renderAdminTrafficExtensions(data));
   appEl.appendChild(renderAdminPlans(data));
   appEl.appendChild(renderAdminRequisites(data));
   statusEl.hidden = true;

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
+	"github.com/Nakedjustice/remnaWake/internal/store"
 	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
@@ -113,9 +114,12 @@ func (s *Service) UploadRenewReceipt(ctx context.Context, telegramID int64, rece
 		s.clearPayPhoto(telegramID)
 		return ErrProfileUnknown
 	}
-	_, err = s.createPaymentRequest(ctx, u, st.months, st.price, st.plan, &receiptAttachment{
-		asDocument: isDocument && !isPhoto, note: strings.TrimSpace(receipt.Note), filename: receipt.Filename, data: receipt.Data,
-	})
+	att := &receiptAttachment{asDocument: isDocument && !isPhoto, note: strings.TrimSpace(receipt.Note), filename: receipt.Filename, data: receipt.Data}
+	if st.kind == store.PaymentKindTrafficExtension {
+		_, err = s.createTrafficExtensionPaymentRequest(ctx, u, st.trafficGB, st.price, st.baseBytes, ProviderP2P, att)
+	} else {
+		_, err = s.createPaymentRequest(ctx, u, st.months, st.price, st.plan, att)
+	}
 	if err != nil {
 		return fmt.Errorf("%w: deliver receipt: %v", ErrProviderUnavailable, err)
 	}
@@ -154,6 +158,16 @@ func (s *Service) startPayPhotoFlow(ctx context.Context, chatID, userID int64, m
 		months:    months,
 		price:     price,
 		plan:      plan,
+		kind:      store.PaymentKindSubscription,
+		createdAt: s.now(),
+	})
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Отправьте фото, скриншот или PDF-файл чека об оплате следующим сообщением — после этого заявка уйдёт администратору.\n\nОтменить: /cancel"))
+}
+
+func (s *Service) startTrafficPayPhotoFlow(ctx context.Context, chatID, userID int64, trafficGB, price int, baseBytes int64) {
+	s.setPayPhoto(chatID, &payPhotoState{
+		userID: userID, price: price, kind: store.PaymentKindTrafficExtension,
+		trafficGB: trafficGB, baseBytes: baseBytes, extraBytes: int64(trafficGB) * bytesPerGB,
 		createdAt: s.now(),
 	})
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Отправьте фото, скриншот или PDF-файл чека об оплате следующим сообщением — после этого заявка уйдёт администратору.\n\nОтменить: /cancel"))
@@ -248,13 +262,18 @@ func (s *Service) finishPayPhotoFlow(ctx context.Context, chatID int64, st *payP
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось найти данные. Начните продление заново."))
 		return true
 	}
-	if _, err := s.createPaymentRequest(ctx, u, st.months, st.price, st.plan, att); err != nil {
+	if st.kind == store.PaymentKindTrafficExtension {
+		_, err = s.createTrafficExtensionPaymentRequest(ctx, u, st.trafficGB, st.price, st.baseBytes, ProviderP2P, att)
+	} else {
+		_, err = s.createPaymentRequest(ctx, u, st.months, st.price, st.plan, att)
+	}
+	if err != nil {
 		// Keep the state so the user can simply resend the file.
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
 		return true
 	}
 	s.clearPayPhoto(chatID)
-	_ = s.bot.SendPlain(ctx, chatID, i18n.T("✅ Заявка с чеком отправлена администратору. После подтверждения оплаты подписка будет продлена."))
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("✅ Заявка с чеком отправлена администратору. После подтверждения оплаты услуга будет применена."))
 	return true
 }
 

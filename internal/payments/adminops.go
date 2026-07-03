@@ -62,6 +62,13 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 	if req.Status != "pending" {
 		return req, time.Time{}, ErrRequestResolved
 	}
+	if req.Kind == store.PaymentKindTrafficExtension {
+		expiresAt, err := s.confirmTrafficExtensionRequest(ctx, req)
+		if err != nil {
+			return req, time.Time{}, err
+		}
+		return req, expiresAt, nil
+	}
 
 	plan, planErr := s.getPlan(ctx, req.Plan)
 	newExpireAt, _ := s.renewalPlanChange(ctx, req, planErr == nil)
@@ -98,6 +105,18 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 	} else if err := s.userUpdater.UpdateUser(ctx, req.UUID, patch); err != nil {
 		s.logger.Error("extend subscription failed", "uuid", req.UUID, "err", err.Error())
 		return req, time.Time{}, fmt.Errorf("extend subscription: %w", err)
+	}
+	if active, err := s.store.ActiveTrafficExtensionForUUID(ctx, req.UUID, s.now()); err == nil && active != nil && patch.TrafficLimitBytes != nil {
+		newLimit := *patch.TrafficLimitBytes + active.ExtraTrafficBytes
+		if !s.dryRun {
+			if err := s.userUpdater.UpdateUser(ctx, req.UUID, UserPatch{TrafficLimitBytes: &newLimit}); err != nil {
+				s.logger.Error("preserve traffic extension failed", "uuid", req.UUID, "err", err.Error())
+				return req, time.Time{}, fmt.Errorf("preserve traffic extension: %w", err)
+			}
+		}
+		if err := s.store.UpdateActiveTrafficExtensionBase(ctx, req.UUID, s.now(), *patch.TrafficLimitBytes); err != nil {
+			s.logger.Error("update traffic extension base failed", "uuid", req.UUID, "err", err.Error())
+		}
 	}
 
 	if _, err := s.store.ConfirmPaymentRequest(ctx, reqID, s.now()); err != nil {
@@ -216,9 +235,15 @@ func (s *Service) rejectPaymentRequest(ctx context.Context, reqID int64) (*store
 	}
 	s.clearPayButtons(ctx, reqID)
 	if req.TelegramID != 0 {
-		_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
-			i18n.T("❌ Заявка на продление «%s» на %d мес. отклонена администратором."),
-			req.Username, req.Months))
+		if req.Kind == store.PaymentKindTrafficExtension {
+			_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
+				i18n.T("❌ Заявка на докупку %d ГБ для «%s» отклонена администратором."),
+				req.TrafficGB, req.Username))
+		} else {
+			_ = s.bot.SendPlain(ctx, req.TelegramID, fmt.Sprintf(
+				i18n.T("❌ Заявка на продление «%s» на %d мес. отклонена администратором."),
+				req.Username, req.Months))
+		}
 	}
 	return req, nil
 }

@@ -149,6 +149,9 @@ The bot chat and Mini App both support this step. JPEG/PNG photos are limited to
 | `/tariffs`                    | List current tariffs          |
 | `/settariff <months> <price>` | Add or update a tariff        |
 | `/deltariff <months>`         | Remove a tariff               |
+| `/traffic`                    | List traffic-extension packages |
+| `/settraffic <GB> <price>`    | Add or update a 30-day traffic package |
+| `/deltraffic <GB>`            | Remove a traffic package      |
 | `/setrequisites`              | Set payment requisites shown after «Я оплатил» (two-step) |
 | `/requisites`                 | Show the saved payment requisites |
 | `/stats`                      | 📊 Panel users, 30-day payments & revenue, pending requests, gift codes, pending invites |
@@ -157,7 +160,10 @@ The **`/admin`** menu also offers 📊 statistics, a 🎁 gift-codes browser (by
 buyer → used/not-used → individual codes, with one-tap revoke), and a
 🛡 **default-squad** picker for new users created via `/gift` and `/invite`
 (falls back to the stock `Default-Squad`; user creation fails visibly if no
-squad can be resolved). The same controls live in the Mini App admin panel.
+squad can be resolved). Admins can also configure 30-day traffic-extension
+packages; linked users with finite traffic limits can buy one package per
+rolling 30-day window, and the bot restores the base limit after it expires.
+The same controls live in the Mini App admin panel.
 
 In the Mini App, the **payment history** merges subscription payments, gift
 codes and invites into one list: filter it by type (payments / gifts / invites)

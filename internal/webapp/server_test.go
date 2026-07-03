@@ -17,22 +17,23 @@ import (
 )
 
 type fakeCabinet struct {
-	data           *payments.WebCabinet
-	renewErr       error
-	renewResult    *payments.RenewResult
-	renewed        []int64
-	renewConfirmed []bool
-	giftErr        error
-	gifted         []int
-	inviteErr      error
-	invited        []string
-	notifErr       error
-	notifSet       []string // "<kind>:<muted>" per call
-	trialErr       error
-	trialResult    *payments.WebTrialResult
-	trialNames     []string
-	parityErr      error
-	receipt        payments.WebReceipt
+	data            *payments.WebCabinet
+	renewErr        error
+	renewResult     *payments.RenewResult
+	renewed         []int64
+	renewConfirmed  []bool
+	trafficExtended []int
+	giftErr         error
+	gifted          []int
+	inviteErr       error
+	invited         []string
+	notifErr        error
+	notifSet        []string // "<kind>:<muted>" per call
+	trialErr        error
+	trialResult     *payments.WebTrialResult
+	trialNames      []string
+	parityErr       error
+	receipt         payments.WebReceipt
 }
 
 func TestWebParityJSONRoutes(t *testing.T) {
@@ -114,6 +115,12 @@ func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabi
 func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int, _, _ string, planChangeConfirmed bool) (*payments.RenewResult, error) {
 	f.renewed = append(f.renewed, remnawaveID)
 	f.renewConfirmed = append(f.renewConfirmed, planChangeConfirmed)
+	return f.renewResult, f.renewErr
+}
+
+func (f *fakeCabinet) CreateTrafficExtensionRequest(_ context.Context, _ int64, remnawaveID int64, trafficGB int, _ string) (*payments.RenewResult, error) {
+	f.renewed = append(f.renewed, remnawaveID)
+	f.trafficExtended = append(f.trafficExtended, trafficGB)
 	return f.renewResult, f.renewErr
 }
 
@@ -219,6 +226,14 @@ func (f *fakeAdmin) AdminSetTariff(_ context.Context, tgID int64, plan string, m
 }
 func (f *fakeAdmin) AdminDeleteTariff(_ context.Context, tgID int64, plan string, months int) error {
 	f.calls = append(f.calls, adminCall{Name: "deltariff", A: int64(months), Text: plan})
+	return f.err
+}
+func (f *fakeAdmin) AdminSetTrafficExtensionOption(_ context.Context, tgID int64, trafficGB, price int) error {
+	f.calls = append(f.calls, adminCall{Name: "settraffic", A: int64(trafficGB), B: int64(price)})
+	return f.err
+}
+func (f *fakeAdmin) AdminDeleteTrafficExtensionOption(_ context.Context, tgID int64, trafficGB int) error {
+	f.calls = append(f.calls, adminCall{Name: "deltraffic", A: int64(trafficGB)})
 	return f.err
 }
 func (f *fakeAdmin) AdminSetPlan(_ context.Context, tgID int64, in payments.WebAdminPlan) error {

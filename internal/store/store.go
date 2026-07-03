@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS tariffs (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (plan, months)
 );
+CREATE TABLE IF NOT EXISTS traffic_extension_options (
+  traffic_gb INTEGER PRIMARY KEY,
+  price      INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS plans (
   code         TEXT PRIMARY KEY,
   name         TEXT NOT NULL,
@@ -59,7 +65,13 @@ CREATE TABLE IF NOT EXISTS payment_requests (
   screenshot_is_document INTEGER NOT NULL DEFAULT 0,
   provider           TEXT NOT NULL DEFAULT 'p2p',
   provider_txn_id    TEXT NOT NULL DEFAULT '',
-  plan               TEXT NOT NULL DEFAULT 'standard'
+  plan               TEXT NOT NULL DEFAULT 'standard',
+  kind               TEXT NOT NULL DEFAULT 'subscription',
+  traffic_gb         INTEGER NOT NULL DEFAULT 0,
+  base_traffic_limit_bytes INTEGER NOT NULL DEFAULT 0,
+  extra_traffic_bytes INTEGER NOT NULL DEFAULT 0,
+  extension_expires_at TEXT,
+  extension_restored_at TEXT
 );
 CREATE TABLE IF NOT EXISTS invite_requests (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,10 +203,6 @@ func New(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate payment request columns: %w", err)
 	}
-	if err := ensurePaymentRequestIndexes(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("migrate payment request indexes: %w", err)
-	}
 	if err := ensureTariffPlanColumn(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate tariffs plan column: %w", err)
@@ -202,6 +210,14 @@ func New(path string) (*Store, error) {
 	if err := ensurePlanColumns(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate plan columns: %w", err)
+	}
+	if err := ensureTrafficExtensionColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate traffic extension columns: %w", err)
+	}
+	if err := ensurePaymentRequestIndexes(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate payment request indexes: %w", err)
 	}
 	return &Store{db: db}, nil
 }
@@ -339,6 +355,33 @@ func ensurePlanColumns(db *sql.DB) error {
 	return nil
 }
 
+func ensureTrafficExtensionColumns(db *sql.DB) error {
+	existing, err := tableColumns(db, "payment_requests")
+	if err != nil {
+		return err
+	}
+	cols := []struct {
+		name string
+		def  string
+	}{
+		{"kind", "TEXT NOT NULL DEFAULT 'subscription'"},
+		{"traffic_gb", "INTEGER NOT NULL DEFAULT 0"},
+		{"base_traffic_limit_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"extra_traffic_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"extension_expires_at", "TEXT"},
+		{"extension_restored_at", "TEXT"},
+	}
+	for _, c := range cols {
+		if existing[c.name] {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN ` + c.name + ` ` + c.def); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func ensurePaymentRequestIndexes(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_created_at ON payment_requests(created_at);
@@ -346,6 +389,7 @@ func ensurePaymentRequestIndexes(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_uuid_status_resolved ON payment_requests(uuid, status, confirmed_at);
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_provider ON payment_requests(provider);
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_provider_txn ON payment_requests(provider_txn_id);
+		CREATE INDEX IF NOT EXISTS idx_payment_requests_traffic_active ON payment_requests(uuid, kind, status, extension_expires_at, extension_restored_at);
 	`)
 	return err
 }
