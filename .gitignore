@@ -9,6 +9,11 @@ CLAUDE.local.md
 .claude.json
 .mcp.json
 
+# Codex (skills are versioned, local settings are not)
+.codex/*
+!.codex/skills/
+AGENTS.md
+
 # Build & coverage artifacts
 /bot
 /bin/
