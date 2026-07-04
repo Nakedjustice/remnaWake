@@ -47,6 +47,7 @@ type Admin interface {
 	AdminPanelData(ctx context.Context, telegramID int64) (*payments.WebAdminPanel, error)
 	AdminActionCenter(ctx context.Context, telegramID int64) (*payments.WebAdminActionCenter, error)
 	AdminStatsData(ctx context.Context, telegramID int64) (*payments.WebAdminStats, error)
+	AdminOperatorAnalytics(ctx context.Context, telegramID int64, days int) (*payments.WebOperatorAnalytics, error)
 	AdminProxyHealth(ctx context.Context, telegramID int64) (*payments.WebProxyHealth, error)
 	AdminSetProxyNotification(ctx context.Context, telegramID int64, name, address, subName string, muted bool) error
 	AdminPaymentReport(ctx context.Context, telegramID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error)
@@ -143,6 +144,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
 	mux.HandleFunc("GET /api/admin/action-center", s.handleAdminActionCenter)
 	mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
+	mux.HandleFunc("GET /api/admin/analytics", s.handleAdminAnalytics)
 	mux.HandleFunc("GET /api/admin/proxy-health", s.handleAdminProxyHealth)
 	mux.HandleFunc("POST /api/admin/proxy-notification", s.handleAdminSetProxyNotification)
 	mux.HandleFunc("GET /api/admin/payments", s.handleAdminPayments)
@@ -688,6 +690,24 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
+}
+
+func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	days, err := positiveQueryInt(r.URL.Query().Get("days"), 30)
+	if err != nil || (days != 7 && days != 30 && days != 90) {
+		writeJSONError(w, http.StatusBadRequest, "invalid analytics filters")
+		return
+	}
+	report, err := s.admin.AdminOperatorAnalytics(r.Context(), userID, days)
+	if err != nil {
+		s.writeAdminError(w, "operator analytics", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
 }
 
 func (s *Server) handleAdminProxyHealth(w http.ResponseWriter, r *http.Request) {

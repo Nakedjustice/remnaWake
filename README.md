@@ -348,10 +348,12 @@ Admins also get a **Statistics** page with panel user totals, gift-code counts,
 and pending invites. Its payment report provides 7/30/90-day revenue,
 conversion and provider breakdowns, a daily trend, and searchable, paginated
 renewal history for P2P, Platega, and Telegram Stars. Gateway transaction IDs
-are shown when available. The admin hub starts with a read-only **Action Center**
-that groups pending queues, expiring or low-traffic users, proxy/infra/provider
-alerts, and last-known update status, linking each item to the existing detail
-page.
+are shown when available. The same page also shows local-only operator analytics
+from SQLite: subscription, traffic-extension, gift and invite revenue, renewals,
+local lapsed/winback signals, referral conversion, gift funnel, traffic-extension
+GB, and provider mix. The admin hub starts with a read-only **Action Center** that
+groups pending queues, expiring or low-traffic users, proxy/infra/provider alerts,
+and last-known update status, linking each item to the existing detail page.
 
 **Requirements** — served by the bot on `WEBAPP_LISTEN` (default `:8080`).
 Telegram only opens Mini Apps over **HTTPS**, so put a reverse proxy
@@ -539,10 +541,14 @@ Maintenance helpers:
 ```bash
 ./install.sh configure   # first install walks every section; reopens the menu if .env exists
 ./install.sh menu        # jump straight to the reconfigure menu to edit one section
-./install.sh doctor      # check Docker, .env, compose config, ports and updates
+./install.sh doctor      # read-only health report: routes, ports, compose, Watchtower, xray, backups
 ./install.sh update      # back up config, pull the image and restart
 ./install.sh backup      # copy .env and compose files into ./backups
 ```
+
+`doctor` explains each finding with the detected value, expected invariant and a
+likely fix command. It does not rewrite generated files; use `./install.sh configure`
+for rewrites and `./install.sh backup` to create timestamped config backups.
 
 ### Local (development)
 

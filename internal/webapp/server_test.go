@@ -175,6 +175,7 @@ type fakeAdmin struct {
 	panel        *payments.WebAdminPanel
 	actionCenter *payments.WebAdminActionCenter
 	stats        *payments.WebAdminStats
+	analytics    *payments.WebOperatorAnalytics
 	report       *payments.WebPaymentReport
 	proxyHealth  *payments.WebProxyHealth
 	err          error
@@ -192,6 +193,10 @@ func (f *fakeAdmin) AdminActionCenter(_ context.Context, tgID int64) (*payments.
 func (f *fakeAdmin) AdminStatsData(_ context.Context, tgID int64) (*payments.WebAdminStats, error) {
 	f.calls = append(f.calls, adminCall{Name: "stats", A: tgID})
 	return f.stats, f.err
+}
+func (f *fakeAdmin) AdminOperatorAnalytics(_ context.Context, tgID int64, days int) (*payments.WebOperatorAnalytics, error) {
+	f.calls = append(f.calls, adminCall{Name: "analytics", A: tgID, B: int64(days)})
+	return f.analytics, f.err
 }
 func (f *fakeAdmin) AdminProxyHealth(_ context.Context, tgID int64) (*payments.WebProxyHealth, error) {
 	f.calls = append(f.calls, adminCall{Name: "proxy-health", A: tgID})
@@ -872,6 +877,55 @@ func TestHandleAdminPaymentsDefaultsAndFilters(t *testing.T) {
 	}
 }
 
+func TestHandleAdminAnalyticsDefaultsValidationAndAuth(t *testing.T) {
+	adm := &fakeAdmin{analytics: &payments.WebOperatorAnalytics{
+		RangeDays: 30,
+		Revenue:   payments.WebRevenueAnalytics{TotalRevenue: 500, TotalRevenueLabel: "500₽"},
+	}}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/analytics", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("default status = %d body=%s", w.Code, w.Body.String())
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "analytics" || adm.calls[0].A != 42 || adm.calls[0].B != 30 {
+		t.Fatalf("calls = %+v", adm.calls)
+	}
+	var got payments.WebOperatorAnalytics
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.RangeDays != 30 || got.Revenue.TotalRevenueLabel != "500₽" {
+		t.Fatalf("payload = %+v", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/analytics?days=7", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || adm.calls[1].B != 7 {
+		t.Fatalf("days status=%d calls=%+v", w.Code, adm.calls)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/analytics?days=14", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest || len(adm.calls) != 2 {
+		t.Fatalf("invalid status=%d calls=%+v", w.Code, adm.calls)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/analytics", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized || len(adm.calls) != 2 {
+		t.Fatalf("unauthorized status=%d calls=%+v", w.Code, adm.calls)
+	}
+}
+
 func TestHandleAdminPaymentsDefaultQueryAndValidation(t *testing.T) {
 	adm := &fakeAdmin{report: &payments.WebPaymentReport{}}
 	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
@@ -910,9 +964,11 @@ func TestStaticAdminStatisticsView(t *testing.T) {
 	for _, want := range []string{
 		"/api/admin/stats",
 		"/api/admin/payments",
+		"/api/admin/analytics",
 		"/api/admin/gift/delete",
 		"/api/admin/invite/delete",
 		"showAdminStats",
+		"renderOperatorAnalytics",
 		"📊 Статистика",
 		"Panel users",
 		"conversion_rate",

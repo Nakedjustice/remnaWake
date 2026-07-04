@@ -1510,114 +1510,232 @@ port_in_use() {
 }
 
 doctor_mode() {
-  local failures=0 warnings=0 compose value base_image autoupdate_image effective_image web_port mode
+  local failures=0 warnings=0 compose value base_image autoupdate_image effective_image override_bot_image web_port mode
+  local web_url platega_id topology xray_url xray_sub xray_base xray_host_port xray_public caddyfile
+  local backup_count latest backup_name
 
-  check_ok() { ok "OK: $*"; }
-  check_warn() { warn "WARN: $*"; warnings=$((warnings + 1)); }
-  check_fail() { err "FAIL: $*"; failures=$((failures + 1)); }
+  doctor_section() { info ""; info "$*"; }
+  doctor_finding() {
+    local status="$1" label="$2" detected="${3:-not checked}" expected="${4:-not specified}" fix="${5:-no action needed}"
+    case "$status" in
+      OK)
+        ok "OK: $label"
+        printf '  Detected: %s\n  Expected: %s\n  Likely fix: %s\n' "$detected" "$expected" "$fix"
+        ;;
+      WARN)
+        warn "WARN: $label"
+        printf '  Detected: %s\n  Expected: %s\n  Likely fix: %s\n' "$detected" "$expected" "$fix" >&2
+        warnings=$((warnings + 1))
+        ;;
+      FAIL)
+        err "FAIL: $label"
+        printf '  Detected: %s\n  Expected: %s\n  Likely fix: %s\n' "$detected" "$expected" "$fix" >&2
+        failures=$((failures + 1))
+        ;;
+    esac
+  }
+  check_ok() { doctor_finding OK "$@"; }
+  check_warn() { doctor_finding WARN "$@"; }
+  check_fail() { doctor_finding FAIL "$@"; }
+  has_override() { [ -f "$OVERRIDE_FILE" ] && grep -q "$1" "$OVERRIDE_FILE" 2>/dev/null; }
+  latest_backup() { ls -1t "$BACKUP_DIR/$1".* 2>/dev/null | sed -n '1p'; }
 
   REMNAWAKE_CHANNEL="$(env_default REMNAWAKE_CHANNEL "${REMNAWAKE_CHANNEL:-main}")"
   v_channel "$REMNAWAKE_CHANNEL" >/dev/null 2>&1 || REMNAWAKE_CHANNEL="main"
   apply_channel_defaults
 
-  info "remnaWake doctor"
+  info "remnaWake doctor v2"
 
+  doctor_section "Environment"
   value="$REMNAWAKE_CHANNEL"
   if v_channel "$value" >/dev/null 2>&1; then
-    check_ok "REMNAWAKE_CHANNEL is $value"
+    check_ok "REMNAWAKE_CHANNEL" "$value" "main or dev" "no action needed"
   else
-    check_fail "REMNAWAKE_CHANNEL is invalid: $value"
+    check_fail "REMNAWAKE_CHANNEL" "$value" "main or dev" "./install.sh configure"
   fi
 
-  [ -f "$ENV_FILE" ] && check_ok ".env exists" || check_fail ".env is missing; run ./install.sh configure"
-  [ -f "$COMPOSE_FILE" ] && check_ok "docker-compose.yml exists" || check_fail "docker-compose.yml is missing"
-  [ -f "$OVERRIDE_FILE" ] && check_ok "docker-compose.override.yml exists" || check_warn "docker-compose.override.yml is missing; run ./install.sh configure"
+  [ -f "$ENV_FILE" ] && check_ok ".env file" "$ENV_FILE" "present" "no action needed" || check_fail ".env file" "missing" "present" "./install.sh configure"
+  [ -f "$COMPOSE_FILE" ] && check_ok "docker-compose.yml file" "$COMPOSE_FILE" "present" "no action needed" || check_fail "docker-compose.yml file" "missing" "present" "./install.sh configure"
+  [ -f "$OVERRIDE_FILE" ] && check_ok "docker-compose.override.yml file" "$OVERRIDE_FILE" "present when installer-managed settings are used" "no action needed" || check_warn "docker-compose.override.yml file" "missing" "installer-managed override present" "./install.sh configure"
 
   for key in REMNAWAVE_BASE_URL REMNAWAVE_API_TOKEN TELEGRAM_BOT_TOKEN; do
     if value="$(env_get "$key")" && [ -n "$value" ]; then
-      check_ok "$key is set"
+      check_ok "$key" "set" "non-empty" "no action needed"
     else
-      check_fail "$key is missing"
+      check_fail "$key" "missing or empty" "non-empty" "./install.sh configure"
     fi
   done
 
   if [ -f "$ENV_FILE" ]; then
     mode=""
     if mode="$(stat -c %a "$ENV_FILE" 2>/dev/null)"; then
-      [ "$mode" = "600" ] && check_ok ".env permissions are 600" || check_warn ".env permissions are $mode, expected 600"
+      [ "$mode" = "600" ] && check_ok ".env permissions" "$mode" "600" "no action needed" || check_warn ".env permissions" "$mode" "600" "chmod 600 .env"
     else
-      check_warn "Could not inspect .env permissions on this platform"
+      check_warn ".env permissions" "not available on this platform" "600 on Linux hosts" "inspect permissions manually"
     fi
-  fi
-
-  web_port="$(env_default WEBAPP_HOST_PORT "8080")"
-  if v_port "$web_port" >/dev/null 2>&1; then
-    check_ok "WEBAPP_HOST_PORT is valid ($web_port)"
-    if port_in_use "$web_port"; then
-      check_warn "Port $web_port appears to be in use; this is OK if remnaWake is already running"
-    else
-      check_ok "Port $web_port does not appear to be listening"
-    fi
-  else
-    check_fail "WEBAPP_HOST_PORT is invalid: $web_port"
   fi
 
   if command -v docker >/dev/null 2>&1; then
-    check_ok "docker command exists"
+    check_ok "docker command" "$(command -v docker)" "docker CLI installed" "no action needed"
     if docker info >/dev/null 2>&1; then
-      check_ok "Docker daemon is accessible"
+      check_ok "Docker daemon" "accessible" "accessible to this user" "no action needed"
     else
-      check_warn "Docker command exists but daemon is not accessible"
+      check_warn "Docker daemon" "docker CLI exists but daemon is not accessible" "docker info succeeds" "start Docker and ensure this user can access it"
     fi
   else
-    check_fail "docker command not found"
+    check_fail "docker command" "not found" "docker CLI installed" "install Docker Engine"
   fi
 
   if compose="$(detect_compose)"; then
-    check_ok "Docker Compose is available ($compose)"
+    check_ok "Docker Compose" "$compose" "docker compose or docker-compose available" "no action needed"
     if [ -f "$COMPOSE_FILE" ] && $compose config >/dev/null 2>&1; then
-      check_ok "docker compose config succeeds"
+      check_ok "compose config" "valid" "docker compose config succeeds" "no action needed"
     else
-      check_fail "docker compose config failed"
+      check_fail "compose config" "failed" "docker compose config succeeds" "./install.sh configure"
     fi
   else
-    check_fail "Docker Compose not found"
+    check_fail "Docker Compose" "not found" "docker compose or docker-compose available" "install Docker Compose"
   fi
 
+  doctor_section "Routes and ports"
+  web_port="$(env_default WEBAPP_HOST_PORT "8080")"
+  web_url="$(env_default WEBAPP_URL "")"
+  platega_id="$(env_default PLATEGA_MERCHANT_ID "")"
+  topology="none"
+  if has_override 'remnawave-network'; then
+    topology="alongside-remnawave"
+  elif [ -n "$web_url" ] || [ -n "$platega_id" ] || has_override "127.0.0.1:${web_port}:8080"; then
+    topology="host-reverse-proxy"
+  fi
+  check_ok "detected topology" "$topology" "host-reverse-proxy, alongside-remnawave, or none" "no action needed"
+
+  if v_port "$web_port" >/dev/null 2>&1; then
+    check_ok "WEBAPP_HOST_PORT" "$web_port" "valid TCP port" "no action needed"
+    if port_in_use "$web_port"; then
+      check_warn "WEBAPP_HOST_PORT listener" "port $web_port is listening" "free port unless remnaWake is already running" "docker compose ps; if another service owns it, run ./install.sh configure"
+    else
+      check_ok "WEBAPP_HOST_PORT listener" "port $web_port is not listening" "free before startup" "no action needed"
+    fi
+  else
+    check_fail "WEBAPP_HOST_PORT" "$web_port" "valid TCP port" "./install.sh configure"
+  fi
+
+  if [ "$topology" = "host-reverse-proxy" ]; then
+    if has_override "127.0.0.1:${web_port}:8080"; then
+      check_ok "host proxy route" "127.0.0.1:${web_port}:8080 in override" "host reverse proxy targets 127.0.0.1:${web_port}:8080" "no action needed"
+    else
+      check_fail "host proxy route" "missing 127.0.0.1:${web_port}:8080 in override" "host reverse proxy targets 127.0.0.1:${web_port}:8080" "./install.sh configure"
+    fi
+  elif [ "$topology" = "alongside-remnawave" ]; then
+    has_override 'external: true' && check_ok "remnawave network" "external remnawave-network in override" "bot joins external remnawave-network" "no action needed" || check_fail "remnawave network" "remnawave-network is not marked external" "bot joins external remnawave-network" "./install.sh configure"
+    caddyfile="${REMNAWAVE_CADDYFILE:-/opt/remnawave/caddy/Caddyfile}"
+    if [ -f "$caddyfile" ]; then
+      grep -q 'reverse_proxy remnaWake-bot:8080' "$caddyfile" 2>/dev/null && check_ok "Caddy bot route" "$caddyfile routes to remnaWake-bot:8080" "Caddy routes Mini App host to remnaWake-bot:8080" "no action needed" || check_warn "Caddy bot route" "$caddyfile has no remnaWake-bot:8080 route" "Caddy routes Mini App host to remnaWake-bot:8080" "./install.sh configure"
+    else
+      check_warn "Caddy bot route" "$caddyfile not readable" "Caddy routes Mini App host to remnaWake-bot:8080" "inspect Remnawave Caddyfile or rerun ./install.sh configure"
+    fi
+  fi
+
+  doctor_section "Generated compose"
   if [ -f "$COMPOSE_FILE" ]; then
     base_image="$(compose_image || true)"
-    case "$base_image" in
-      *remnawake*) check_ok "Compose image looks correct ($base_image)" ;;
-      "") check_warn "Could not read image from docker-compose.yml" ;;
-      *) check_warn "Compose image does not contain remnawake: $base_image" ;;
-    esac
-    autoupdate_image="$(env_default AUTOUPDATE_IMAGE "$DEFAULT_DEPLOY_IMAGE")"
-    effective_image="$(override_image || true)"
-    [ -n "$effective_image" ] || effective_image="$base_image"
-    if [ -n "$effective_image" ] && [ "$autoupdate_image" != "$effective_image" ]; then
-      check_warn "AUTOUPDATE_IMAGE ($autoupdate_image) differs from effective compose image ($effective_image)"
+    if grep -q 'Generated by install.sh' "$COMPOSE_FILE" 2>/dev/null; then
+      check_warn "base compose ownership" "installer header found in docker-compose.yml" "base compose stays generic; generated data lives in override" "./install.sh configure"
     else
-      check_ok "AUTOUPDATE_IMAGE matches effective compose image"
+      check_ok "base compose ownership" "no installer header in docker-compose.yml" "base compose stays generic; generated data lives in override" "no action needed"
+    fi
+    case "$base_image" in
+      *remnawake*) check_ok "base bot image" "$base_image" "remnaWake image in bot service" "no action needed" ;;
+      "") check_warn "base bot image" "not detected" "remnaWake image in bot service" "./install.sh configure" ;;
+      *) check_warn "base bot image" "$base_image" "remnaWake image in bot service" "./install.sh configure" ;;
+    esac
+  else
+    base_image=""
+  fi
+  if [ -f "$OVERRIDE_FILE" ]; then
+    grep -q '^# Generated by install.sh' "$OVERRIDE_FILE" 2>/dev/null && check_ok "override header" "installer header present" "override is installer-managed" "no action needed" || check_warn "override header" "installer header missing" "override is installer-managed" "./install.sh configure"
+    autoupdate_image="$(env_default AUTOUPDATE_IMAGE "$DEFAULT_DEPLOY_IMAGE")"
+    override_bot_image="$(override_image || true)"
+    effective_image="$override_bot_image"
+    [ -n "$effective_image" ] || effective_image="$base_image"
+    if [ -n "$base_image" ] && [ "$autoupdate_image" != "$base_image" ]; then
+      [ "$override_bot_image" = "$autoupdate_image" ] && check_ok "bot image override" "$override_bot_image" "override bot image equals AUTOUPDATE_IMAGE when it differs from base" "no action needed" || check_warn "bot image override" "${override_bot_image:-missing}" "override bot image equals AUTOUPDATE_IMAGE when it differs from base" "./install.sh configure"
+    else
+      [ -z "$override_bot_image" ] && check_ok "bot image override" "not present" "no bot image override when AUTOUPDATE_IMAGE matches base" "no action needed" || check_warn "bot image override" "$override_bot_image" "no bot image override when AUTOUPDATE_IMAGE matches base" "./install.sh configure"
+    fi
+    if [ -n "$effective_image" ] && [ "$autoupdate_image" = "$effective_image" ]; then
+      check_ok "AUTOUPDATE_IMAGE" "$autoupdate_image" "matches effective bot image $effective_image" "no action needed"
+    else
+      check_warn "AUTOUPDATE_IMAGE" "${autoupdate_image:-empty} vs ${effective_image:-empty effective image}" "matches effective bot image" "./install.sh configure"
     fi
   fi
 
-  if [ "$(env_default AUTOUPDATE_ENABLED "false")" = "true" ]; then
+  doctor_section "Watchtower"
+  value="$(env_default AUTOUPDATE_ENABLED "false")"
+  if [ "$value" = "true" ]; then
     value="$(env_default AUTOUPDATE_CHECK_INTERVAL "6h")"
-    v_duration "$value" >/dev/null 2>&1 && check_ok "AUTOUPDATE_CHECK_INTERVAL is valid" || check_fail "AUTOUPDATE_CHECK_INTERVAL is invalid: $value"
+    v_duration "$value" >/dev/null 2>&1 && check_ok "AUTOUPDATE_CHECK_INTERVAL" "$value" "valid duration such as 6h" "no action needed" || check_fail "AUTOUPDATE_CHECK_INTERVAL" "$value" "valid duration such as 6h" "./install.sh configure"
     if [ -n "$(env_default WATCHTOWER_URL "")" ]; then
-      [ -n "$(env_default WATCHTOWER_TOKEN "")" ] && check_ok "Watchtower token is set" || check_fail "WATCHTOWER_TOKEN is required when WATCHTOWER_URL is set"
-      if grep -q 'watchtower:' "$OVERRIDE_FILE" 2>/dev/null; then
-        check_ok "Watchtower service is present in override"
-        grep -q 'image: containrrr/watchtower:latest' "$OVERRIDE_FILE" 2>/dev/null && check_ok "Watchtower image uses latest tag" || check_warn "Watchtower image is stale; rerun ./install.sh configure"
-        grep -q 'pull_policy: always' "$OVERRIDE_FILE" 2>/dev/null && check_ok "Watchtower pull policy refreshes the sidecar" || check_warn "Watchtower pull_policy is missing; rerun ./install.sh configure"
-        grep -q 'DOCKER_API_VERSION: "1.40"' "$OVERRIDE_FILE" 2>/dev/null && check_ok "Watchtower Docker API version is compatible" || check_warn "Watchtower Docker API version is missing; rerun ./install.sh configure"
+      [ -n "$(env_default WATCHTOWER_TOKEN "")" ] && check_ok "WATCHTOWER_TOKEN" "set" "non-empty when WATCHTOWER_URL is set" "no action needed" || check_fail "WATCHTOWER_TOKEN" "missing" "non-empty when WATCHTOWER_URL is set" "./install.sh configure"
+      if has_override '^  watchtower:'; then
+        check_ok "Watchtower service" "present in override" "watchtower sidecar is generated when WATCHTOWER_URL is set" "no action needed"
+        has_override 'image: containrrr/watchtower:latest' && check_ok "Watchtower image" "containrrr/watchtower:latest" "containrrr/watchtower:latest" "no action needed" || check_warn "Watchtower image" "missing or stale" "containrrr/watchtower:latest" "./install.sh configure"
+        has_override 'pull_policy: always' && check_ok "Watchtower pull policy" "always" "pull_policy: always" "no action needed" || check_warn "Watchtower pull policy" "missing" "pull_policy: always" "./install.sh configure"
+        has_override 'DOCKER_API_VERSION: "1.40"' && check_ok "Watchtower Docker API" "1.40" "DOCKER_API_VERSION: \"1.40\"" "no action needed" || check_warn "Watchtower Docker API" "missing" "DOCKER_API_VERSION: \"1.40\"" "./install.sh configure"
       else
-        check_fail "Watchtower URL is set but override has no watchtower service"
+        check_fail "Watchtower service" "missing in override" "watchtower sidecar is generated when WATCHTOWER_URL is set" "./install.sh configure"
       fi
     else
-      check_ok "Auto-update is notify-only (no Watchtower URL)"
+      has_override '^  watchtower:' && check_warn "Watchtower service" "present but WATCHTOWER_URL is empty" "no watchtower sidecar for notify-only auto-update" "./install.sh configure" || check_ok "Watchtower service" "not present" "no watchtower sidecar for notify-only auto-update" "no action needed"
     fi
+  else
+    has_override '^  watchtower:' && check_warn "Watchtower service" "present while AUTOUPDATE_ENABLED is false" "no watchtower sidecar when auto-update is disabled" "./install.sh configure" || check_ok "Auto-update" "disabled" "watchtower sidecar absent unless configured" "no action needed"
   fi
+
+  doctor_section "xray-checker"
+  xray_url="$(env_default XRAY_CHECKER_URL "")"
+  xray_sub="$(env_default XRAY_CHECKER_SUB_URL "")"
+  xray_base="$(env_default XRAY_CHECKER_BASE_PATH "")"
+  xray_host_port="$(env_default XRAY_CHECKER_HOST_PORT "2112")"
+  xray_public="$(env_default XRAY_CHECKER_PUBLIC_URL "")"
+  if [ -n "$xray_sub" ] || [ -n "$xray_url" ]; then
+    [ -n "$xray_sub" ] && check_ok "XRAY_CHECKER_SUB_URL" "set" "subscription URL set when checker is enabled" "no action needed" || check_fail "XRAY_CHECKER_SUB_URL" "missing" "subscription URL set when checker is enabled" "./install.sh configure"
+    has_override '^  xray-checker:' && check_ok "xray-checker service" "present in override" "sidecar generated when XRAY_CHECKER_SUB_URL is set" "no action needed" || check_fail "xray-checker service" "missing in override" "sidecar generated when XRAY_CHECKER_SUB_URL is set" "./install.sh configure"
+    if [ -n "$xray_base" ]; then
+      value="http://xray-checker:2112${xray_base}"
+      [ "$xray_url" = "$value" ] && check_ok "XRAY_CHECKER_URL base path" "$xray_url" "$value" "no action needed" || check_fail "XRAY_CHECKER_URL base path" "${xray_url:-empty}" "$value" "./install.sh configure"
+      has_override 'METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"' && check_ok "xray-checker METRICS_BASE_PATH" 'METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"' "set when XRAY_CHECKER_BASE_PATH is non-empty" "no action needed" || check_fail "xray-checker METRICS_BASE_PATH" "missing" "set when XRAY_CHECKER_BASE_PATH is non-empty" "./install.sh configure"
+    fi
+    if [ "$topology" = "host-reverse-proxy" ] && [ -n "$xray_public" ]; then
+      v_port "$xray_host_port" >/dev/null 2>&1 && check_ok "XRAY_CHECKER_HOST_PORT" "$xray_host_port" "valid TCP port" "no action needed" || check_fail "XRAY_CHECKER_HOST_PORT" "$xray_host_port" "valid TCP port" "./install.sh configure"
+      has_override "127.0.0.1:${xray_host_port}:2112" && check_ok "xray-checker host port" "127.0.0.1:${xray_host_port}:2112 in override" "host proxy targets 127.0.0.1:${xray_host_port}:2112" "no action needed" || check_fail "xray-checker host port" "missing 127.0.0.1:${xray_host_port}:2112 in override" "host proxy targets 127.0.0.1:${xray_host_port}:2112" "./install.sh configure"
+    fi
+    if [ "$topology" = "alongside-remnawave" ] || [ -n "$(env_default WATCHTOWER_URL "")" ]; then
+      has_override 'xray-checker:' && has_override 'networks:' && check_ok "xray-checker networks" "network stanza present" "checker joins the same custom network(s) as bot" "no action needed" || check_warn "xray-checker networks" "network stanza missing" "checker joins the same custom network(s) as bot" "./install.sh configure"
+    fi
+  else
+    has_override '^  xray-checker:' && check_warn "xray-checker service" "present while checker env is empty" "no checker sidecar when XRAY_CHECKER_URL and XRAY_CHECKER_SUB_URL are empty" "./install.sh configure" || check_ok "xray-checker service" "not configured" "sidecar absent unless configured" "no action needed"
+  fi
+
+  doctor_section "Backups"
+  if [ -d "$BACKUP_DIR" ]; then
+    backup_count="$(find "$BACKUP_DIR" -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
+  else
+    backup_count="0"
+  fi
+  if [ "${backup_count:-0}" -gt 0 ] 2>/dev/null; then
+    check_ok "backup directory" "$backup_count file(s) under ./backups" "at least one backup for recoverable rewrites" "no action needed"
+  else
+    check_warn "backup directory" "no backups under ./backups" "at least one backup for recoverable rewrites" "./install.sh backup"
+  fi
+  for backup_name in .env docker-compose.yml docker-compose.override.yml; do
+    latest="$(latest_backup "$backup_name" || true)"
+    if [ -n "$latest" ]; then
+      check_ok "latest backup for $backup_name" "$(basename "$latest")" "$backup_name.* under ./backups" "no action needed"
+    else
+      check_warn "latest backup for $backup_name" "none" "$backup_name.* under ./backups" "./install.sh backup"
+    fi
+  done
 
   printf '\n' >&2
   if [ "$failures" -eq 0 ]; then

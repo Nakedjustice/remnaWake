@@ -688,10 +688,39 @@ const EN = {
   'Подтверждено': 'Confirmed',
   'Выручка': 'Revenue',
   'в т.ч. подписки': 'incl. subscriptions',
+  'в т.ч. доп. трафик': 'incl. traffic extensions',
   'в т.ч. подарки': 'incl. gifts',
   'в т.ч. приглашения': 'incl. invites',
   'Ожидают подтверждения': 'Awaiting confirmation',
   'Платежи и выручка': 'Payments and revenue',
+  'Локальная аналитика': 'Local analytics',
+  'Продления': 'Renewals',
+  'Платежей': 'Payments',
+  'Профилей': 'Profiles',
+  'Повторных профилей': 'Repeat profiles',
+  'Месяцев добавлено': 'Months added',
+  'Средний срок': 'Average term',
+  'Отток и winback': 'Churn & winback',
+  'Локально истекшие': 'Locally lapsed',
+  'Winback отправлено': 'Winback sent',
+  'Winback оплатили': 'Winback converted',
+  'Конверсия winback': 'Winback conversion',
+  'Рефералы': 'Referrals',
+  'Начислено': 'Credited',
+  'Ожидают': 'Pending',
+  'Конверсия рефералов': 'Referral conversion',
+  'Подарки по воронке': 'Gift funnel',
+  'Создано за период': 'Created in period',
+  'Активированы за период': 'Redeemed in period',
+  'Доход подарков': 'Gift revenue',
+  'Доп. трафик': 'Traffic extensions',
+  'Продано пакетов': 'Packages sold',
+  'Активно сейчас': 'Active now',
+  'Восстановлено': 'Restored',
+  'ГБ продано': 'GB sold',
+  'Доход доп. трафика': 'Traffic extension revenue',
+  'Микс провайдеров': 'Provider mix',
+  '{share}% выручки': '{share}% of revenue',
   'Последние 7 дней': 'Last 7 days',
   'Последние 30 дней': 'Last 30 days',
   'Последние 90 дней': 'Last 90 days',
@@ -3880,8 +3909,11 @@ async function showAdminStats() {
     days: String(f.days), status: f.status, provider: f.provider, kind: f.kind,
     q: f.query, page: String(f.page),
   });
-  const [statsResult, reportResult] = await Promise.allSettled([
-    api('/api/admin/stats'), api('/api/admin/payments?' + params.toString()),
+  const analyticsParams = new URLSearchParams({ days: String(f.days) });
+  const [statsResult, reportResult, operatorResult] = await Promise.allSettled([
+    api('/api/admin/stats'),
+    api('/api/admin/payments?' + params.toString()),
+    api('/api/admin/analytics?' + analyticsParams.toString()),
   ]);
   if (reportResult.status === 'rejected') {
     tg.showAlert(reportResult.reason.message);
@@ -3890,6 +3922,7 @@ async function showAdminStats() {
   const stats = statsResult.status === 'fulfilled' ? statsResult.value : null;
   const report = reportResult.value;
   const analytics = report.analytics;
+  const operatorAnalytics = operatorResult.status === 'fulfilled' ? operatorResult.value : null;
 
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Статистика')));
@@ -3911,6 +3944,7 @@ async function showAdminStats() {
     [t('Ожидают подтверждения'), analytics.pending],
     [t('Конверсия'), `${analytics.conversion_rate}%`],
   ]));
+  appEl.appendChild(renderOperatorAnalytics(operatorAnalytics));
   if (stats && stats.infra_servers !== undefined) {
     appEl.appendChild(paymentStatsCard(t('Инфраструктура'), [
       [t('Серверов'), stats.infra_servers],
@@ -4089,6 +4123,94 @@ function renderPaymentProviders(providers) {
   });
   section.appendChild(list);
   return section;
+}
+
+function renderOperatorAnalytics(analytics) {
+  const fragment = document.createDocumentFragment();
+  if (!analytics) return fragment;
+  const revenue = analytics.revenue || {};
+  fragment.appendChild(paymentStatsCard(t('Локальная аналитика'), [
+    [t('Выручка'), revenue.total_revenue_label || '0'],
+    [t('в т.ч. подписки'), revenue.subscription_revenue_label || '0'],
+    [t('в т.ч. доп. трафик'), revenue.traffic_extension_revenue_label || '0'],
+    [t('в т.ч. подарки'), revenue.gift_revenue_label || '0'],
+    [t('в т.ч. приглашения'), revenue.invite_revenue_label || '0'],
+  ]));
+
+  const renewals = analytics.renewals || {};
+  fragment.appendChild(paymentStatsCard(t('Продления'), [
+    [t('Платежей'), renewals.payments || 0],
+    [t('Профилей'), renewals.unique_profiles || 0],
+    [t('Повторных профилей'), renewals.repeat_profiles || 0],
+    [t('Месяцев добавлено'), compactMetric(renewals.months_added)],
+    [t('Средний срок'), compactMetric(renewals.average_months)],
+  ]));
+
+  const churn = analytics.churn_winback || {};
+  fragment.appendChild(paymentStatsCard(t('Отток и winback'), [
+    [t('Локально истекшие'), churn.local_lapsed_users || 0],
+    [t('Winback отправлено'), churn.winback_sent || 0],
+    [t('Winback оплатили'), churn.winback_converted || 0],
+    [t('Конверсия winback'), percentMetric(churn.winback_conversion_rate)],
+  ]));
+
+  const referrals = analytics.referrals || {};
+  fragment.appendChild(paymentStatsCard(t('Рефералы'), [
+    [t('Создано'), referrals.created || 0],
+    [t('Начислено'), referrals.credited || 0],
+    [t('Ожидают'), referrals.pending || 0],
+    [t('Конверсия рефералов'), percentMetric(referrals.conversion_rate)],
+  ]));
+
+  const gifts = analytics.gifts || {};
+  fragment.appendChild(paymentStatsCard(t('Подарки по воронке'), [
+    [t('Создано за период'), gifts.created || 0],
+    [t('Ожидают'), gifts.pending || 0],
+    [t('Выданы'), gifts.issued || 0],
+    [t('Активированы за период'), gifts.redeemed || 0],
+    [t('Доход подарков'), gifts.revenue_label || '0'],
+  ]));
+
+  const traffic = analytics.traffic_extensions || {};
+  fragment.appendChild(paymentStatsCard(t('Доп. трафик'), [
+    [t('Продано пакетов'), traffic.confirmed || 0],
+    [t('Ожидают'), traffic.pending || 0],
+    [t('Активно сейчас'), traffic.active || 0],
+    [t('Восстановлено'), traffic.restored || 0],
+    [t('ГБ продано'), compactMetric(traffic.traffic_gb)],
+    [t('Доход доп. трафика'), traffic.revenue_label || '0'],
+  ]));
+
+  if ((analytics.provider_mix || []).length) {
+    fragment.appendChild(renderOperatorProviderMix(analytics.provider_mix));
+  }
+  return fragment;
+}
+
+function renderOperatorProviderMix(providers) {
+  const section = el('section', 'admin-section');
+  section.appendChild(el('div', 'admin-section-label', t('Микс провайдеров')));
+  const list = el('div', 'payment-provider-list');
+  providers.forEach(p => {
+    const row = el('div', 'payment-provider');
+    row.appendChild(el('div', 'payment-provider-name', paymentProviderLabel(p.provider)));
+    row.appendChild(el('div', 'payment-provider-revenue', p.revenue_label || '0'));
+    row.appendChild(el('div', 'payment-provider-meta',
+      `${t('подтверждено {confirmed} · отклонено {rejected} · ожидает {pending}', p)} · ${t('{share}% выручки', { share: compactMetric(p.share) })}`));
+    list.appendChild(row);
+  });
+  section.appendChild(list);
+  return section;
+}
+
+function compactMetric(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return '0';
+  return n.toFixed(1).replace(/\.0$/, '');
+}
+
+function percentMetric(value) {
+  return `${compactMetric(value)}%`;
 }
 
 function renderPaymentHistory(report) {
