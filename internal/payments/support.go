@@ -114,8 +114,10 @@ func (s *Service) handleSupportSessionInput(ctx context.Context, m *tg.Message) 
 }
 
 // SupportSendUser stores a user's support message and fans it out to every
-// admin with an inline reply button. Used by both the bot session and the mini
-// app. Send failures to individual admins are logged but not fatal.
+// admin with an inline reply button. This is the bot chat path: the message
+// lands in the user's newest open ticket, and a new ticket is opened
+// transparently when none is — the chat keeps its single-conversation feel.
+// Send failures to individual admins are logged but not fatal.
 func (s *Service) SupportSendUser(ctx context.Context, telegramID int64, text string) error {
 	if !s.isEnabled() {
 		return ErrPaymentsDisabled
@@ -125,14 +127,42 @@ func (s *Service) SupportSendUser(ctx context.Context, telegramID int64, text st
 		return ErrBadInput
 	}
 	username := s.supportUsername(ctx, telegramID)
-	if _, err := s.store.AddSupportMessage(ctx, store.SupportMessage{
+	if err := s.appendToNewestOpenTicket(ctx, store.SupportMessage{
 		UserTelegramID: telegramID,
 		UserUsername:   username,
 		Text:           text,
-	}); err != nil {
-		return fmt.Errorf("store support message: %w", err)
+	}, username, ticketSubjectFromText(text)); err != nil {
+		return err
 	}
 	s.notifyAdminsSupport(ctx, telegramID, username, text)
+	return nil
+}
+
+// appendToNewestOpenTicket stores m in its owner's newest open ticket,
+// creating one when none is open (or when a concurrent close wins the race
+// against the conditional insert). ticketUsername and subject are used only
+// when a new ticket has to be created.
+func (s *Service) appendToNewestOpenTicket(ctx context.Context, m store.SupportMessage, ticketUsername, subject string) error {
+	tk, err := s.store.LatestOpenTicketForUser(ctx, m.UserTelegramID)
+	if err != nil {
+		return fmt.Errorf("find open ticket: %w", err)
+	}
+	if tk != nil {
+		m.TicketID = tk.ID
+		if _, ok, err := s.store.AddSupportMessageToOpenTicket(ctx, m); err != nil {
+			return fmt.Errorf("store support message: %w", err)
+		} else if ok {
+			return nil
+		}
+	}
+	ticketID, err := s.store.CreateSupportTicket(ctx, m.UserTelegramID, ticketUsername, subject)
+	if err != nil {
+		return fmt.Errorf("create support ticket: %w", err)
+	}
+	m.TicketID = ticketID
+	if _, err := s.store.AddSupportMessage(ctx, m); err != nil {
+		return fmt.Errorf("store support message: %w", err)
+	}
 	return nil
 }
 
@@ -163,8 +193,10 @@ func (s *Service) notifyAdminsSupport(ctx context.Context, userTelegramID int64,
 	}
 }
 
-// SupportSendAdmin stores an admin reply and delivers it to the user. The
-// caller must already be an admin (enforced by the bot session / web guard).
+// SupportSendAdmin stores an admin reply and delivers it to the user. This is
+// the bot reply-button path: the reply lands in the user's newest open ticket
+// and starts an admin-initiated one when none is open, so an admin reply
+// always works (as it did before tickets existed).
 func (s *Service) SupportSendAdmin(ctx context.Context, adminID, targetUserID int64, text string) error {
 	if err := s.adminGuard(adminID); err != nil {
 		return err
@@ -173,13 +205,13 @@ func (s *Service) SupportSendAdmin(ctx context.Context, adminID, targetUserID in
 	if text == "" {
 		return ErrBadInput
 	}
-	if _, err := s.store.AddSupportMessage(ctx, store.SupportMessage{
+	if err := s.appendToNewestOpenTicket(ctx, store.SupportMessage{
 		UserTelegramID:   targetUserID,
 		FromAdmin:        true,
 		AuthorTelegramID: adminID,
 		Text:             text,
-	}); err != nil {
-		return fmt.Errorf("store support reply: %w", err)
+	}, s.supportUsername(ctx, targetUserID), ""); err != nil {
+		return err
 	}
 	if !s.dryRun {
 		_ = s.bot.SendPlain(ctx, targetUserID, fmt.Sprintf(i18n.T("🛟 Поддержка: %s"), text))
@@ -243,27 +275,28 @@ func (s *Service) SupportThreadAdmin(ctx context.Context, adminID, targetUserID 
 	return &WebSupport{Open: len(msgs) > 0, Messages: toWebSupportMessages(msgs)}, nil
 }
 
-// SupportCloseUser closes (deletes) the user's own conversation and notifies
-// the admins it was ended.
+// SupportCloseUser closes the user's newest open ticket and notifies the
+// admins it was ended. The bot chat texts are unchanged; the only delta from
+// the pre-ticket model is that history survives as a closed ticket instead of
+// being deleted. With nothing open it is a quiet no-op.
 func (s *Service) SupportCloseUser(ctx context.Context, telegramID int64) error {
 	if !s.isEnabled() {
 		return ErrPaymentsDisabled
 	}
 	s.setSupportSession(telegramID, false)
-	closed, err := s.store.CloseSupportConversation(ctx, telegramID)
+	tk, err := s.store.LatestOpenTicketForUser(ctx, telegramID)
 	if err != nil {
-		return fmt.Errorf("close support conversation: %w", err)
+		return fmt.Errorf("find open ticket: %w", err)
 	}
-	if closed && !s.dryRun {
-		username := s.supportUsername(ctx, telegramID)
-		who := fmt.Sprintf("TG %d", telegramID)
-		if username != "" {
-			who = fmt.Sprintf("%s (TG %d)", username, telegramID)
-		}
-		note := fmt.Sprintf(i18n.T("🛟 Пользователь %s завершил чат с поддержкой."), who)
-		for _, adminID := range s.adminIDs {
-			_ = s.bot.SendPlain(ctx, adminID, note)
-		}
+	if tk == nil {
+		return nil
+	}
+	closed, err := s.store.CloseSupportTicket(ctx, tk.ID, "user", s.now())
+	if err != nil {
+		return fmt.Errorf("close support ticket: %w", err)
+	}
+	if closed {
+		s.notifyAdminsSupportClosed(ctx, telegramID)
 	}
 	return nil
 }

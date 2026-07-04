@@ -32,6 +32,10 @@ var (
 	ErrReceiptTooLarge            = errors.New("receipt too large")
 	ErrPaymentRequestInaccessible = errors.New("payment request inaccessible")
 	ErrProviderUnavailable        = errors.New("payment provider unavailable")
+	// ErrTicketNotFound conceals foreign tickets: a ticket that exists but
+	// belongs to another user is reported exactly like a missing one.
+	ErrTicketNotFound = errors.New("support ticket not found")
+	ErrTicketClosed   = errors.New("support ticket is closed")
 
 	// Free-trial errors shared by the bot flow and the mini app claim endpoint.
 	ErrTrialDisabled    = errors.New("free trial is disabled")
