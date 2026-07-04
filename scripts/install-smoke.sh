@@ -23,6 +23,17 @@ case "$*" in
   "compose up -d")
     touch "$REMNAWAKE_SMOKE_DIR/docker-up"
     ;;
+  "compose stop bot")
+    touch "$REMNAWAKE_SMOKE_DIR/docker-stop"
+    ;;
+  "compose cp bot:/data/bot.db "*)
+    # Safety copy out of the volume: create the destination file.
+    touch "${@: -1}"
+    touch "$REMNAWAKE_SMOKE_DIR/docker-cp-out"
+    ;;
+  "compose cp "*)
+    touch "$REMNAWAKE_SMOKE_DIR/docker-cp-in"
+    ;;
   "compose ps")
     echo "NAME STATUS"
     ;;
@@ -257,5 +268,30 @@ grep -q 'remnaWake-bot:8080' "$TMP/doctor-alongside.log"
 grep -q 'OK: XRAY_CHECKER_URL base path' "$TMP/doctor-alongside.log"
 grep -q 'OK: xray-checker METRICS_BASE_PATH' "$TMP/doctor-alongside.log"
 unset REMNAWAVE_CADDYFILE
+
+# Restore: a valid SQLite backup must be copied into the volume with a safety
+# copy of the current database landing in ./backups, and stale WAL sidecars
+# must be neutralized before the bot restarts.
+export REMNAWAKE_DIR="$TMP/app"
+printf 'SQLite format 3\000rest-of-file' >"$TMP/restore-me.db"
+rm -f "$TMP/docker-stop" "$TMP/docker-up" "$TMP/docker-cp-in" "$TMP/docker-cp-out"
+bash "$ROOT/install.sh" restore "$TMP/restore-me.db" <<'EOF'
+y
+EOF
+
+test -f "$TMP/docker-cp-out"
+test -f "$TMP/docker-stop"
+test -f "$TMP/docker-cp-in"
+test -f "$TMP/docker-up"
+ls "$REMNAWAKE_DIR/backups"/bot.db.pre-restore.* >/dev/null
+
+# A non-SQLite file must be rejected before anything is touched.
+rm -f "$TMP/docker-stop"
+printf 'not a database' >"$TMP/bogus.db"
+if bash "$ROOT/install.sh" restore "$TMP/bogus.db" </dev/null; then
+  echo "restore accepted a non-SQLite file" >&2
+  exit 1
+fi
+test ! -f "$TMP/docker-stop"
 
 echo "install smoke passed"

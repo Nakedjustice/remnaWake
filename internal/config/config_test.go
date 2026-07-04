@@ -502,3 +502,52 @@ func TestLoadStarsEnabledWithRate(t *testing.T) {
 		t.Fatalf("stars config = %+v, want available with rate 2", cfg.Stars)
 	}
 }
+
+func TestLoadBackupDisabledByDefault(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Backup.Enabled {
+		t.Fatal("Backup should default to disabled")
+	}
+	if cfg.Backup.IntervalDays != 1 {
+		t.Fatalf("Backup.IntervalDays = %d, want 1", cfg.Backup.IntervalDays)
+	}
+}
+
+func TestLoadBackupEnabled(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("DB_BACKUP_ENABLED", "true")
+	t.Setenv("DB_BACKUP_INTERVAL_DAYS", "7")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Backup.Enabled {
+		t.Fatal("Backup should be enabled")
+	}
+	if cfg.Backup.IntervalDays != 7 {
+		t.Fatalf("Backup.IntervalDays = %d, want 7", cfg.Backup.IntervalDays)
+	}
+}
+
+func TestLoadBackupRejectsBadInterval(t *testing.T) {
+	t.Setenv("REMNAWAVE_BASE_URL", "https://panel.example.com")
+	t.Setenv("REMNAWAVE_API_TOKEN", "tok")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+	t.Setenv("DB_BACKUP_ENABLED", "true")
+	t.Setenv("DB_BACKUP_INTERVAL_DAYS", "0")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "DB_BACKUP_INTERVAL_DAYS") {
+		t.Fatalf("error = %v, want mention of DB_BACKUP_INTERVAL_DAYS", err)
+	}
+}

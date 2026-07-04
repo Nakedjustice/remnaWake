@@ -155,6 +155,7 @@ The bot chat and Mini App both support this step. JPEG/PNG photos are limited to
 | `/setrequisites`              | Set payment requisites shown after «Я оплатил» (two-step) |
 | `/requisites`                 | Show the saved payment requisites |
 | `/stats`                      | 📊 Panel users, 30-day payments & revenue, pending requests, gift codes, pending invites |
+| `/backup`                     | 📦 Send a backup of the bot database (`.db` file) to your DM |
 
 The **`/admin`** menu also offers 📊 statistics, a 🎁 gift-codes browser (by
 buyer → used/not-used → individual codes, with one-tap revoke), and a
@@ -498,6 +499,8 @@ docker compose restart caddy    # in your caddy directory
 | `REFERRAL_ENABLED`     | no       | `false`          | Reward approved invites with bonus days for inviter and/or invitee          |
 | `REFERRAL_INVITER_BONUS_DAYS` | no | `30`            | Bonus days added to the inviter's own subscription per approved invite      |
 | `REFERRAL_INVITEE_BONUS_DAYS` | no | `0`             | Extra days granted to the invited user on top of the 1-month invite term    |
+| `DB_BACKUP_ENABLED`    | no       | `false`          | DM a copy of the bot database to every admin during the daily run           |
+| `DB_BACKUP_INTERVAL_DAYS` | no    | `1`              | Minimum days between scheduled database backups (positive integer)          |
 
 ## 🚀 Running
 
@@ -544,11 +547,27 @@ Maintenance helpers:
 ./install.sh doctor      # read-only health report: routes, ports, compose, Watchtower, xray, backups
 ./install.sh update      # back up config, pull the image and restart
 ./install.sh backup      # copy .env and compose files into ./backups
+./install.sh restore <backup.db>  # replace the bot database with a backup file
 ```
 
 `doctor` explains each finding with the detected value, expected invariant and a
 likely fix command. It does not rewrite generated files; use `./install.sh configure`
 for rewrites and `./install.sh backup` to create timestamped config backups.
+
+### 💾 Database backup & restore
+
+With `DB_BACKUP_ENABLED=true` the bot DMs every admin a compacted copy of its
+SQLite database (`remnawake-backup-<date>.db`) during the daily run, at most
+once per `DB_BACKUP_INTERVAL_DAYS` days. Admins can also request a copy anytime
+with `/backup`. To roll a server back to a saved file:
+
+```bash
+./install.sh restore /path/to/remnawake-backup-2026-07-05-0900.db
+```
+
+Restore stops the bot, saves the current database to
+`./backups/bot.db.pre-restore.<timestamp>`, copies the backup into the
+`botdata` volume, clears stale WAL sidecar files and starts the bot again.
 
 ### Local (development)
 

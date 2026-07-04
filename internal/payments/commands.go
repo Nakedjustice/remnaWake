@@ -54,6 +54,9 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 	case "/stats":
 		s.sendAdminStats(ctx, chatID)
 		return true
+	case "/backup":
+		s.cmdBackup(ctx, chatID)
+		return true
 	case "/checkupdates":
 		s.manualUpdateCheck(ctx, chatID)
 		return true

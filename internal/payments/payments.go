@@ -302,6 +302,11 @@ type Service struct {
 	logger      *slog.Logger
 	now         func() time.Time
 
+	// Scheduled database backup (SetBackupConfig; set once before the
+	// scheduler starts, read-only afterwards).
+	backupEnabled      bool
+	backupIntervalDays int
+
 	finder    Finder
 	squads    SquadLister
 	mu        sync.Mutex
