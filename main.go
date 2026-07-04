@@ -88,6 +88,7 @@ func main() {
 		RequireApproval: cfg.Trial.RequireApproval,
 	})
 	pay.InitReferral(cfg.Referral.Enabled, cfg.Referral.InviterDays, cfg.Referral.InviteeDays)
+	pay.SetBackupConfig(cfg.Backup.Enabled, cfg.Backup.IntervalDays)
 	var winbackDays []int
 	if cfg.Winback.Enabled {
 		winbackDays = cfg.Winback.Days
@@ -203,6 +204,7 @@ func main() {
 		}
 		pay.RunInfraPaymentReminders(ctx)
 		pay.RunTrafficExtensionResets(ctx)
+		pay.RunScheduledBackup(ctx)
 		if n, err := db.DeleteResolvedGiftCodes(ctx); err != nil {
 			logger.Error("gift cleanup failed", "err", err.Error())
 		} else if n > 0 {
@@ -367,6 +369,7 @@ func adminBotCommands() []tgbot.BotCommand {
 	return append(userBotCommands(),
 		tgbot.BotCommand{Command: "admin", Description: i18n.T("Панель администратора")},
 		tgbot.BotCommand{Command: "stats", Description: i18n.T("Статистика")},
+		tgbot.BotCommand{Command: "backup", Description: i18n.T("Резервная копия базы данных")},
 		tgbot.BotCommand{Command: "checkupdates", Description: i18n.T("Проверить обновления")},
 		tgbot.BotCommand{Command: "setupdateinterval", Description: i18n.T("Интервал проверки обновлений")},
 	)

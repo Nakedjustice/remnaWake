@@ -27,6 +27,7 @@ var en = map[string]string{
 	"О боте": "About the bot",
 	"Панель администратора": "Admin panel",
 	"Статистика":            "Statistics",
+	"Резервная копия базы данных": "Database backup",
 }
 
 // The welcome message is kept as named constants so the map stays readable.

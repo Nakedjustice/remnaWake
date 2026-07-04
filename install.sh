@@ -62,6 +62,7 @@ Usage:
   ./install.sh doctor
   ./install.sh update
   ./install.sh backup
+  ./install.sh restore <backup.db>
   ./install.sh --help
 
 Modes:
@@ -71,6 +72,9 @@ Modes:
   doctor     Check Docker, compose config, .env keys, ports and update settings.
   update     Back up config, pull the image and restart with Docker Compose.
   backup     Copy .env and compose files into ./backups.
+  restore    Replace the bot database with a backup .db file (e.g. one the bot
+             sent to an admin DM). Stops the bot, saves the current database
+             to ./backups, copies the file into the botdata volume, restarts.
 
 Environment:
   REMNAWAKE_DIR       Install directory. Default: script directory or current dir.
@@ -1763,6 +1767,55 @@ update_mode() {
   printf '%s\n' "  $compose logs -f" >&2
 }
 
+restore_mode() {
+  local file="${1:-}" compose stamp tmp_empty
+  if [ -z "$file" ]; then
+    err "Usage: ./install.sh restore <backup.db>"
+    exit 2
+  fi
+  if [ ! -f "$file" ]; then
+    err "Backup file not found: $file"
+    exit 2
+  fi
+  # Every SQLite database starts with this 15-byte magic header.
+  if [ "$(head -c 15 "$file" 2>/dev/null)" != "SQLite format 3" ]; then
+    err "Not a SQLite database: $file (expected an 'SQLite format 3' header)."
+    exit 2
+  fi
+  ensure_compose_file
+  if ! compose="$(detect_compose)"; then
+    err "Docker Compose was not found. Install Docker Engine + Compose first."
+    exit 1
+  fi
+  warn "This will REPLACE the bot database (/data/bot.db) with: $file"
+  if ! ask_yes_no "Continue with the restore?" "n"; then
+    warn "Restore cancelled; nothing changed."
+    exit 0
+  fi
+  mkdir -p "$BACKUP_DIR"
+  stamp="$(timestamp)"
+  if $compose cp bot:/data/bot.db "$BACKUP_DIR/bot.db.pre-restore.$stamp" 2>/dev/null; then
+    ok "Saved current database to $BACKUP_DIR/bot.db.pre-restore.$stamp"
+  else
+    warn "Could not copy the current database out (no container or no database yet); continuing."
+  fi
+  info "Stopping the bot..."
+  $compose stop bot
+  info "Copying the backup into the botdata volume..."
+  $compose cp "$file" bot:/data/bot.db
+  # A stale WAL left by the previous database could replay onto the restored
+  # file and corrupt it. The runtime image is distroless (no shell to rm
+  # with), so neutralize the sidecars by copying zero-byte files over them —
+  # SQLite treats a zero-length WAL as empty.
+  tmp_empty="$(mktemp)"
+  $compose cp "$tmp_empty" bot:/data/bot.db-wal
+  $compose cp "$tmp_empty" bot:/data/bot.db-shm
+  rm -f "$tmp_empty"
+  info "Starting the bot..."
+  $compose up -d
+  ok "Database restored from $file"
+}
+
 main() {
   local mode="${1:-configure}"
   case "$mode" in
@@ -1780,6 +1833,9 @@ main() {
       ;;
     backup)
       run_backup
+      ;;
+    restore)
+      restore_mode "${2:-}"
       ;;
     -h|--help|help)
       usage

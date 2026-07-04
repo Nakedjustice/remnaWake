@@ -9,6 +9,13 @@ func init() {
 // enPayments translates the payments-package texts (user flows, admin flows,
 // gift/invite/register conversations, /stats). Merged into en at init.
 var enPayments = map[string]string{
+	// Database backup
+	"📦 Плановая резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.": "📦 Scheduled backup of the bot database. To restore: ./install.sh restore <file>.",
+	"📦 Резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.":          "📦 Backup of the bot database. To restore: ./install.sh restore <file>.",
+	"⚠️ Резервная копия базы данных больше 50 МБ и не может быть отправлена в Telegram. Сделайте бэкап на сервере вручную.": "⚠️ The database backup exceeds 50 MB and cannot be sent via Telegram. Back up on the server manually.",
+	"Резервная копия не отправлена (dry-run).": "Backup not sent (dry-run).",
+	"Не удалось создать резервную копию.":      "Failed to create the backup.",
+
 	// Auto-update
 	"🆕 Доступно обновление бота.\n\nТекущая версия: %s\nНовая версия: %s": "🆕 A bot update is available.\n\nCurrent version: %s\nNew version: %s",
 	"🔄 Установить сейчас": "🔄 Install now",

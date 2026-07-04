@@ -26,6 +26,7 @@ type Config struct {
 	Referral    ReferralConfig
 	AutoUpdate  AutoUpdateConfig
 	XrayChecker XrayCheckerConfig
+	Backup      BackupConfig
 	Lang        i18n.Lang
 	LogLevel    slog.Level
 	DryRun      bool
@@ -72,6 +73,14 @@ func (w WebAppConfig) Enabled() bool {
 type WinbackConfig struct {
 	Enabled bool
 	Days    []int
+}
+
+// BackupConfig configures the scheduled database backup: during the daily job
+// the bot sends a compacted copy of the SQLite database to every admin's
+// Telegram DM, at most once per IntervalDays.
+type BackupConfig struct {
+	Enabled      bool
+	IntervalDays int
 }
 
 // PlategaConfig configures the optional Platega payment gateway. Credentials
@@ -245,6 +254,10 @@ func Load() (*Config, error) {
 			WatchtowerURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("WATCHTOWER_URL")), "/"),
 			WatchtowerToken: strings.TrimSpace(os.Getenv("WATCHTOWER_TOKEN")),
 		},
+		Backup: BackupConfig{
+			Enabled:      getenvBool("DB_BACKUP_ENABLED", false),
+			IntervalDays: getenvInt("DB_BACKUP_INTERVAL_DAYS", 1),
+		},
 		XrayChecker: XrayCheckerConfig{
 			URL:       strings.TrimRight(strings.TrimSpace(os.Getenv("XRAY_CHECKER_URL")), "/"),
 			PublicURL: strings.TrimRight(strings.TrimSpace(os.Getenv("XRAY_CHECKER_PUBLIC_URL")), "/"),
@@ -354,6 +367,9 @@ func (c *Config) validate() error {
 		if c.AutoUpdate.Image == "" {
 			return errors.New("AUTOUPDATE_IMAGE is required when AUTOUPDATE_ENABLED is true")
 		}
+	}
+	if c.Backup.Enabled && c.Backup.IntervalDays < 1 {
+		return errors.New("DB_BACKUP_INTERVAL_DAYS must be a positive integer when DB_BACKUP_ENABLED is true")
 	}
 	if c.XrayChecker.Enabled() {
 		if u, err := url.Parse(c.XrayChecker.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
