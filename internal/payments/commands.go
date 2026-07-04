@@ -27,6 +27,9 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 	case "/admin":
 		s.SendAdminMenu(ctx, chatID)
 		return true
+	case "/pending":
+		s.sendPendingSummary(ctx, chatID)
+		return true
 	case "/tariffs":
 		s.cmdListTariffs(ctx, chatID)
 		return true
@@ -250,6 +253,7 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 		shotLabel = i18n.T("📸 Чек об оплате: вкл")
 	}
 	rows := [][]tg.InlineKeyboardButton{
+		{{Text: i18n.T("🚨 Центр действий"), CallbackData: "adm:pending"}},
 		{{Text: i18n.T("📊 Статистика"), CallbackData: "adm:stats"}},
 		{{Text: i18n.T("📋 Посмотреть тарифы"), CallbackData: "adm:tariffs"}},
 		{{Text: i18n.T("➕ Добавить тариф"), CallbackData: "adm:addtariff"}},

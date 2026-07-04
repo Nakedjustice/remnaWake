@@ -9,12 +9,44 @@ func init() {
 // enPayments translates the payments-package texts (user flows, admin flows,
 // gift/invite/register conversations, /stats). Merged into en at init.
 var enPayments = map[string]string{
+	// Action center (/pending): summary, drill-down lists, and the item
+	// titles it reuses from the Mini App action-center payload (those reach
+	// i18n.T as data, so they must be listed here explicitly).
+	"🚨 Центр действий": "🚨 Action center",
+	"✅ Всё спокойно — заявок и предупреждений нет.": "✅ All quiet — no requests or warnings.",
+	"Не удалось загрузить центр действий.":          "Failed to load the action center.",
+	"⚠️ Источник %s недоступен":                     "⚠️ Source %s is unavailable",
+	"💳 Оплаты (%d)":                                    "💳 Payments (%d)",
+	"🎁 Подарки (%d)":                                   "🎁 Gifts (%d)",
+	"👥 Приглашения (%d)":                               "👥 Invites (%d)",
+	"🧪 Пробные периоды (%d)":                           "🧪 Trials (%d)",
+	"💳 Ожидающие заявки на оплату":                     "💳 Pending payment requests",
+	"🎁 Ожидающие заявки на подарки":                    "🎁 Pending gift requests",
+	"👥 Ожидающие приглашения":                          "👥 Pending invites",
+	"🧪 Ожидающие заявки на пробный период":             "🧪 Pending trial requests",
+	"Нет ожидающих заявок.":                            "No pending requests.",
+	"…и ещё %d — решите эти, чтобы увидеть остальные.": "…and %d more — resolve these to see the rest.",
+	"№%d · %s · %d мес. · %s":                          "#%d · %s · %d mo. · %s",
+	"№%d · %s · %d ГБ · %s":                            "#%d · %s · %d GB · %s",
+	"№%d · %s → %s · %d мес. · %s":                     "#%d · %s → %s · %d mo. · %s",
+	"Заявки на оплату ждут решения":                    "Payment requests need review",
+	"Заявки на подарки ждут решения":                   "Gift requests need review",
+	"Приглашения ждут одобрения":                       "Invites need approval",
+	"Пробные периоды ждут одобрения":                   "Trial requests need approval",
+	"Есть отклонённые онлайн-платежи":                  "Online payments were rejected",
+	"Подписки скоро истекают":                          "Subscriptions are expiring soon",
+	"Пользователи почти исчерпали трафик":              "Users are nearly out of traffic",
+	"Прокси недоступны":                                "Proxies are down",
+	"Просрочены оплаты серверов":                       "Server payments are overdue",
+	"Скоро нужно оплатить серверы":                     "Server payments are due soon",
+	"Доступно обновление":                              "Update available",
+
 	// Database backup
-	"📦 Плановая резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.": "📦 Scheduled backup of the bot database. To restore: ./install.sh restore <file>.",
-	"📦 Резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.":          "📦 Backup of the bot database. To restore: ./install.sh restore <file>.",
+	"📦 Плановая резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.":                         "📦 Scheduled backup of the bot database. To restore: ./install.sh restore <file>.",
+	"📦 Резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.":                                  "📦 Backup of the bot database. To restore: ./install.sh restore <file>.",
 	"⚠️ Резервная копия базы данных больше 50 МБ и не может быть отправлена в Telegram. Сделайте бэкап на сервере вручную.": "⚠️ The database backup exceeds 50 MB and cannot be sent via Telegram. Back up on the server manually.",
-	"Резервная копия не отправлена (dry-run).": "Backup not sent (dry-run).",
-	"Не удалось создать резервную копию.":      "Failed to create the backup.",
+	"Резервная копия не отправлена (dry-run).":                                                                              "Backup not sent (dry-run).",
+	"Не удалось создать резервную копию.":                                                                                   "Failed to create the backup.",
 
 	// Auto-update
 	"🆕 Доступно обновление бота.\n\nТекущая версия: %s\nНовая версия: %s": "🆕 A bot update is available.\n\nCurrent version: %s\nNew version: %s",

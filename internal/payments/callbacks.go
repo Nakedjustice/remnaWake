@@ -785,6 +785,10 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 	switch {
 	case cb.Data == "adm:menu":
 		s.SendAdminMenu(ctx, chatID)
+	case cb.Data == "adm:pending":
+		s.sendPendingSummary(ctx, chatID)
+	case strings.HasPrefix(cb.Data, "adm:pd:"):
+		s.sendPendingCategory(ctx, chatID, strings.TrimPrefix(cb.Data, "adm:pd:"))
 	case cb.Data == "adm:tariffs":
 		s.sendAdminTariffs(ctx, chatID)
 	case cb.Data == "adm:stats":
