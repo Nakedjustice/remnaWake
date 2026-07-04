@@ -155,6 +155,7 @@ The bot chat and Mini App both support this step. JPEG/PNG photos are limited to
 | `/setrequisites`              | Set payment requisites shown after «Я оплатил» (two-step) |
 | `/requisites`                 | Show the saved payment requisites |
 | `/stats`                      | 📊 Panel users, 30-day payments & revenue, pending requests, gift codes, pending invites |
+| `/pending`                    | 🚨 Action center: pending payments/gifts/invites/trials with inline ✅/❌ buttons, plus panel/proxy/infra/update alerts |
 | `/backup`                     | 📦 Send a backup of the bot database (`.db` file) to your DM |
 
 The **`/admin`** menu also offers 📊 statistics, a 🎁 gift-codes browser (by

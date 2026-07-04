@@ -637,8 +637,8 @@ func TestAdminMenuLocalizedEN(t *testing.T) {
 	if len(bot.sent) != 1 || bot.sent[0].Text != "Admin menu" {
 		t.Fatalf("expected English admin menu, got %+v", bot.sent)
 	}
-	if got := bot.sent[0].Keyboard.InlineKeyboard[0][0].Text; got != "📊 Statistics" {
-		t.Fatalf("first button = %q, want 📊 Statistics", got)
+	if got := bot.sent[0].Keyboard.InlineKeyboard[0][0].Text; got != "🚨 Action center" {
+		t.Fatalf("first button = %q, want 🚨 Action center", got)
 	}
 }
 
