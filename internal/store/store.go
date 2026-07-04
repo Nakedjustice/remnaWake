@@ -142,9 +142,22 @@ CREATE TABLE IF NOT EXISTS support_messages (
   text               TEXT NOT NULL,
   created_at         TEXT NOT NULL,
   read_by_user       INTEGER NOT NULL DEFAULT 0,
-  read_by_admin      INTEGER NOT NULL DEFAULT 0
+  read_by_admin      INTEGER NOT NULL DEFAULT 0,
+  ticket_id          INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_support_user ON support_messages(user_telegram_id);
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_telegram_id INTEGER NOT NULL,
+  user_username    TEXT NOT NULL DEFAULT '',
+  subject          TEXT NOT NULL DEFAULT '',
+  status           TEXT NOT NULL DEFAULT 'open',
+  created_at       TEXT NOT NULL,
+  closed_at        TEXT,
+  closed_by        TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_telegram_id, status);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
 CREATE TABLE IF NOT EXISTS referrals (
   referred_telegram_id INTEGER PRIMARY KEY,
   referrer_telegram_id INTEGER NOT NULL,
@@ -218,6 +231,10 @@ func New(path string) (*Store, error) {
 	if err := ensurePaymentRequestIndexes(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate payment request indexes: %w", err)
+	}
+	if err := ensureSupportTicketSchema(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate support tickets: %w", err)
 	}
 	return &Store{db: db}, nil
 }
@@ -380,6 +397,84 @@ func ensureTrafficExtensionColumns(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// ensureSupportTicketSchema adds the ticket_id column to support_messages when
+// an older database created the table without it, then adopts any pre-ticket
+// rows into one open legacy ticket per user. Idempotent: after the first run no
+// ticket_id = 0 rows remain, so re-running changes nothing. Nothing is deleted.
+func ensureSupportTicketSchema(db *sql.DB) error {
+	existing, err := tableColumns(db, "support_messages")
+	if err != nil {
+		return err
+	}
+	if !existing["ticket_id"] {
+		if _, err := db.Exec(`ALTER TABLE support_messages ADD COLUMN ticket_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	// The index lives here, not in the schema const: on a legacy database the
+	// table exists without ticket_id until the ALTER above runs, so a schema
+	// const index on that column would fail store.New.
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_support_messages_ticket ON support_messages(ticket_id)`); err != nil {
+		return err
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`
+		SELECT o.user_telegram_id,
+		       COALESCE((SELECT user_username FROM support_messages
+		                 WHERE user_telegram_id = o.user_telegram_id AND ticket_id = 0 AND user_username != ''
+		                 ORDER BY id DESC LIMIT 1), ''),
+		       MIN(o.created_at)
+		FROM support_messages o
+		WHERE o.ticket_id = 0
+		GROUP BY o.user_telegram_id
+	`)
+	if err != nil {
+		return err
+	}
+	type orphan struct {
+		user      int64
+		username  string
+		createdAt string
+	}
+	var orphans []orphan
+	for rows.Next() {
+		var o orphan
+		if err := rows.Scan(&o.user, &o.username, &o.createdAt); err != nil {
+			rows.Close()
+			return err
+		}
+		orphans = append(orphans, o)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if len(orphans) == 0 {
+		return tx.Commit()
+	}
+	for _, o := range orphans {
+		res, err := tx.Exec(`
+			INSERT INTO support_tickets (user_telegram_id, user_username, subject, status, created_at)
+			VALUES (?, ?, '', 'open', ?)`, o.user, o.username, o.createdAt)
+		if err != nil {
+			return err
+		}
+		ticketID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE support_messages SET ticket_id = ? WHERE user_telegram_id = ? AND ticket_id = 0`, ticketID, o.user); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func ensurePaymentRequestIndexes(db *sql.DB) error {
