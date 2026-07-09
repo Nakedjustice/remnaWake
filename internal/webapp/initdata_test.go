@@ -48,12 +48,12 @@ func TestValidateInitDataOK(t *testing.T) {
 		"user":      `{"id":42,"first_name":"Test","username":"test"}`,
 	})
 
-	id, err := validateInitData(initData, testToken, 24*time.Hour, now)
+	user, err := validateInitData(initData, testToken, 24*time.Hour, now)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if id != 42 {
-		t.Fatalf("user id = %d, want 42", id)
+	if user.ID != 42 || user.FirstName != "Test" || user.Username != "test" {
+		t.Fatalf("user = %+v, want signed identity fields", user)
 	}
 }
 

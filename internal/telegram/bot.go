@@ -202,6 +202,7 @@ type User struct {
 type Message struct {
 	MessageID int64  `json:"message_id"`
 	Chat      Chat   `json:"chat"`
+	From      *User  `json:"from,omitempty"`
 	Text      string `json:"text,omitempty"`
 	// Photo holds the available sizes of an attached photo, smallest first
 	// (Telegram orders them ascending — the last entry is the largest).
@@ -293,6 +294,20 @@ func (b *Bot) SendPlainWithKeyboard(ctx context.Context, chatID int64, text stri
 	payload := sendMessageRequest{
 		ChatID: chatID,
 		Text:   text,
+	}
+	if keyboard != nil {
+		payload.ReplyMarkup = keyboard
+	}
+	return b.sendMessage(ctx, payload)
+}
+
+// SendFormattedWithKeyboard sends text using the bot's configured parse mode.
+// Callers must escape every untrusted value interpolated into text.
+func (b *Bot) SendFormattedWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) (int64, error) {
+	payload := sendMessageRequest{
+		ChatID:    chatID,
+		Text:      text,
+		ParseMode: b.parseMode,
 	}
 	if keyboard != nil {
 		payload.ReplyMarkup = keyboard

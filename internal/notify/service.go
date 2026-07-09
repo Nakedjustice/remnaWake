@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"fmt"
+	"html"
 	"log/slog"
 	"time"
 
@@ -164,12 +165,13 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 
 		var text string
+		username := html.EscapeString(u.Username)
 		if kind == store.NotificationExpiry {
 			text = fmt.Sprintf(i18n.T("⏰ %s, ваша подписка истекает %s — через %d %s.\nДля продления оплатите подписку."),
-				u.Username, u.ExpireAt.Format("02.01.2006"), days, i18n.PluralDays(days))
+				username, u.ExpireAt.Format("02.01.2006"), days, i18n.PluralDays(days))
 		} else {
 			text = fmt.Sprintf(i18n.T("⛔️ %s, ваша подписка истекла %s.\nЧтобы продолжить пользоваться сервисом, продлите подписку."),
-				u.Username, u.ExpireAt.Format("02.01.2006"))
+				username, u.ExpireAt.Format("02.01.2006"))
 		}
 
 		chatID := *u.TelegramID

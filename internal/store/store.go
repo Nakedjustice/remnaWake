@@ -194,6 +194,17 @@ CREATE TABLE IF NOT EXISTS proxy_notif_muted (
   muted      INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS registration_guards (
+  telegram_id     INTEGER PRIMARY KEY,
+  username        TEXT NOT NULL DEFAULT '',
+  first_name      TEXT NOT NULL DEFAULT '',
+  last_name       TEXT NOT NULL DEFAULT '',
+  matched_pattern TEXT NOT NULL DEFAULT '',
+  blocked         INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  unblocked_at    TEXT
+);
 `
 
 // New opens (creating if needed) the SQLite database at path and applies migrations.

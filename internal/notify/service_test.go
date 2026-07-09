@@ -152,6 +152,22 @@ func TestRunSendsReminderOnceAcrossRuns(t *testing.T) {
 	}
 }
 
+func TestRunEscapesProfileNameInHTMLReminder(t *testing.T) {
+	users := []remnawave.User{
+		rwUser(1, `<a href="https://scam.example">Support</a>`, remnawave.StatusActive, runNow.Add(7*24*time.Hour), 100),
+	}
+	svc, snd, _ := newRunService(t, users, nil)
+	if err := svc.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(snd.sent) != 1 {
+		t.Fatalf("sent = %+v", snd.sent)
+	}
+	if strings.Contains(snd.sent[0].text, `<a href=`) || !strings.Contains(snd.sent[0].text, "&lt;a href=") {
+		t.Fatalf("profile name was not escaped: %q", snd.sent[0].text)
+	}
+}
+
 func TestRunRetriesAfterSendFailure(t *testing.T) {
 	users := []remnawave.User{
 		rwUser(1, "alice", remnawave.StatusActive, runNow.Add(3*24*time.Hour), 100),

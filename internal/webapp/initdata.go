@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
 var (
@@ -24,17 +26,17 @@ var (
 
 // validateInitData verifies a Telegram Mini App initData string against the
 // bot token per https://core.telegram.org/bots/webapps#validating-data-received
-// and returns the authenticated Telegram user ID. maxAge guards against replay
-// of old initData; pass 0 to skip the freshness check.
-func validateInitData(initData, botToken string, maxAge time.Duration, now time.Time) (int64, error) {
+// and returns the authenticated Telegram user. maxAge guards against replay of
+// old initData; pass 0 to skip the freshness check.
+func validateInitData(initData, botToken string, maxAge time.Duration, now time.Time) (*tg.User, error) {
 	values, err := url.ParseQuery(initData)
 	if err != nil {
-		return 0, fmt.Errorf("initData: parse: %w", err)
+		return nil, fmt.Errorf("initData: parse: %w", err)
 	}
 
 	gotHash := values.Get("hash")
 	if gotHash == "" {
-		return 0, errNoHash
+		return nil, errNoHash
 	}
 
 	keys := make([]string, 0, len(values))
@@ -58,28 +60,26 @@ func validateInitData(initData, botToken string, maxAge time.Duration, now time.
 	expected := hex.EncodeToString(mac.Sum(nil))
 
 	if !hmac.Equal([]byte(expected), []byte(gotHash)) {
-		return 0, errBadHash
+		return nil, errBadHash
 	}
 
 	if maxAge > 0 {
 		authUnix, err := strconv.ParseInt(values.Get("auth_date"), 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("initData: bad auth_date: %w", err)
+			return nil, fmt.Errorf("initData: bad auth_date: %w", err)
 		}
 		if now.Sub(time.Unix(authUnix, 0)) > maxAge {
-			return 0, errStaleAuth
+			return nil, errStaleAuth
 		}
 	}
 
 	rawUser := values.Get("user")
 	if rawUser == "" {
-		return 0, errNoUser
+		return nil, errNoUser
 	}
-	var user struct {
-		ID int64 `json:"id"`
-	}
+	var user tg.User
 	if err := json.Unmarshal([]byte(rawUser), &user); err != nil || user.ID == 0 {
-		return 0, errBadUserJSON
+		return nil, errBadUserJSON
 	}
-	return user.ID, nil
+	return &user, nil
 }

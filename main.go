@@ -295,6 +295,9 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 			if u.Message != nil && u.Message.Text != "" {
 				text := strings.TrimSpace(u.Message.Text)
 				if text == "/start" || strings.HasPrefix(text, "/start ") {
+					if pay.GuardNewTelegramUser(ctx, u.Message.From) {
+						continue
+					}
 					payload := strings.TrimSpace(strings.TrimPrefix(text, "/start"))
 					if code, ok := strings.CutPrefix(payload, "gift_"); ok && code != "" {
 						logger.Info("received gift deep link", "chat_id", u.Message.Chat.ID)
@@ -315,6 +318,9 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 						fmt.Sprintf(i18n.T("Кнопка «%s» теперь всегда под полем ввода 👇"), tgbot.CabinetButtonLabel()), tgbot.MainReplyKeyboard()); err != nil {
 						logger.Error("send reply keyboard failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
 					}
+					continue
+				}
+				if pay.HandleBlockedRegistrationMessage(ctx, u.Message) {
 					continue
 				}
 				if text == "/me" || text == "/cabinet" || tgbot.IsCabinetButton(text) {

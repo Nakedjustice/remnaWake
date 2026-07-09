@@ -14,26 +14,32 @@ import (
 	"time"
 
 	"github.com/Nakedjustice/remnaWake/internal/payments"
+	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
 type fakeCabinet struct {
-	data            *payments.WebCabinet
-	renewErr        error
-	renewResult     *payments.RenewResult
-	renewed         []int64
-	renewConfirmed  []bool
-	trafficExtended []int
-	giftErr         error
-	gifted          []int
-	inviteErr       error
-	invited         []string
-	notifErr        error
-	notifSet        []string // "<kind>:<muted>" per call
-	trialErr        error
-	trialResult     *payments.WebTrialResult
-	trialNames      []string
-	parityErr       error
-	receipt         payments.WebReceipt
+	data                *payments.WebCabinet
+	renewErr            error
+	renewResult         *payments.RenewResult
+	renewed             []int64
+	renewConfirmed      []bool
+	trafficExtended     []int
+	giftErr             error
+	gifted              []int
+	inviteErr           error
+	invited             []string
+	notifErr            error
+	notifSet            []string // "<kind>:<muted>" per call
+	trialErr            error
+	trialResult         *payments.WebTrialResult
+	trialNames          []string
+	parityErr           error
+	receipt             payments.WebReceipt
+	registrationBlocked bool
+	guardUsers          []tg.User
+	supportHistory      []int64
+	supportSent         []int64
+	supportClosed       []int64
 }
 
 func TestWebParityJSONRoutes(t *testing.T) {
@@ -98,7 +104,8 @@ func TestEmbeddedFrontendContainsNativeParityFlows(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	body := w.Body.String()
-	for _, want := range []string{"/api/register", "/api/gift/redeem", "/api/receipt", "/api/platega/check", "/api/admin/action-center", "localStorage.setItem(checkKey"} {
+	for _, want := range []string{"/api/register", "/api/gift/redeem", "/api/receipt", "/api/platega/check", "/api/admin/action-center", "localStorage.setItem(checkKey",
+		"registration_blocked", "/api/admin/registration-guard/pattern", "/api/admin/registration-guard/unblock", "renderAdminRegistrationGuard"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("frontend missing %q", want)
 		}
@@ -110,6 +117,65 @@ func TestEmbeddedFrontendContainsNativeParityFlows(t *testing.T) {
 
 func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabinet, error) {
 	return f.data, nil
+}
+
+func TestRegistrationGuardBlocksRegularMiniAppRoutesAndKeepsSupport(t *testing.T) {
+	cab := &fakeCabinet{registrationBlocked: true}
+	srv := newTestServer(cab)
+	auth := validAuthUser(t, `{"id":77,"first_name":"Support","last_name":"<scam>","username":"support_team"}`)
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodGet, "/api/me", ""},
+		{http.MethodPost, "/api/register", `{"query":"alice"}`},
+		{http.MethodPost, "/api/renew", `{"remnawave_id":7,"months":1}`},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Authorization", auth)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), `"code":"registration_blocked"`) {
+			t.Fatalf("%s %s: code=%d body=%s", tc.method, tc.path, w.Code, w.Body.String())
+		}
+	}
+	if len(cab.guardUsers) != 3 {
+		t.Fatalf("guard calls = %d, want 3", len(cab.guardUsers))
+	}
+	got := cab.guardUsers[0]
+	if got.ID != 77 || got.FirstName != "Support" || got.LastName != "<scam>" || got.Username != "support_team" {
+		t.Fatalf("signed identity forwarded to guard = %+v", got)
+	}
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodGet, "/api/support", ""},
+		{http.MethodPost, "/api/support/send", `{"text":"please review"}`},
+		{http.MethodPost, "/api/support/close", `{}`},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Authorization", auth)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("support %s %s: code=%d body=%s", tc.method, tc.path, w.Code, w.Body.String())
+		}
+	}
+	if len(cab.supportHistory) != 1 || len(cab.supportSent) != 1 || len(cab.supportClosed) != 1 {
+		t.Fatalf("support calls = history:%v sent:%v closed:%v", cab.supportHistory, cab.supportSent, cab.supportClosed)
+	}
+}
+
+func (f *fakeCabinet) CheckTelegramRegistration(_ context.Context, user *tg.User) bool {
+	if user != nil {
+		f.guardUsers = append(f.guardUsers, *user)
+	}
+	return f.registrationBlocked
 }
 
 func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int, _, _ string, planChangeConfirmed bool) (*payments.RenewResult, error) {
@@ -157,13 +223,20 @@ func (f *fakeCabinet) ClaimTrial(_ context.Context, _ int64, username string) (*
 	return f.trialResult, f.trialErr
 }
 
-func (f *fakeCabinet) SupportHistoryUser(_ context.Context, _ int64) (*payments.WebSupport, error) {
+func (f *fakeCabinet) SupportHistoryUser(_ context.Context, telegramID int64) (*payments.WebSupport, error) {
+	f.supportHistory = append(f.supportHistory, telegramID)
 	return &payments.WebSupport{}, nil
 }
 
-func (f *fakeCabinet) SupportSendUser(_ context.Context, _ int64, _ string) error { return nil }
+func (f *fakeCabinet) SupportSendUser(_ context.Context, telegramID int64, _ string) error {
+	f.supportSent = append(f.supportSent, telegramID)
+	return nil
+}
 
-func (f *fakeCabinet) SupportCloseUser(_ context.Context, _ int64) error { return nil }
+func (f *fakeCabinet) SupportCloseUser(_ context.Context, telegramID int64) error {
+	f.supportClosed = append(f.supportClosed, telegramID)
+	return nil
+}
 
 type adminCall struct {
 	Name string
@@ -264,6 +337,18 @@ func (f *fakeAdmin) AdminSetTrial(_ context.Context, tgID int64, cfg payments.Tr
 }
 func (f *fakeAdmin) AdminSetReferral(_ context.Context, tgID int64, enabled bool, inviter, invitee int) error {
 	f.calls = append(f.calls, adminCall{Name: "setreferral", A: int64(inviter), B: int64(invitee), Text: fmt.Sprintf("%t", enabled)})
+	return f.err
+}
+func (f *fakeAdmin) AdminAddRegistrationGuardPattern(_ context.Context, tgID int64, pattern string) error {
+	f.calls = append(f.calls, adminCall{Name: "addguardpattern", A: tgID, Text: pattern})
+	return f.err
+}
+func (f *fakeAdmin) AdminDeleteRegistrationGuardPattern(_ context.Context, tgID int64, pattern string) error {
+	f.calls = append(f.calls, adminCall{Name: "deleteguardpattern", A: tgID, Text: pattern})
+	return f.err
+}
+func (f *fakeAdmin) AdminUnblockRegistration(_ context.Context, tgID, blockedTGID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "unblockregistration", A: tgID, B: blockedTGID})
 	return f.err
 }
 func (f *fakeAdmin) AdminSetRequireScreenshot(_ context.Context, tgID int64, on bool) error {
@@ -455,9 +540,13 @@ func newTestServerFull(cab *fakeCabinet, adm *fakeAdmin, wh Webhooks) *Server {
 }
 
 func validAuth(t *testing.T) string {
+	return validAuthUser(t, `{"id":42}`)
+}
+
+func validAuthUser(t *testing.T, user string) string {
 	return "tma " + signInitData(t, map[string]string{
 		"auth_date": "1699999000",
-		"user":      `{"id":42}`,
+		"user":      user,
 	})
 }
 
@@ -613,6 +702,60 @@ func TestHandleAdminScreenshotToggle(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != 403 {
 		t.Fatalf("status = %d, want 403; body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleAdminRegistrationGuardMutations(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	for _, tc := range []struct {
+		path string
+		body string
+		name string
+	}{
+		{"/api/admin/registration-guard/pattern", `{"pattern":"brand helper"}`, "addguardpattern"},
+		{"/api/admin/registration-guard/pattern/delete", `{"pattern":"brand helper"}`, "deleteguardpattern"},
+		{"/api/admin/registration-guard/unblock", `{"telegram_id":77}`, "unblockregistration"},
+	} {
+		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Authorization", validAuth(t))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", tc.path, w.Code, w.Body.String())
+		}
+		call := adm.calls[len(adm.calls)-1]
+		if call.Name != tc.name || call.A != 42 {
+			t.Fatalf("%s: call=%+v", tc.path, call)
+		}
+	}
+	if got := adm.calls[2].B; got != 77 {
+		t.Fatalf("unblock target = %d, want 77", got)
+	}
+
+	denied := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: payments.ErrNotAdmin})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/registration-guard/pattern", strings.NewReader(`{"pattern":"brand helper"}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	denied.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("non-admin: status=%d body=%s", w.Code, w.Body.String())
+	}
+	for _, tc := range []struct {
+		err  error
+		want int
+	}{
+		{payments.ErrRegistrationGuardPatternExists, http.StatusConflict},
+		{payments.ErrBadInput, http.StatusBadRequest},
+	} {
+		srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: tc.err})
+		req := httptest.NewRequest(http.MethodPost, "/api/admin/registration-guard/pattern", strings.NewReader(`{"pattern":"brand helper"}`))
+		req.Header.Set("Authorization", validAuth(t))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Fatalf("err=%v: status=%d want=%d body=%s", tc.err, w.Code, tc.want, w.Body.String())
+		}
 	}
 }
 

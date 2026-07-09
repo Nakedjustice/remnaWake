@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Nakedjustice/remnaWake/internal/payments"
+	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
 //go:embed static
@@ -24,6 +25,7 @@ const initDataMaxAge = 24 * time.Hour
 
 // Cabinet is the subset of *payments.Service the mini app user API needs.
 type Cabinet interface {
+	CheckTelegramRegistration(ctx context.Context, user *tg.User) bool
 	CabinetData(ctx context.Context, telegramID int64) (*payments.WebCabinet, error)
 	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider, plan string, planChangeConfirmed bool) (*payments.RenewResult, error)
 	CreateTrafficExtensionRequest(ctx context.Context, telegramID, remnawaveID int64, trafficGB int, provider string) (*payments.RenewResult, error)
@@ -72,6 +74,9 @@ type Admin interface {
 	AdminSetDefaultTrafficReset(ctx context.Context, telegramID int64, strategy string) error
 	AdminSetTrial(ctx context.Context, telegramID int64, cfg payments.TrialConfig) error
 	AdminSetReferral(ctx context.Context, telegramID int64, enabled bool, inviterDays, inviteeDays int) error
+	AdminAddRegistrationGuardPattern(ctx context.Context, telegramID int64, pattern string) error
+	AdminDeleteRegistrationGuardPattern(ctx context.Context, telegramID int64, pattern string) error
+	AdminUnblockRegistration(ctx context.Context, telegramID, blockedTelegramID int64) error
 	AdminFindUser(ctx context.Context, telegramID int64, query string) (*payments.WebManagedUser, error)
 	AdminUpdateUser(ctx context.Context, telegramID int64, req payments.WebUserUpdate) error
 	AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error
@@ -180,6 +185,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/traffic-reset", s.handleAdminSetDefaultTrafficReset)
 	mux.HandleFunc("POST /api/admin/trial", s.handleAdminSetTrial)
 	mux.HandleFunc("POST /api/admin/referral", s.handleAdminSetReferral)
+	mux.HandleFunc("POST /api/admin/registration-guard/pattern", s.handleAdminAddRegistrationGuardPattern)
+	mux.HandleFunc("POST /api/admin/registration-guard/pattern/delete", s.handleAdminDeleteRegistrationGuardPattern)
+	mux.HandleFunc("POST /api/admin/registration-guard/unblock", s.handleAdminUnblockRegistration)
 	mux.HandleFunc("POST /api/admin/user/find", s.handleAdminFindUser)
 	mux.HandleFunc("POST /api/admin/user/update", s.handleAdminUpdateUser)
 	mux.HandleFunc("POST /api/admin/broadcast", s.handleAdminBroadcast)
@@ -246,22 +254,49 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	return err
 }
 
-// authenticate extracts and validates initData from the Authorization header
-// ("tma <initData>") and returns the Telegram user ID, or writes an error
-// response and returns false.
-func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (int64, bool) {
+// authenticateUser extracts and validates the Telegram identity from initData
+// without applying access policy. Support uses this path so an automatically
+// blocked user can still contact an administrator.
+func (s *Server) authenticateUser(w http.ResponseWriter, r *http.Request) (*tg.User, bool) {
 	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "tma ")
 	if !ok || raw == "" {
 		writeJSONError(w, http.StatusUnauthorized, "missing initData")
-		return 0, false
+		return nil, false
 	}
-	userID, err := validateInitData(raw, s.botToken, initDataMaxAge, s.now())
+	user, err := validateInitData(raw, s.botToken, initDataMaxAge, s.now())
 	if err != nil {
 		s.logger.Warn("webapp: initData validation failed", "err", err.Error())
 		writeJSONError(w, http.StatusUnauthorized, "invalid initData")
+		return nil, false
+	}
+	return user, true
+}
+
+// authenticate applies the shared registration guard to every ordinary Mini
+// App route. A blocked identity gets a machine-readable 403 used by the
+// frontend to render its dedicated support escape hatch.
+func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	user, ok := s.authenticateUser(w, r)
+	if !ok {
 		return 0, false
 	}
-	return userID, true
+	if s.cabinet.CheckTelegramRegistration(r.Context(), user) {
+		writeJSONErrorCode(w, http.StatusForbidden, "registration blocked", "registration_blocked")
+		return 0, false
+	}
+	return user.ID, true
+}
+
+// authenticateSupport records a first Mini App visit through the same guard,
+// but deliberately permits the three support endpoints even when it blocks the
+// identity.
+func (s *Server) authenticateSupport(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	user, ok := s.authenticateUser(w, r)
+	if !ok {
+		return 0, false
+	}
+	_ = s.cabinet.CheckTelegramRegistration(r.Context(), user)
+	return user.ID, true
 }
 
 // handlePlategaCallback receives Platega's webhook. The body carries only a
@@ -637,10 +672,13 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 	case errors.Is(err, payments.ErrBadInput):
 		writeJSONError(w, http.StatusBadRequest, "некорректные данные")
 	case errors.Is(err, payments.ErrTariffUnknown), errors.Is(err, payments.ErrPlanUnknown), errors.Is(err, payments.ErrTrafficExtensionUnknown),
-		errors.Is(err, payments.ErrRequestNotFound), errors.Is(err, payments.ErrInfraServerUnknown):
+		errors.Is(err, payments.ErrRequestNotFound), errors.Is(err, payments.ErrInfraServerUnknown),
+		errors.Is(err, payments.ErrRegistrationGuardPatternNotFound), errors.Is(err, payments.ErrRegistrationGuardNotFound):
 		writeJSONError(w, http.StatusNotFound, "не найдено")
 	case errors.Is(err, payments.ErrRequestResolved):
 		writeJSONError(w, http.StatusConflict, "уже обработано")
+	case errors.Is(err, payments.ErrRegistrationGuardPatternExists):
+		writeJSONError(w, http.StatusConflict, "паттерн уже добавлен")
 	case errors.Is(err, payments.ErrPanelCreateFailed):
 		s.logger.Error("webapp: admin "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusBadGateway, "ошибка создания пользователя в панели, попробуйте позже")
@@ -1232,6 +1270,63 @@ func (s *Server) handleAdminSetReferral(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (s *Server) handleAdminAddRegistrationGuardPattern(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Pattern string `json:"pattern"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminAddRegistrationGuardPattern(r.Context(), userID, req.Pattern); err != nil {
+		s.writeAdminError(w, "add registration guard pattern", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminDeleteRegistrationGuardPattern(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Pattern string `json:"pattern"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminDeleteRegistrationGuardPattern(r.Context(), userID, req.Pattern); err != nil {
+		s.writeAdminError(w, "delete registration guard pattern", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminUnblockRegistration(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		TelegramID int64 `json:"telegram_id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminUnblockRegistration(r.Context(), userID, req.TelegramID); err != nil {
+		s.writeAdminError(w, "unblock registration", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleAdminFindUser(w http.ResponseWriter, r *http.Request) {
 	userID, ok := s.authenticate(w, r)
 	if !ok {
@@ -1320,4 +1415,8 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func writeJSONErrorCode(w http.ResponseWriter, status int, msg, code string) {
+	writeJSON(w, status, map[string]string{"error": msg, "code": code})
 }

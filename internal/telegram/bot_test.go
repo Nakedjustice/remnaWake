@@ -33,6 +33,37 @@ func TestSendPlainWithKeyboardReturnsMessageID(t *testing.T) {
 	}
 }
 
+func TestSendFormattedWithKeyboardUsesConfiguredParseMode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if got := body["parse_mode"]; got != "HTML" {
+			t.Fatalf("parse_mode = %v, want HTML", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":42,"chat":{"id":100,"type":"private"},"text":"hi"}}`))
+	}))
+	defer srv.Close()
+
+	b := NewBot("token", "HTML", time.Second)
+	b.apiBase = srv.URL
+	if _, err := b.SendFormattedWithKeyboard(context.Background(), 100, "<b>hi</b>", nil); err != nil {
+		t.Fatalf("SendFormattedWithKeyboard: %v", err)
+	}
+}
+
+func TestMessageDecodesSender(t *testing.T) {
+	var update Update
+	if err := json.Unmarshal([]byte(`{"message":{"message_id":1,"chat":{"id":100},"from":{"id":42,"first_name":"Alice","username":"alice"},"text":"/start"}}`), &update); err != nil {
+		t.Fatalf("decode update: %v", err)
+	}
+	if update.Message == nil || update.Message.From == nil || update.Message.From.ID != 42 || update.Message.From.Username != "alice" {
+		t.Fatalf("decoded sender = %+v", update.Message)
+	}
+}
+
 func TestMultipartReceiptUploadsReturnReusableFileIDs(t *testing.T) {
 	for _, tc := range []struct {
 		method, field string

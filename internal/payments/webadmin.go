@@ -94,6 +94,18 @@ type WebAdminPlan struct {
 	Tariffs     []WebTariff `json:"tariffs,omitempty"`
 }
 
+// WebRegistrationGuard is one active automatic registration block displayed
+// in the Mini App administrator queue. The frontend must render every string
+// as text, never as HTML.
+type WebRegistrationGuard struct {
+	TelegramID     int64  `json:"telegram_id"`
+	Username       string `json:"username,omitempty"`
+	FirstName      string `json:"first_name,omitempty"`
+	LastName       string `json:"last_name,omitempty"`
+	MatchedPattern string `json:"matched_pattern"`
+	CreatedAt      string `json:"created_at,omitempty"`
+}
+
 // WebAdminPanel is the full /api/admin payload for the mini app.
 type WebAdminPanel struct {
 	Tariffs           []WebTariff                 `json:"tariffs"`
@@ -138,6 +150,10 @@ type WebAdminPanel struct {
 	ProxyMonitoring      bool   `json:"proxy_monitoring"`
 	AutoUpdateConfigured bool   `json:"autoupdate_configured"`
 	AutoUpdateInterval   string `json:"autoupdate_interval,omitempty"`
+	// RegistrationGuardPatterns are operator-defined additions; built-in
+	// impersonation patterns are intentionally fixed in code.
+	RegistrationGuardPatterns []string               `json:"registration_guard_patterns,omitempty"`
+	BlockedRegistrations      []WebRegistrationGuard `json:"blocked_registrations,omitempty"`
 }
 
 type WebUpdateCheckResult struct {
@@ -226,6 +242,21 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	if checker := s.updateCheckerLocked(); checker != nil {
 		out.AutoUpdateConfigured = true
 		out.AutoUpdateInterval = checker.Interval().String()
+	}
+	out.RegistrationGuardPatterns = s.customRegistrationGuardPatterns()
+	blockedRegistrations, err := s.store.ListBlockedRegistrationGuards(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list blocked registrations: %w", err)
+	}
+	for _, guard := range blockedRegistrations {
+		out.BlockedRegistrations = append(out.BlockedRegistrations, WebRegistrationGuard{
+			TelegramID:     guard.TelegramID,
+			Username:       guard.Username,
+			FirstName:      guard.FirstName,
+			LastName:       guard.LastName,
+			MatchedPattern: guard.MatchedPattern,
+			CreatedAt:      guard.CreatedAt.Local().Format("02.01.2006 15:04"),
+		})
 	}
 
 	buyers, err := s.store.ListGiftBuyers(ctx)

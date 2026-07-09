@@ -19,6 +19,7 @@ import (
 type BotSender interface {
 	SendPlain(ctx context.Context, chatID int64, text string) error
 	SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error)
+	SendFormattedWithKeyboard(ctx context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error)
 	SendPhoto(ctx context.Context, chatID int64, fileID, caption string, kb *tg.InlineKeyboardMarkup) (int64, error)
 	SendDocument(ctx context.Context, chatID int64, fileID, caption string, kb *tg.InlineKeyboardMarkup) (int64, error)
 	SendPhotoUpload(ctx context.Context, chatID int64, filename string, data []byte, caption string, kb *tg.InlineKeyboardMarkup) (int64, string, error)
@@ -207,6 +208,7 @@ const (
 	adminInputReferralInvitee
 	adminInputSupportReply
 	adminInputUpdateInterval
+	adminInputRegistrationGuardPattern
 )
 
 type adminInputState struct {
@@ -374,6 +376,10 @@ type Service struct {
 	// newly created users (absent = NO_RESET). Protected by mu.
 	defaultTrafficReset string
 
+	// registrationGuardPatterns mirrors the admin-configured additions to the
+	// fixed scam-registration patterns. Protected by mu.
+	registrationGuardPatterns []string
+
 	// updateTrigger applies an available bot update when an admin taps "Install
 	// now" (typically a Watchtower HTTP-API call). nil = no one-tap install;
 	// the button then shows manual instructions. Wired once at startup.
@@ -429,6 +435,11 @@ const (
 // defaultTrafficResetKey is the settings-table key for the traffic-reset
 // strategy applied to newly created users (absent = NO_RESET).
 const defaultTrafficResetKey = "default_traffic_reset_strategy"
+
+// registrationGuardPatternsKey stores the JSON array of operator-defined
+// impersonation patterns. Built-in patterns stay in code so they cannot be
+// accidentally removed through the admin menu.
+const registrationGuardPatternsKey = "registration_guard_patterns"
 
 // Settings-table keys for the runtime-toggleable free-trial and referral
 // settings. Absent = use the env-provided default (see InitTrial / InitReferral).
@@ -492,6 +503,7 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater 
 	} else if found && validTrafficResetStrategy(value) {
 		s.defaultTrafficReset = value
 	}
+	s.registrationGuardPatterns = s.loadRegistrationGuardPatterns(context.Background())
 	return s
 }
 

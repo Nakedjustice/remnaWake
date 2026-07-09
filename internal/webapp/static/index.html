@@ -1040,6 +1040,23 @@ const EN = {
   'Завершить': 'Close',
   'Завершить обращение? История будет удалена.': 'Close this conversation? The history will be deleted.',
   'Без имени': 'No name',
+  // Registration guard
+  '🛡 Антискам-регистрации': '🛡 Registration protection',
+  'Встроенные паттерны защищают от имитации поддержки и администрации. Добавьте свои слова для проверки имени и ника.': 'Built-in patterns protect against impersonating support and administrators. Add your own words to check names and usernames.',
+  'Свои паттерны': 'Custom patterns',
+  'Пользовательских паттернов нет.': 'No custom patterns.',
+  'Новый паттерн': 'New pattern',
+  '➕ Добавить паттерн': '➕ Add pattern',
+  'Удалить паттерн «{pattern}»?': 'Delete pattern “{pattern}”?',
+  'Активные блокировки': 'Active blocks',
+  'Активных блокировок нет.': 'No active blocks.',
+  'Сработал паттерн: {pattern}': 'Matched pattern: {pattern}',
+  'TG {id} · {date}': 'TG {id} · {date}',
+  '✅ Разблокировать': '✅ Unblock',
+  'Разблокировать пользователя «{user}»?': 'Unblock user “{user}”?',
+  '🛑 Вы не прошли автоматическую антиспам-проверку': '🛑 You did not pass the automatic anti-spam check',
+  'Доступ к кабинету ограничен. Если это ошибка, напишите в поддержку — вас проверят и разблокируют.': 'Account access is restricted. If this is a mistake, contact support so we can review and unblock you.',
+  '🛟 Связаться с поддержкой': '🛟 Contact support',
   // Infrastructure monitoring
   'Инфраструктура': 'Infrastructure',
   'Серверов': 'Servers',
@@ -1245,7 +1262,12 @@ async function api(path, opts = {}) {
     headers,
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || t('Ошибка {n}', { n: res.status }));
+  if (!res.ok) {
+    const error = new Error(body.error || t('Ошибка {n}', { n: res.status }));
+    error.code = body.code || '';
+    error.status = res.status;
+    throw error;
+  }
   return body;
 }
 
@@ -2416,6 +2438,7 @@ async function showCabinet() {
   try {
     cabinetData = await api('/api/me');
   } catch (e) {
+    if (e.code === 'registration_blocked') { showRegistrationBlocked(); return; }
     appEl.hidden = true;
     statusEl.hidden = false;
     statusEl.textContent = '⚠️ ' + e.message;
@@ -2423,6 +2446,25 @@ async function showCabinet() {
     return;
   }
   showHome();
+}
+
+// showRegistrationBlocked is the sole Mini App screen for a registration-guard
+// denial. Its copy and controls are static; untrusted Telegram names never
+// enter this view. The support drawer remains usable through its exempt API.
+function showRegistrationBlocked() {
+  currentRender = showRegistrationBlocked;
+  hideDock();
+  document.body.classList.remove('theme-neon-tokyo');
+  appEl.textContent = '';
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('🛑 Вы не прошли автоматическую антиспам-проверку')));
+  card.appendChild(el('div', 'hint', t('Доступ к кабинету ограничен. Если это ошибка, напишите в поддержку — вас проверят и разблокируют.')));
+  const support = el('button', null, t('🛟 Связаться с поддержкой'));
+  support.onclick = showSupport;
+  card.appendChild(support);
+  appEl.appendChild(card);
+  statusEl.hidden = true;
+  appEl.hidden = false;
 }
 
 // adminData caches the latest /api/admin payload so the admin hub and its
@@ -3268,6 +3310,63 @@ function renderAdminReferral(data) {
   toggleRow.appendChild(el('div', 'ti-label', t('🎉 Реферальная программа')));
   toggleRow.appendChild(toggle);
   card.appendChild(toggleRow);
+  return card;
+}
+
+// renderAdminRegistrationGuard exposes the same custom-pattern controls and
+// unblock queue as the bot admin menu. User-provided names and usernames are
+// always passed to el(), which writes textContent rather than HTML.
+function renderAdminRegistrationGuard(data) {
+  const card = el('div', 'admin-card');
+  card.appendChild(el('h2', null, t('🛡 Антискам-регистрации')));
+  card.appendChild(el('div', 'hint', t('Встроенные паттерны защищают от имитации поддержки и администрации. Добавьте свои слова для проверки имени и ника.')));
+
+  card.appendChild(el('div', 'section-title', t('Свои паттерны')));
+  const patterns = data.registration_guard_patterns || [];
+  if (!patterns.length) {
+    card.appendChild(el('div', 'hint', t('Пользовательских паттернов нет.')));
+  } else {
+    patterns.forEach(pattern => {
+      const item = el('div', 'admin-list-row');
+      item.appendChild(el('div', 'admin-list-copy', pattern));
+      const del = el('button', 'secondary', t('🗑 Удалить'));
+      del.onclick = () => adminAction('/api/admin/registration-guard/pattern/delete', { pattern },
+        t('Удалить паттерн «{pattern}»?', { pattern }));
+      item.appendChild(del);
+      card.appendChild(item);
+    });
+  }
+  const input = Object.assign(el('input'), { type: 'text', maxLength: 64, placeholder: t('Новый паттерн') });
+  card.appendChild(input);
+  const add = el('button', null, t('➕ Добавить паттерн'));
+  add.onclick = () => {
+    const pattern = input.value.trim();
+    if (!pattern) { tg.showAlert(t('Новый паттерн')); return; }
+    adminAction('/api/admin/registration-guard/pattern', { pattern });
+  };
+  card.appendChild(add);
+
+  card.appendChild(el('div', 'section-title', t('Активные блокировки')));
+  const blocked = data.blocked_registrations || [];
+  if (!blocked.length) {
+    card.appendChild(el('div', 'hint', t('Активных блокировок нет.')));
+    return card;
+  }
+  blocked.forEach(entry => {
+    const item = el('div', 'admin-list-row');
+    const copy = el('div', 'admin-list-copy');
+    const fullName = [entry.first_name, entry.last_name].filter(Boolean).join(' ').trim();
+    const label = fullName || (entry.username ? '@' + entry.username : t('Без имени'));
+    copy.appendChild(el('div', 'admin-list-title', label));
+    copy.appendChild(el('div', 'admin-list-meta', t('Сработал паттерн: {pattern}', { pattern: entry.matched_pattern })));
+    copy.appendChild(el('div', 'admin-list-meta', t('TG {id} · {date}', { id: entry.telegram_id, date: entry.created_at || '—' })));
+    item.appendChild(copy);
+    const unblock = el('button', 'secondary', t('✅ Разблокировать'));
+    unblock.onclick = () => adminAction('/api/admin/registration-guard/unblock', { telegram_id: entry.telegram_id },
+      t('Разблокировать пользователя «{user}»?', { user: label }));
+    item.appendChild(unblock);
+    card.appendChild(item);
+  });
   return card;
 }
 
@@ -4444,6 +4543,7 @@ function showAdminSettings() {
   appEl.appendChild(renderAdminUpdates(data));
   appEl.appendChild(renderAdminTrial(data));
   appEl.appendChild(renderAdminReferral(data));
+  appEl.appendChild(renderAdminRegistrationGuard(data));
   statusEl.hidden = true;
   appEl.hidden = false;
 }
@@ -4488,6 +4588,7 @@ function showAdminBroadcast() {
     cabinetData = data;
     showHome();
   } catch (e) {
+    if (e.code === 'registration_blocked') { showRegistrationBlocked(); return; }
     appEl.hidden = true;
     statusEl.hidden = false;
     statusEl.textContent = '⚠️ ' + e.message;

@@ -7,7 +7,7 @@ import (
 
 // handleSupport returns the authenticated user's own support thread.
 func (s *Server) handleSupport(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
+	userID, ok := s.authenticateSupport(w, r)
 	if !ok {
 		return
 	}
@@ -21,7 +21,7 @@ func (s *Server) handleSupport(w http.ResponseWriter, r *http.Request) {
 
 // handleSupportSend stores a user's support message and notifies the admins.
 func (s *Server) handleSupportSend(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
+	userID, ok := s.authenticateSupport(w, r)
 	if !ok {
 		return
 	}
@@ -41,7 +41,7 @@ func (s *Server) handleSupportSend(w http.ResponseWriter, r *http.Request) {
 
 // handleSupportClose closes (deletes) the user's own support thread.
 func (s *Server) handleSupportClose(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
+	userID, ok := s.authenticateSupport(w, r)
 	if !ok {
 		return
 	}

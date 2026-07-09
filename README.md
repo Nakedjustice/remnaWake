@@ -18,6 +18,11 @@ extends the subscription by the chosen number of months.
   subscription link, gifts/invites and quick actions.
 - 🔗 **Self-service linking** (`/register`) — paste a subscription link or
   profile name and the bot links your Telegram ID, no admin needed.
+- 🛡️ **Scam-registration guard** — a first `/start` or signed Mini App open
+  from a name or username resembling staff (`support`, `admin`, verification,
+  the bot name, and related Russian patterns) is blocked locally. The user can
+  open the built-in support chat; every admin receives an **Unblock** button for
+  false positives.
 - 🎁 **Gifts** (`/gift`, `/mygifts`) — buy a subscription as a transferable
   one-time code / `t.me` deep link; recipient activates it themselves.
 - ➕ **Invites** (`/invite`) — subscribers request a new panel account; admin
@@ -245,6 +250,20 @@ Already linked to you → acknowledged idempotently. Linked to someone else →
 refused (contact the admin). Session expires after 10 minutes. On startup the
 bot registers its command menu via `setMyCommands`, so users get the blue
 **Menu** button and `/` autocomplete.
+
+## 🛡️ Scam-registration guard
+
+On a user's first `/start` or signed Mini App open, the bot locally blocks a name or username matching
+staff-impersonation patterns: `support`, `admin`, `verif`, `official`, `moder`,
+`security`, `refund`, their Russian equivalents, or the bot's own username.
+The blocked Mini App user sees a dedicated anti-spam screen with a **Contact
+support** button; the three built-in support endpoints remain available. Admins
+receive an alert with **Unblock**; unblocking is permanent, so a later `/start`
+or Mini App open does not apply the automatic block again. Profile names included
+in HTML-formatted expiry messages are escaped. In **Admin menu → 🛡 Scam guard
+patterns** or **Mini App → Admin → Settings → 🛡 Registration protection**, add
+or remove up to 32 case-insensitive custom patterns; the Mini App settings also
+show active blocks and let an admin unblock a false positive.
 
 ## 🔄 Auto-update (optional)
 

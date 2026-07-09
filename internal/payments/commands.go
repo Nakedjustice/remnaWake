@@ -137,6 +137,8 @@ func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 		return s.consumeSupportReply(ctx, chatID, text)
 	case adminInputUpdateInterval:
 		return s.consumeUpdateInterval(ctx, chatID, text)
+	case adminInputRegistrationGuardPattern:
+		return s.consumeRegistrationGuardPattern(ctx, chatID, text)
 	}
 	return false
 }
@@ -263,6 +265,7 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 		{{Text: i18n.T("🎁 Подарочные коды"), CallbackData: "adm:gifts"}},
 		{{Text: i18n.T("✏️ Изменить реквизиты"), CallbackData: "adm:setreq"}},
 		{{Text: shotLabel, CallbackData: "adm:shot_toggle"}},
+		{{Text: i18n.T("🛡 Антискам-паттерны"), CallbackData: "adm:guard"}},
 		{{Text: i18n.T("🛡 Сквад по умолчанию"), CallbackData: "adm:squad"}},
 		{{Text: i18n.T("👤 Управление пользователем"), CallbackData: "adm:user"}},
 		{{Text: i18n.T("🔄 Сброс трафика (новые)"), CallbackData: "adm:treset"}},

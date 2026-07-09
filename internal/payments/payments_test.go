@@ -83,6 +83,9 @@ func (f *fakeBot) SendPlainWithKeyboard(_ context.Context, chatID int64, text st
 	f.sent = append(f.sent, sentMsg{ChatID: chatID, Text: text, Keyboard: kb, MsgID: f.msgIDSeq})
 	return f.msgIDSeq, nil
 }
+func (f *fakeBot) SendFormattedWithKeyboard(_ context.Context, chatID int64, text string, kb *tg.InlineKeyboardMarkup) (int64, error) {
+	return f.SendPlainWithKeyboard(context.Background(), chatID, text, kb)
+}
 func (f *fakeBot) SendPhoto(_ context.Context, chatID int64, fileID, caption string, kb *tg.InlineKeyboardMarkup) (int64, error) {
 	if err := f.sendErrs[chatID]; err != nil {
 		return 0, err
