@@ -566,6 +566,9 @@ var enPayments = map[string]string{
 	"Введите ответ пользователю следующим сообщением (или /cancel для отмены):": "Type your reply to the user in the next message (or /cancel to abort):",
 	"Не удалось отправить ответ.":                                               "Could not send the reply.",
 	"✅ Ответ отправлен.":                                                        "✅ Reply sent.",
+	// Support tickets (mini app)
+	"Открыто": "Open",
+	"Закрыто": "Closed",
 
 	// Infrastructure monitoring
 	"/мес":            "/mo",

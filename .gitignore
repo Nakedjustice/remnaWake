@@ -2,6 +2,7 @@
 .env
 
 # Claude Code (skills are versioned, local settings are not)
+.claude
 .claude/*
 !.claude/skills/
 CLAUDE.md
@@ -10,6 +11,7 @@ CLAUDE.local.md
 .mcp.json
 
 # Codex (skills are versioned, local settings are not)
+.codex
 .codex/*
 !.codex/skills/
 AGENTS.md
