@@ -13,6 +13,10 @@ const (
 	settingBaselineDigest = "update_baseline_digest"
 	settingNotifiedDigest = "update_notified_digest"
 	settingCheckInterval  = "update_check_interval"
+	settingLastStatus     = "autoupdate_last_status"
+	settingLastCheckedAt  = "autoupdate_last_checked_at"
+	settingLastBaseline   = "autoupdate_last_baseline"
+	settingLastRemote     = "autoupdate_last_remote"
 )
 
 // digestProvider resolves the current manifest digest of an image ref.
@@ -69,6 +73,15 @@ type CheckResult struct {
 	Notified  bool
 	FirstRun  bool
 	Unchanged bool
+}
+
+// CheckSnapshot is the last persisted update-check state. Reading it never
+// contacts the registry and never notifies admins.
+type CheckSnapshot struct {
+	Status    CheckStatus
+	CheckedAt time.Time
+	Baseline  string
+	Remote    string
 }
 
 // NewChecker wires a checker. logger may be nil.
@@ -158,6 +171,56 @@ func (c *Checker) LoadPersistedInterval(ctx context.Context) {
 	c.mu.Unlock()
 }
 
+func (c *Checker) Snapshot(ctx context.Context) (CheckSnapshot, error) {
+	status, found, err := c.store.GetSetting(ctx, settingLastStatus)
+	if err != nil {
+		return CheckSnapshot{}, err
+	}
+	if !found {
+		return CheckSnapshot{}, nil
+	}
+	out := CheckSnapshot{Status: CheckStatus(status)}
+	if checkedAt, found, err := c.store.GetSetting(ctx, settingLastCheckedAt); err != nil {
+		return CheckSnapshot{}, err
+	} else if found {
+		if ts, parseErr := time.Parse(time.RFC3339, checkedAt); parseErr == nil {
+			out.CheckedAt = ts
+		}
+	}
+	if baseline, found, err := c.store.GetSetting(ctx, settingLastBaseline); err != nil {
+		return CheckSnapshot{}, err
+	} else if found {
+		out.Baseline = baseline
+	}
+	if remote, found, err := c.store.GetSetting(ctx, settingLastRemote); err != nil {
+		return CheckSnapshot{}, err
+	} else if found {
+		out.Remote = remote
+	}
+	return out, nil
+}
+
+func (c *Checker) recordSnapshot(ctx context.Context, r CheckResult) (CheckResult, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := c.store.UpsertSetting(ctx, settingLastStatus, string(r.Status)); err != nil {
+		c.logger.Error("autoupdate: store last status failed", "err", err.Error())
+		return CheckResult{}, err
+	}
+	if err := c.store.UpsertSetting(ctx, settingLastCheckedAt, now); err != nil {
+		c.logger.Error("autoupdate: store last check time failed", "err", err.Error())
+		return CheckResult{}, err
+	}
+	if err := c.store.UpsertSetting(ctx, settingLastBaseline, r.Baseline); err != nil {
+		c.logger.Error("autoupdate: store last baseline failed", "err", err.Error())
+		return CheckResult{}, err
+	}
+	if err := c.store.UpsertSetting(ctx, settingLastRemote, r.Remote); err != nil {
+		c.logger.Error("autoupdate: store last remote failed", "err", err.Error())
+		return CheckResult{}, err
+	}
+	return r, nil
+}
+
 // CheckNow performs one digest check immediately. When an update is found, it
 // sends the same notification as scheduled checks.
 func (c *Checker) CheckNow(ctx context.Context) (CheckResult, error) {
@@ -184,7 +247,7 @@ func (c *Checker) CheckNow(ctx context.Context) (CheckResult, error) {
 			return CheckResult{}, err
 		}
 		c.baselineInitialized = true
-		return CheckResult{Status: CheckStatusBaselineInitialized, Baseline: remote, Remote: remote, FirstRun: true}, nil
+		return c.recordSnapshot(ctx, CheckResult{Status: CheckStatusBaselineInitialized, Baseline: remote, Remote: remote, FirstRun: true})
 	}
 
 	baseline, found, err := c.store.GetSetting(ctx, settingBaselineDigest)
@@ -198,11 +261,11 @@ func (c *Checker) CheckNow(ctx context.Context) (CheckResult, error) {
 			c.logger.Error("autoupdate: store baseline failed", "err", err.Error())
 			return CheckResult{}, err
 		}
-		return CheckResult{Status: CheckStatusBaselineInitialized, Baseline: remote, Remote: remote, FirstRun: true}, nil
+		return c.recordSnapshot(ctx, CheckResult{Status: CheckStatusBaselineInitialized, Baseline: remote, Remote: remote, FirstRun: true})
 	}
 
 	if remote == baseline {
-		return CheckResult{Status: CheckStatusUpToDate, Baseline: baseline, Remote: remote, Unchanged: true}, nil
+		return c.recordSnapshot(ctx, CheckResult{Status: CheckStatusUpToDate, Baseline: baseline, Remote: remote, Unchanged: true})
 	}
 
 	// A newer image exists. Notify at most once per distinct new digest.
@@ -212,7 +275,7 @@ func (c *Checker) CheckNow(ctx context.Context) (CheckResult, error) {
 		return CheckResult{}, err
 	}
 	if notified == remote {
-		return CheckResult{Status: CheckStatusAlreadyNotified, Baseline: baseline, Remote: remote}, nil
+		return c.recordSnapshot(ctx, CheckResult{Status: CheckStatusAlreadyNotified, Baseline: baseline, Remote: remote})
 	}
 	c.logger.Info("autoupdate: new image available", "baseline", baseline, "remote", remote)
 	c.notifier.NotifyUpdateAvailable(ctx, baseline, remote)
@@ -220,5 +283,5 @@ func (c *Checker) CheckNow(ctx context.Context) (CheckResult, error) {
 		c.logger.Error("autoupdate: store notified digest failed", "err", err.Error())
 		return CheckResult{}, err
 	}
-	return CheckResult{Status: CheckStatusUpdateAvailable, Baseline: baseline, Remote: remote, Notified: true}, nil
+	return c.recordSnapshot(ctx, CheckResult{Status: CheckStatusUpdateAvailable, Baseline: baseline, Remote: remote, Notified: true})
 }

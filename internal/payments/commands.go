@@ -36,6 +36,15 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 	case "/deltariff":
 		s.cmdDelTariff(ctx, chatID, fields)
 		return true
+	case "/traffic":
+		s.cmdListTrafficExtensions(ctx, chatID)
+		return true
+	case "/settraffic":
+		s.cmdSetTrafficExtension(ctx, chatID, fields)
+		return true
+	case "/deltraffic":
+		s.cmdDelTrafficExtension(ctx, chatID, fields)
+		return true
 	case "/setrequisites":
 		s.cmdSetRequisites(ctx, chatID)
 		return true
@@ -242,6 +251,7 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 		{{Text: i18n.T("📋 Посмотреть тарифы"), CallbackData: "adm:tariffs"}},
 		{{Text: i18n.T("➕ Добавить тариф"), CallbackData: "adm:addtariff"}},
 		{{Text: i18n.T("❌ Удалить тариф"), CallbackData: "adm:del_list"}},
+		{{Text: i18n.T("📊 Докупка трафика"), CallbackData: "adm:traffic_ext"}},
 		{{Text: i18n.T("💳 Посмотреть реквизиты"), CallbackData: "adm:req"}},
 		{{Text: i18n.T("🎁 Подарочные коды"), CallbackData: "adm:gifts"}},
 		{{Text: i18n.T("✏️ Изменить реквизиты"), CallbackData: "adm:setreq"}},
@@ -298,4 +308,65 @@ func (s *Service) cmdDelTariff(ctx context.Context, chatID int64, fields []strin
 		return
 	}
 	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Тариф на %d мес. удалён."), months))
+}
+
+func (s *Service) cmdListTrafficExtensions(ctx context.Context, chatID int64) {
+	opts, err := s.store.ListTrafficExtensionOptions(ctx)
+	if err != nil {
+		s.logger.Error("list traffic extensions failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка чтения опций трафика."))
+		return
+	}
+	if len(opts) == 0 {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Опции докупки трафика не заданы. Добавьте: /settraffic <GB> <цена>"))
+		return
+	}
+	var b strings.Builder
+	b.WriteString(i18n.T("Опции докупки трафика:\n"))
+	for _, o := range opts {
+		b.WriteString(fmt.Sprintf(i18n.T("+%d ГБ — %s\n"), o.TrafficGB, s.priceLabel(o.Price)))
+	}
+	_ = s.bot.SendPlain(ctx, chatID, strings.TrimRight(b.String(), "\n"))
+}
+
+func (s *Service) cmdSetTrafficExtension(ctx context.Context, chatID int64, fields []string) {
+	if len(fields) != 3 {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Использование: /settraffic <GB> <цена>"))
+		return
+	}
+	gb, err1 := strconv.Atoi(fields[1])
+	price, err2 := strconv.Atoi(fields[2])
+	if err1 != nil || err2 != nil || gb < 1 || price < 1 {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("GB и цена — целые ≥ 1. Пример: /settraffic 50 300"))
+		return
+	}
+	if err := s.store.UpsertTrafficExtensionOption(ctx, gb, price); err != nil {
+		s.logger.Error("upsert traffic extension failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения опции трафика."))
+		return
+	}
+	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Опция сохранена: +%d ГБ — %s"), gb, s.priceLabel(price)))
+}
+
+func (s *Service) cmdDelTrafficExtension(ctx context.Context, chatID int64, fields []string) {
+	if len(fields) != 2 {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Использование: /deltraffic <GB>"))
+		return
+	}
+	gb, err := strconv.Atoi(fields[1])
+	if err != nil || gb < 1 {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("GB — целое ≥ 1. Пример: /deltraffic 50"))
+		return
+	}
+	deleted, err := s.store.DeleteTrafficExtensionOption(ctx, gb)
+	if err != nil {
+		s.logger.Error("delete traffic extension failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка удаления опции трафика."))
+		return
+	}
+	if !deleted {
+		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Опция +%d ГБ не найдена."), gb))
+		return
+	}
+	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Опция +%d ГБ удалена."), gb))
 }

@@ -346,6 +346,25 @@
   .admin-count { min-width: 24px; padding: 3px 8px; border-radius: 999px; background: var(--accent-soft);
     color: var(--accent); text-align: center; font-size: 12px; font-weight: 800; }
   .admin-chevron { color: var(--hint); font-size: 22px; font-weight: 400; line-height: 1; }
+  .action-center .admin-section-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .action-center-panel { overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .action-source-warning { margin: 0 0 8px; padding: 10px 12px; border: 1px solid rgba(255, 210, 61, 0.26);
+    border-radius: 14px; background: var(--tint-pending); color: var(--tone-expiring); font-size: 12.5px; font-weight: 800; line-height: 1.35; }
+  .action-empty { padding: 16px; }
+  .action-empty-title { font-size: 15px; font-weight: 800; margin-bottom: 3px; }
+  .action-empty-meta { color: var(--hint); font-size: 13px; line-height: 1.45; }
+  .action-item { display: flex; width: 100%; min-height: 66px; align-items: center; gap: 12px; margin: 0;
+    padding: 13px 14px; border: 0; border-radius: 0; border-top: 1px solid var(--border);
+    background: transparent; color: var(--text); text-align: left; box-shadow: none; }
+  .action-item:first-child { border-top: 0; }
+  .action-item:active { background: var(--surface-2); }
+  .action-item.critical .admin-nav-icon { background: var(--tint-expired); color: var(--tone-expired); }
+  .action-item.warning .admin-nav-icon { background: var(--tint-pending); color: var(--tone-expiring); }
+  .action-copy { flex: 1; min-width: 0; }
+  .action-title { font-size: 14.5px; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+  .action-detail { margin-top: 2px; color: var(--hint); font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
+  .action-meta { display: grid; justify-items: end; gap: 6px; flex: none; }
+  .action-severity { color: var(--hint); font-size: 10px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
   .admin-page-title { font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
   .admin-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-bottom: 12px; }
   .admin-card-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
@@ -669,10 +688,39 @@ const EN = {
   'Подтверждено': 'Confirmed',
   'Выручка': 'Revenue',
   'в т.ч. подписки': 'incl. subscriptions',
+  'в т.ч. доп. трафик': 'incl. traffic extensions',
   'в т.ч. подарки': 'incl. gifts',
   'в т.ч. приглашения': 'incl. invites',
   'Ожидают подтверждения': 'Awaiting confirmation',
   'Платежи и выручка': 'Payments and revenue',
+  'Локальная аналитика': 'Local analytics',
+  'Продления': 'Renewals',
+  'Платежей': 'Payments',
+  'Профилей': 'Profiles',
+  'Повторных профилей': 'Repeat profiles',
+  'Месяцев добавлено': 'Months added',
+  'Средний срок': 'Average term',
+  'Отток и winback': 'Churn & winback',
+  'Локально истекшие': 'Locally lapsed',
+  'Winback отправлено': 'Winback sent',
+  'Winback оплатили': 'Winback converted',
+  'Конверсия winback': 'Winback conversion',
+  'Рефералы': 'Referrals',
+  'Начислено': 'Credited',
+  'Ожидают': 'Pending',
+  'Конверсия рефералов': 'Referral conversion',
+  'Подарки по воронке': 'Gift funnel',
+  'Создано за период': 'Created in period',
+  'Активированы за период': 'Redeemed in period',
+  'Доход подарков': 'Gift revenue',
+  'Доп. трафик': 'Traffic extensions',
+  'Продано пакетов': 'Packages sold',
+  'Активно сейчас': 'Active now',
+  'Восстановлено': 'Restored',
+  'ГБ продано': 'GB sold',
+  'Доход доп. трафика': 'Traffic extension revenue',
+  'Микс провайдеров': 'Provider mix',
+  '{share}% выручки': '{share}% of revenue',
   'Последние 7 дней': 'Last 7 days',
   'Последние 30 дней': 'Last 30 days',
   'Последние 90 дней': 'Last 90 days',
@@ -848,6 +896,35 @@ const EN = {
   '— не выбран —': '— none —',
   'Ошибка загрузки сквадов': 'Failed to load squads',
   '⚙️ Админ-панель': '⚙️ Admin panel',
+  'Что требует внимания': 'Needs attention',
+  'Ничего срочного': 'Nothing urgent',
+  'Все ключевые очереди пусты.': 'All key queues are clear.',
+  'Часть источников временно недоступна.': 'Some sources are temporarily unavailable.',
+  'Критично': 'Critical',
+  'Внимание': 'Warning',
+  'Инфо': 'Info',
+  'Заявки на оплату ждут решения': 'Payment requests need review',
+  'Откройте список заявок на оплату.': 'Open the payment request queue.',
+  'Заявки на подарки ждут решения': 'Gift requests need review',
+  'Откройте список заявок на подарки.': 'Open the gift request queue.',
+  'Приглашения ждут одобрения': 'Invites need approval',
+  'Откройте список заявок на приглашения.': 'Open the invite request queue.',
+  'Пробные периоды ждут одобрения': 'Trial requests need approval',
+  'Откройте список заявок на пробный период.': 'Open the trial request queue.',
+  'Есть отклонённые онлайн-платежи': 'Online payments were rejected',
+  'Проверьте историю платежей за 7 дней.': 'Review the last 7 days of payments.',
+  'Подписки скоро истекают': 'Subscriptions are expiring soon',
+  'Откройте пользователей, истекающих в ближайшие 7 дней.': 'Open users expiring within 7 days.',
+  'Пользователи почти исчерпали трафик': 'Users are nearly out of traffic',
+  'Осталось 10% трафика или меньше.': '10% traffic or less remains.',
+  'Прокси недоступны': 'Proxies are down',
+  'Откройте состояние прокси.': 'Open proxy health.',
+  'Просрочены оплаты серверов': 'Server payments are overdue',
+  'Откройте инфраструктуру.': 'Open infrastructure.',
+  'Скоро нужно оплатить серверы': 'Server payments are due soon',
+  'Доступно обновление': 'Update available',
+  'Откройте настройки обновлений.': 'Open update settings.',
+  'Слабый трафик': 'Low traffic',
   'Заявки': 'Requests',
   'Заявки на оплату': 'Payment requests',
   'Заявки на подарки': 'Gift requests',
@@ -1540,6 +1617,96 @@ function renderRenew(target, data) {
   return wrap;
 }
 
+function renderTrafficExtensions(target, data) {
+  const options = data.traffic_extensions || [];
+  if (!options.length || !(target.traffic_limit_gb > 0)) return null;
+  const wrap = el('div', 'card');
+  wrap.appendChild(el('h2', null, t('📊 Докупить трафик')));
+  const hint = target.traffic_extension
+    ? t('Уже активен пакет +{gb} ГБ до {date}. Новый пакет можно купить после окончания.', { gb: target.traffic_extension.traffic_gb, date: target.traffic_extension.expires_at })
+    : t('Пакет действует 30 дней после оплаты. Можно купить один пакет в месяц.');
+  wrap.appendChild(el('div', 'hint', hint));
+  const grid = el('div', 'tariffs');
+  const choicePanel = el('div', 'payment-step'); choicePanel.hidden = true;
+  choicePanel.appendChild(el('div', 'payment-step-title', t('Выберите способ оплаты')));
+  const choiceBox = el('div', 'tariffs'); choicePanel.appendChild(choiceBox);
+  const receiptBox = el('div', 'payment-step'); receiptBox.hidden = true;
+  receiptBox.appendChild(el('div', 'payment-step-title', t('Прикрепите чек')));
+  receiptBox.appendChild(el('div', 'hint', t('Администратор подтвердит оплату после получения чека.')));
+  const receiptFile = Object.assign(el('input'), { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/heic,.pdf,.heic' });
+  const receiptNote = Object.assign(el('input'), { type: 'text', placeholder: t('Комментарий (необязательно)') });
+  const receiptSend = el('button', null, t('📤 Отправить чек'));
+  receiptSend.onclick = async () => {
+    if (!receiptFile.files.length) return tg.showAlert(t('📸 Прикрепите чек'));
+    const form = new FormData(); form.append('file', receiptFile.files[0]); form.append('note', receiptNote.value.trim());
+    try {
+      await withButtonLoading(receiptSend, t('Отправка…'), () => api('/api/receipt', { method: 'POST', body: form }));
+      receiptSend.textContent = t('✅ Чек отправлен'); receiptSend.disabled = true; receiptFile.disabled = true; receiptNote.disabled = true;
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  receiptBox.appendChild(receiptFile); receiptBox.appendChild(receiptNote); receiptBox.appendChild(receiptSend);
+
+  const checkKey = 'platega_traffic_' + target.remnawave_id;
+  const checkPanel = el('div', 'payment-step'); checkPanel.hidden = !localStorage.getItem(checkKey);
+  checkPanel.appendChild(el('div', 'payment-step-title', t('Проверка оплаты')));
+  const check = el('button', 'secondary', t('🔄 Проверить оплату'));
+  check.onclick = async () => {
+    const requestID = Number(localStorage.getItem(checkKey)); if (!requestID) return;
+    try {
+      const res = await withButtonLoading(check, t('Проверяю оплату…'), () =>
+        api('/api/platega/check', { method: 'POST', body: JSON.stringify({ request_id: requestID }) }));
+      if (res.status === 'confirmed') { localStorage.removeItem(checkKey); check.textContent = t('✅ Оплата подтверждена.'); check.disabled = true; cabinetData = await api('/api/me'); }
+      else tg.showAlert(t('Оплата ещё не подтверждена.'));
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  checkPanel.appendChild(check);
+
+  const buy = async (trafficGB, provider, button) => {
+    choicePanel.hidden = true; choiceBox.textContent = ''; receiptBox.hidden = true;
+    const b = button || activeButton();
+    setButtonLoading(b, true, t('Отправка…'));
+    let res, err;
+    try {
+      const body = { remnawave_id: target.remnawave_id, traffic_gb: trafficGB };
+      if (provider) body.provider = provider;
+      res = await api('/api/traffic-extension', { method: 'POST', body: JSON.stringify(body) });
+    } catch (e) { err = e; }
+    finally { if (b && b.isConnected) setButtonLoading(b, false); }
+    if (err) return tg.showAlert(err.message);
+    if (res.status === 'choose_provider') {
+      (res.providers || []).forEach(id => {
+        const pb = el('button', 'secondary', providerLabel(id));
+        pb.onclick = () => buy(trafficGB, id, pb);
+        choiceBox.appendChild(pb);
+      });
+      choicePanel.hidden = false;
+    } else if (res.status === 'awaiting_screenshot') {
+      receiptBox.hidden = false;
+    } else if (res.status === 'platega' && res.payment_url) {
+      if (res.request_id) { localStorage.setItem(checkKey, String(res.request_id)); checkPanel.hidden = false; }
+      tg.openLink(res.payment_url);
+      tg.showAlert(t('Откроется страница оплаты. После оплаты услуга применится автоматически.'));
+    } else if (res.status === 'telegram_stars' && res.invoice_url) {
+      tg.openInvoice(res.invoice_url, (st) => { if (st === 'paid') tg.showAlert(t('Оплата прошла! Трафик добавлен.')); });
+    } else {
+      tg.showAlert(t('Заявка отправлена администратору. После оплаты и подтверждения трафик будет добавлен.'));
+    }
+  };
+  options.forEach(opt => {
+    const b = el('button', 'secondary');
+    b.appendChild(el('div', null, t('+{gb} ГБ', { gb: opt.traffic_gb })));
+    b.appendChild(el('div', 'hint', opt.price_label));
+    b.disabled = !!target.traffic_extension;
+    b.onclick = () => buy(opt.traffic_gb, '', b);
+    grid.appendChild(b);
+  });
+  wrap.appendChild(grid);
+  wrap.appendChild(choicePanel);
+  wrap.appendChild(receiptBox);
+  wrap.appendChild(checkPanel);
+  return wrap;
+}
+
 // providerLabel mirrors the bot's providerButtonLabel for the mini-app chooser.
 function providerLabel(id) {
   switch (id) {
@@ -2078,6 +2245,8 @@ function showRenew() {
     appEl.appendChild(card);
   } else {
     appEl.appendChild(renderRenew(profile, data));
+    const traffic = renderTrafficExtensions(profile, data);
+    if (traffic) appEl.appendChild(traffic);
   }
   if (data.requisites) {
     const card = el('div', 'card');
@@ -2259,15 +2428,19 @@ async function showCabinet() {
 // adminData caches the latest /api/admin payload so the admin hub and its
 // sub-views render from the same data without re-fetching on every navigation.
 let adminData = null;
+let adminActionCenter = null;
 let adminPaymentFilters = { days: 30, status: 'all', provider: 'all', kind: 'all', query: '', page: 1 };
 
-// showAdmin (re)loads /api/admin and renders the admin hub.
+// showAdmin (re)loads the admin payloads and renders the admin hub.
 async function showAdmin() {
   hideDock();
   document.body.classList.add('theme-neon-tokyo');
   showLoadingView('admin', t('⚙️ Админ-панель'), title => adminPageTop(title, showCabinet));
   try {
-    adminData = await api('/api/admin');
+    [adminData, adminActionCenter] = await Promise.all([
+      api('/api/admin'),
+      api('/api/admin/action-center'),
+    ]);
   } catch (e) { tg.showAlert(e.message); return; }
   renderAdminHome();
 }
@@ -2490,6 +2663,48 @@ function renderAdminTariffs(data) {
     const m = parseInt(months.value, 10), p = parseInt(price.value, 10);
     if (!(m >= 1) || !(p >= 1)) { tg.showAlert(t('Введите количество месяцев и цену (целые ≥ 1).')); return; }
     adminAction('/api/admin/tariff', { plan, months: m, price: p });
+  };
+  card.appendChild(save);
+  return card;
+}
+
+function renderAdminTrafficExtensions(data) {
+  const card = el('div', 'admin-card');
+  card.appendChild(el('h2', null, t('📊 Докупка трафика')));
+  card.appendChild(el('div', 'hint', t('Пакеты добавляют трафик на 30 дней. Пользователь может купить один пакет в месяц.')));
+  const listBox = el('div');
+  const fillList = () => {
+    listBox.textContent = '';
+    const list = data.traffic_extensions || [];
+    if (!list.length) {
+      listBox.appendChild(el('div', 'hint', t('Опции докупки трафика не заданы.')));
+      return;
+    }
+    list.forEach(opt => {
+      const item = el('div', 'admin-list-row');
+      const copy = el('div', 'admin-list-copy');
+      copy.appendChild(el('div', 'admin-list-title', t('+{gb} ГБ', { gb: opt.traffic_gb })));
+      copy.appendChild(el('div', 'admin-list-meta', opt.price_label));
+      item.appendChild(copy);
+      const del = el('button', 'secondary', t('🗑 Удалить'));
+      del.onclick = () => adminAction('/api/admin/traffic-extension/delete', { traffic_gb: opt.traffic_gb },
+        t('Удалить опцию +{gb} ГБ?', { gb: opt.traffic_gb }));
+      item.appendChild(del);
+      listBox.appendChild(item);
+    });
+  };
+  fillList();
+  card.appendChild(listBox);
+  card.appendChild(el('div', 'hint', t('Добавить или обновить пакет:')));
+  const pair = el('div', 'admin-form-grid');
+  const gb = Object.assign(el('input'), { type: 'number', min: '1', placeholder: t('Трафик, ГБ') });
+  const price = Object.assign(el('input'), { type: 'number', min: '1', placeholder: t('Цена') });
+  pair.appendChild(gb); pair.appendChild(price); card.appendChild(pair);
+  const save = el('button', null, t('💾 Сохранить пакет'));
+  save.onclick = () => {
+    const g = parseInt(gb.value, 10), p = parseInt(price.value, 10);
+    if (!(g >= 1) || !(p >= 1)) { tg.showAlert(t('Введите GB и цену (целые ≥ 1).')); return; }
+    adminAction('/api/admin/traffic-extension', { traffic_gb: g, price: p });
   };
   card.appendChild(save);
   return card;
@@ -2738,7 +2953,8 @@ function renderAdminRequests(data) {
   data.requests.forEach(r => {
     const item = el('div', 'admin-card admin-request');
     const info = el('div', 'admin-request-copy');
-    let line = `${r.username} — ${t('{months} мес.', { months: r.months })}`;
+    const isTraffic = r.kind === 'traffic_extension';
+    let line = isTraffic ? `${r.username} — ${t('+{gb} ГБ', { gb: r.traffic_gb })}` : `${r.username} — ${t('{months} мес.', { months: r.months })}`;
     if (r.price_label) line += ` (${r.price_label})`;
     info.appendChild(el('div', 'admin-card-title', line));
     let st = t('заявка от {date}', { date: r.created_at });
@@ -2750,7 +2966,8 @@ function renderAdminRequests(data) {
     const ok = el('button', 'admin-icon-btn', '✓');
     ok.setAttribute('aria-label', t('Подтвердить'));
     ok.onclick = () => adminAction('/api/admin/request/confirm', { id: r.id },
-      t('Подтвердить оплату «{username}» на {months} мес.?', { username: r.username, months: r.months }));
+      isTraffic ? t('Подтвердить оплату «{username}» за +{gb} ГБ?', { username: r.username, gb: r.traffic_gb })
+        : t('Подтвердить оплату «{username}» на {months} мес.?', { username: r.username, months: r.months }));
     const rej = el('button', 'admin-icon-btn reject', '×');
     rej.setAttribute('aria-label', t('Отклонить'));
     rej.onclick = () => adminAction('/api/admin/request/reject', { id: r.id },
@@ -3297,6 +3514,124 @@ function adminNavSection(title, items) {
   return section;
 }
 
+function actionCenterIcon(item) {
+  switch (item.target) {
+    case 'payment_requests':
+    case 'payments':
+      return ADMIN_ICONS.payments;
+    case 'gift_requests':
+      return ADMIN_ICONS.gift;
+    case 'invite_requests':
+      return ADMIN_ICONS.userPlus;
+    case 'trial_requests':
+      return ADMIN_ICONS.clock;
+    case 'users':
+      return ADMIN_ICONS.users;
+    case 'proxy_health':
+      return ADMIN_ICONS.activity;
+    case 'infra':
+      return ADMIN_ICONS.server;
+    case 'updates':
+      return ADMIN_ICONS.sliders;
+    default:
+      return ADMIN_ICONS.activity;
+  }
+}
+
+function actionSeverityLabel(severity) {
+  if (severity === 'critical') return t('Критично');
+  if (severity === 'warning') return t('Внимание');
+  return t('Инфо');
+}
+
+function openActionCenterItem(item) {
+  const filter = item.filter || {};
+  switch (item.target) {
+    case 'payment_requests':
+      showAdminPaymentRequests();
+      return;
+    case 'gift_requests':
+      showAdminGiftRequests(renderAdminHome);
+      return;
+    case 'invite_requests':
+      showAdminInviteRequests(renderAdminHome);
+      return;
+    case 'trial_requests':
+      showAdminTrialRequests();
+      return;
+    case 'users':
+      showUserAdmin({ cohort: filter.cohort || '', title: t(item.title || 'Управление пользователями'), onBack: renderAdminHome });
+      return;
+    case 'proxy_health':
+      showAdminProxyHealth();
+      return;
+    case 'infra':
+      showAdminServers();
+      return;
+    case 'payments':
+      adminPaymentFilters = {
+        days: parseInt(filter.days, 10) || 7,
+        status: filter.status || 'all',
+        provider: filter.provider || 'all',
+        kind: filter.kind || 'all',
+        query: filter.query || '',
+        page: 1,
+      };
+      showAdminStats();
+      return;
+    case 'updates':
+      showAdminSettings();
+      return;
+    default:
+      renderAdminHome();
+  }
+}
+
+function renderActionCenter(center) {
+  const section = el('section', 'admin-section action-center');
+  const items = (center && center.items) || [];
+  const summary = center && center.summary ? center.summary : {};
+  const label = el('div', 'admin-section-label');
+  label.appendChild(el('span', null, t('Что требует внимания')));
+  if (summary.total || items.length) label.appendChild(el('span', null, String(summary.total || items.length)));
+  section.appendChild(label);
+
+  const degraded = ((center && center.sources) || []).filter(src => src.status === 'degraded');
+  if (degraded.length) section.appendChild(el('div', 'action-source-warning', t('Часть источников временно недоступна.')));
+
+  const panel = el('div', 'action-center-panel');
+  if (!items.length) {
+    const empty = el('div', 'action-empty');
+    empty.appendChild(el('div', 'action-empty-title', t('Ничего срочного')));
+    empty.appendChild(el('div', 'action-empty-meta', t('Все ключевые очереди пусты.')));
+    panel.appendChild(empty);
+    section.appendChild(panel);
+    return section;
+  }
+
+  items.forEach(item => {
+    const button = el('button', 'action-item ' + (item.severity || 'info'));
+    const iconSpan = el('span', 'admin-nav-icon');
+    iconSpan.appendChild(svg(actionCenterIcon(item)));
+    button.appendChild(iconSpan);
+
+    const copy = el('div', 'action-copy');
+    copy.appendChild(el('div', 'action-title', t(item.title || '')));
+    if (item.detail) copy.appendChild(el('div', 'action-detail', t(item.detail)));
+    button.appendChild(copy);
+
+    const meta = el('div', 'action-meta');
+    meta.appendChild(el('span', 'action-severity', actionSeverityLabel(item.severity)));
+    if (item.count) meta.appendChild(el('span', 'admin-count', String(item.count)));
+    button.appendChild(meta);
+    button.appendChild(el('span', 'admin-chevron', '›'));
+    button.onclick = () => openActionCenterItem(item);
+    panel.appendChild(button);
+  });
+  section.appendChild(panel);
+  return section;
+}
+
 // renderAdminHome is the compact, grouped admin navigation hub.
 function renderAdminHome() {
   currentRender = renderAdminHome;
@@ -3306,6 +3641,7 @@ function renderAdminHome() {
 
   const shell = el('div', 'admin-shell');
   shell.appendChild(adminPageTop(t('⚙️ Админ-панель'), showCabinet));
+  shell.appendChild(renderActionCenter(adminActionCenter || {}));
   shell.appendChild(adminNavSection(t('Заявки'), [
     { icon: ADMIN_ICONS.payments, label: t('Заявки на оплату'), count: (data.requests || []).length, action: showAdminPaymentRequests },
     { icon: ADMIN_ICONS.gift, label: t('Заявки на подарки'), count: (data.gift_requests || []).length, action: showAdminGiftRequests },
@@ -3340,6 +3676,7 @@ function showAdminBilling() {
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Тарифы и оплата')));
   appEl.appendChild(renderAdminTariffs(data));
+  appEl.appendChild(renderAdminTrafficExtensions(data));
   appEl.appendChild(renderAdminPlans(data));
   appEl.appendChild(renderAdminRequisites(data));
   statusEl.hidden = true;
@@ -3572,8 +3909,11 @@ async function showAdminStats() {
     days: String(f.days), status: f.status, provider: f.provider, kind: f.kind,
     q: f.query, page: String(f.page),
   });
-  const [statsResult, reportResult] = await Promise.allSettled([
-    api('/api/admin/stats'), api('/api/admin/payments?' + params.toString()),
+  const analyticsParams = new URLSearchParams({ days: String(f.days) });
+  const [statsResult, reportResult, operatorResult] = await Promise.allSettled([
+    api('/api/admin/stats'),
+    api('/api/admin/payments?' + params.toString()),
+    api('/api/admin/analytics?' + analyticsParams.toString()),
   ]);
   if (reportResult.status === 'rejected') {
     tg.showAlert(reportResult.reason.message);
@@ -3582,6 +3922,7 @@ async function showAdminStats() {
   const stats = statsResult.status === 'fulfilled' ? statsResult.value : null;
   const report = reportResult.value;
   const analytics = report.analytics;
+  const operatorAnalytics = operatorResult.status === 'fulfilled' ? operatorResult.value : null;
 
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Статистика')));
@@ -3603,6 +3944,7 @@ async function showAdminStats() {
     [t('Ожидают подтверждения'), analytics.pending],
     [t('Конверсия'), `${analytics.conversion_rate}%`],
   ]));
+  appEl.appendChild(renderOperatorAnalytics(operatorAnalytics));
   if (stats && stats.infra_servers !== undefined) {
     appEl.appendChild(paymentStatsCard(t('Инфраструктура'), [
       [t('Серверов'), stats.infra_servers],
@@ -3781,6 +4123,94 @@ function renderPaymentProviders(providers) {
   });
   section.appendChild(list);
   return section;
+}
+
+function renderOperatorAnalytics(analytics) {
+  const fragment = document.createDocumentFragment();
+  if (!analytics) return fragment;
+  const revenue = analytics.revenue || {};
+  fragment.appendChild(paymentStatsCard(t('Локальная аналитика'), [
+    [t('Выручка'), revenue.total_revenue_label || '0'],
+    [t('в т.ч. подписки'), revenue.subscription_revenue_label || '0'],
+    [t('в т.ч. доп. трафик'), revenue.traffic_extension_revenue_label || '0'],
+    [t('в т.ч. подарки'), revenue.gift_revenue_label || '0'],
+    [t('в т.ч. приглашения'), revenue.invite_revenue_label || '0'],
+  ]));
+
+  const renewals = analytics.renewals || {};
+  fragment.appendChild(paymentStatsCard(t('Продления'), [
+    [t('Платежей'), renewals.payments || 0],
+    [t('Профилей'), renewals.unique_profiles || 0],
+    [t('Повторных профилей'), renewals.repeat_profiles || 0],
+    [t('Месяцев добавлено'), compactMetric(renewals.months_added)],
+    [t('Средний срок'), compactMetric(renewals.average_months)],
+  ]));
+
+  const churn = analytics.churn_winback || {};
+  fragment.appendChild(paymentStatsCard(t('Отток и winback'), [
+    [t('Локально истекшие'), churn.local_lapsed_users || 0],
+    [t('Winback отправлено'), churn.winback_sent || 0],
+    [t('Winback оплатили'), churn.winback_converted || 0],
+    [t('Конверсия winback'), percentMetric(churn.winback_conversion_rate)],
+  ]));
+
+  const referrals = analytics.referrals || {};
+  fragment.appendChild(paymentStatsCard(t('Рефералы'), [
+    [t('Создано'), referrals.created || 0],
+    [t('Начислено'), referrals.credited || 0],
+    [t('Ожидают'), referrals.pending || 0],
+    [t('Конверсия рефералов'), percentMetric(referrals.conversion_rate)],
+  ]));
+
+  const gifts = analytics.gifts || {};
+  fragment.appendChild(paymentStatsCard(t('Подарки по воронке'), [
+    [t('Создано за период'), gifts.created || 0],
+    [t('Ожидают'), gifts.pending || 0],
+    [t('Выданы'), gifts.issued || 0],
+    [t('Активированы за период'), gifts.redeemed || 0],
+    [t('Доход подарков'), gifts.revenue_label || '0'],
+  ]));
+
+  const traffic = analytics.traffic_extensions || {};
+  fragment.appendChild(paymentStatsCard(t('Доп. трафик'), [
+    [t('Продано пакетов'), traffic.confirmed || 0],
+    [t('Ожидают'), traffic.pending || 0],
+    [t('Активно сейчас'), traffic.active || 0],
+    [t('Восстановлено'), traffic.restored || 0],
+    [t('ГБ продано'), compactMetric(traffic.traffic_gb)],
+    [t('Доход доп. трафика'), traffic.revenue_label || '0'],
+  ]));
+
+  if ((analytics.provider_mix || []).length) {
+    fragment.appendChild(renderOperatorProviderMix(analytics.provider_mix));
+  }
+  return fragment;
+}
+
+function renderOperatorProviderMix(providers) {
+  const section = el('section', 'admin-section');
+  section.appendChild(el('div', 'admin-section-label', t('Микс провайдеров')));
+  const list = el('div', 'payment-provider-list');
+  providers.forEach(p => {
+    const row = el('div', 'payment-provider');
+    row.appendChild(el('div', 'payment-provider-name', paymentProviderLabel(p.provider)));
+    row.appendChild(el('div', 'payment-provider-revenue', p.revenue_label || '0'));
+    row.appendChild(el('div', 'payment-provider-meta',
+      `${t('подтверждено {confirmed} · отклонено {rejected} · ожидает {pending}', p)} · ${t('{share}% выручки', { share: compactMetric(p.share) })}`));
+    list.appendChild(row);
+  });
+  section.appendChild(list);
+  return section;
+}
+
+function compactMetric(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return '0';
+  return n.toFixed(1).replace(/\.0$/, '');
+}
+
+function percentMetric(value) {
+  return `${compactMetric(value)}%`;
 }
 
 function renderPaymentHistory(report) {

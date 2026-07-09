@@ -119,11 +119,39 @@ grep -q 'METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"' "$REMNAWAKE_DIR/docker-
 grep -q '127.0.0.1:2112:2112' "$REMNAWAKE_DIR/docker-compose.override.yml"
 
 bash "$ROOT/install.sh" doctor >"$TMP/doctor-stable.log" 2>&1
-! grep -q 'containrrr/watchtower' "$TMP/doctor-stable.log"
+grep -q 'remnaWake doctor v2' "$TMP/doctor-stable.log"
+grep -q 'Routes and ports' "$TMP/doctor-stable.log"
+grep -q 'Generated compose' "$TMP/doctor-stable.log"
+grep -q 'Watchtower' "$TMP/doctor-stable.log"
+grep -q 'xray-checker' "$TMP/doctor-stable.log"
+grep -q 'Backups' "$TMP/doctor-stable.log"
+grep -q 'Detected: host-reverse-proxy' "$TMP/doctor-stable.log"
+grep -q 'OK: host proxy route' "$TMP/doctor-stable.log"
+grep -q '127.0.0.1:9090:8080' "$TMP/doctor-stable.log"
+grep -q 'OK: base bot image' "$TMP/doctor-stable.log"
+grep -q 'ghcr.io/nakedjustice/remnawake:main' "$TMP/doctor-stable.log"
+grep -q 'OK: Watchtower image' "$TMP/doctor-stable.log"
+grep -q 'containrrr/watchtower:latest' "$TMP/doctor-stable.log"
+grep -q 'OK: XRAY_CHECKER_URL base path' "$TMP/doctor-stable.log"
+grep -q 'OK: xray-checker METRICS_BASE_PATH' "$TMP/doctor-stable.log"
+grep -q 'WARN: backup directory' "$TMP/doctor-stable.log"
+grep -q './install.sh backup' "$TMP/doctor-stable.log"
+
+cp "$REMNAWAKE_DIR/docker-compose.override.yml" "$TMP/override.good"
+sed 's#containrrr/watchtower:latest#containrrr/watchtower:old#' "$TMP/override.good" >"$REMNAWAKE_DIR/docker-compose.override.yml"
+bash "$ROOT/install.sh" doctor >"$TMP/doctor-watchtower-drift.log" 2>&1
+grep -q 'WARN: Watchtower image' "$TMP/doctor-watchtower-drift.log"
+cp "$TMP/override.good" "$REMNAWAKE_DIR/docker-compose.override.yml"
+
 bash "$ROOT/install.sh" update
 
 test -f "$TMP/docker-pull"
 test -f "$TMP/docker-up"
+bash "$ROOT/install.sh" doctor >"$TMP/doctor-backed-up.log" 2>&1
+grep -q 'OK: backup directory' "$TMP/doctor-backed-up.log"
+grep -q 'OK: latest backup for .env' "$TMP/doctor-backed-up.log"
+grep -q 'OK: latest backup for docker-compose.yml' "$TMP/doctor-backed-up.log"
+grep -q 'OK: latest backup for docker-compose.override.yml' "$TMP/doctor-backed-up.log"
 
 export REMNAWAKE_DIR="$TMP/devapp"
 
@@ -221,6 +249,13 @@ grep -q 'redir /checker /checker/' "$REMNAWAVE_CADDYFILE"
 grep -q 'handle /checker/\* {' "$REMNAWAVE_CADDYFILE"
 grep -q 'reverse_proxy remnaWake-xray-checker:2112' "$REMNAWAVE_CADDYFILE"
 grep -q 'reverse_proxy remnaWake-bot:8080' "$REMNAWAVE_CADDYFILE"
+bash "$ROOT/install.sh" doctor >"$TMP/doctor-alongside.log" 2>&1
+grep -q 'Detected: alongside-remnawave' "$TMP/doctor-alongside.log"
+grep -q 'OK: remnawave network' "$TMP/doctor-alongside.log"
+grep -q 'OK: Caddy bot route' "$TMP/doctor-alongside.log"
+grep -q 'remnaWake-bot:8080' "$TMP/doctor-alongside.log"
+grep -q 'OK: XRAY_CHECKER_URL base path' "$TMP/doctor-alongside.log"
+grep -q 'OK: xray-checker METRICS_BASE_PATH' "$TMP/doctor-alongside.log"
 unset REMNAWAVE_CADDYFILE
 
 echo "install smoke passed"

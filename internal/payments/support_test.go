@@ -57,6 +57,20 @@ func TestSupportUserMessageNotifiesAdmins(t *testing.T) {
 	if kb == nil || kb.InlineKeyboard[0][0].CallbackData != "sup:reply:200" {
 		t.Fatalf("reply button missing: %+v", kb)
 	}
+
+	// Bot-only parity pin: the fan-out is byte-identical to the pre-ticket
+	// bot — same text, no ticket number — even though the message now lands
+	// in an auto-created open ticket.
+	if adminMsgs[0].Text != "🛟 Сообщение в поддержку от bob (TG 200):\n\nneed help" {
+		t.Fatalf("fan-out text changed: %q", adminMsgs[0].Text)
+	}
+	open, err := svc.store.LatestOpenTicketForUser(ctx, supportUser)
+	if err != nil || open == nil {
+		t.Fatalf("auto-created ticket: %+v err %v", open, err)
+	}
+	if msgs[0].TicketID != open.ID {
+		t.Fatalf("message not attached to ticket: msg %+v ticket %d", msgs[0], open.ID)
+	}
 }
 
 func TestSupportAdminReplyDeliversToUser(t *testing.T) {

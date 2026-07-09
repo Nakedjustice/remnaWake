@@ -99,6 +99,9 @@ func (s *Service) setUserTrafficLimitGB(ctx context.Context, uuid string, gb int
 		return ErrBadInput
 	}
 	bytesLimit := gb * bytesPerGB
+	if err := s.store.MarkActiveTrafficExtensionsRestored(ctx, uuid, s.now()); err != nil {
+		s.logger.Error("mark traffic extension superseded failed", "uuid", uuid, "err", err.Error())
+	}
 	return s.updateUser(ctx, uuid, UserPatch{TrafficLimitBytes: &bytesLimit}, "traffic")
 }
 

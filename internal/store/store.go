@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS tariffs (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (plan, months)
 );
+CREATE TABLE IF NOT EXISTS traffic_extension_options (
+  traffic_gb INTEGER PRIMARY KEY,
+  price      INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS plans (
   code         TEXT PRIMARY KEY,
   name         TEXT NOT NULL,
@@ -59,7 +65,13 @@ CREATE TABLE IF NOT EXISTS payment_requests (
   screenshot_is_document INTEGER NOT NULL DEFAULT 0,
   provider           TEXT NOT NULL DEFAULT 'p2p',
   provider_txn_id    TEXT NOT NULL DEFAULT '',
-  plan               TEXT NOT NULL DEFAULT 'standard'
+  plan               TEXT NOT NULL DEFAULT 'standard',
+  kind               TEXT NOT NULL DEFAULT 'subscription',
+  traffic_gb         INTEGER NOT NULL DEFAULT 0,
+  base_traffic_limit_bytes INTEGER NOT NULL DEFAULT 0,
+  extra_traffic_bytes INTEGER NOT NULL DEFAULT 0,
+  extension_expires_at TEXT,
+  extension_restored_at TEXT
 );
 CREATE TABLE IF NOT EXISTS invite_requests (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,9 +142,22 @@ CREATE TABLE IF NOT EXISTS support_messages (
   text               TEXT NOT NULL,
   created_at         TEXT NOT NULL,
   read_by_user       INTEGER NOT NULL DEFAULT 0,
-  read_by_admin      INTEGER NOT NULL DEFAULT 0
+  read_by_admin      INTEGER NOT NULL DEFAULT 0,
+  ticket_id          INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_support_user ON support_messages(user_telegram_id);
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_telegram_id INTEGER NOT NULL,
+  user_username    TEXT NOT NULL DEFAULT '',
+  subject          TEXT NOT NULL DEFAULT '',
+  status           TEXT NOT NULL DEFAULT 'open',
+  created_at       TEXT NOT NULL,
+  closed_at        TEXT,
+  closed_by        TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_telegram_id, status);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
 CREATE TABLE IF NOT EXISTS referrals (
   referred_telegram_id INTEGER PRIMARY KEY,
   referrer_telegram_id INTEGER NOT NULL,
@@ -191,10 +216,6 @@ func New(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate payment request columns: %w", err)
 	}
-	if err := ensurePaymentRequestIndexes(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("migrate payment request indexes: %w", err)
-	}
 	if err := ensureTariffPlanColumn(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate tariffs plan column: %w", err)
@@ -202,6 +223,18 @@ func New(path string) (*Store, error) {
 	if err := ensurePlanColumns(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate plan columns: %w", err)
+	}
+	if err := ensureTrafficExtensionColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate traffic extension columns: %w", err)
+	}
+	if err := ensurePaymentRequestIndexes(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate payment request indexes: %w", err)
+	}
+	if err := ensureSupportTicketSchema(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate support tickets: %w", err)
 	}
 	return &Store{db: db}, nil
 }
@@ -339,6 +372,111 @@ func ensurePlanColumns(db *sql.DB) error {
 	return nil
 }
 
+func ensureTrafficExtensionColumns(db *sql.DB) error {
+	existing, err := tableColumns(db, "payment_requests")
+	if err != nil {
+		return err
+	}
+	cols := []struct {
+		name string
+		def  string
+	}{
+		{"kind", "TEXT NOT NULL DEFAULT 'subscription'"},
+		{"traffic_gb", "INTEGER NOT NULL DEFAULT 0"},
+		{"base_traffic_limit_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"extra_traffic_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"extension_expires_at", "TEXT"},
+		{"extension_restored_at", "TEXT"},
+	}
+	for _, c := range cols {
+		if existing[c.name] {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN ` + c.name + ` ` + c.def); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureSupportTicketSchema adds the ticket_id column to support_messages when
+// an older database created the table without it, then adopts any pre-ticket
+// rows into one open legacy ticket per user. Idempotent: after the first run no
+// ticket_id = 0 rows remain, so re-running changes nothing. Nothing is deleted.
+func ensureSupportTicketSchema(db *sql.DB) error {
+	existing, err := tableColumns(db, "support_messages")
+	if err != nil {
+		return err
+	}
+	if !existing["ticket_id"] {
+		if _, err := db.Exec(`ALTER TABLE support_messages ADD COLUMN ticket_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	// The index lives here, not in the schema const: on a legacy database the
+	// table exists without ticket_id until the ALTER above runs, so a schema
+	// const index on that column would fail store.New.
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_support_messages_ticket ON support_messages(ticket_id)`); err != nil {
+		return err
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`
+		SELECT o.user_telegram_id,
+		       COALESCE((SELECT user_username FROM support_messages
+		                 WHERE user_telegram_id = o.user_telegram_id AND ticket_id = 0 AND user_username != ''
+		                 ORDER BY id DESC LIMIT 1), ''),
+		       MIN(o.created_at)
+		FROM support_messages o
+		WHERE o.ticket_id = 0
+		GROUP BY o.user_telegram_id
+	`)
+	if err != nil {
+		return err
+	}
+	type orphan struct {
+		user      int64
+		username  string
+		createdAt string
+	}
+	var orphans []orphan
+	for rows.Next() {
+		var o orphan
+		if err := rows.Scan(&o.user, &o.username, &o.createdAt); err != nil {
+			rows.Close()
+			return err
+		}
+		orphans = append(orphans, o)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if len(orphans) == 0 {
+		return tx.Commit()
+	}
+	for _, o := range orphans {
+		res, err := tx.Exec(`
+			INSERT INTO support_tickets (user_telegram_id, user_username, subject, status, created_at)
+			VALUES (?, ?, '', 'open', ?)`, o.user, o.username, o.createdAt)
+		if err != nil {
+			return err
+		}
+		ticketID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE support_messages SET ticket_id = ? WHERE user_telegram_id = ? AND ticket_id = 0`, ticketID, o.user); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func ensurePaymentRequestIndexes(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_created_at ON payment_requests(created_at);
@@ -346,6 +484,7 @@ func ensurePaymentRequestIndexes(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_uuid_status_resolved ON payment_requests(uuid, status, confirmed_at);
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_provider ON payment_requests(provider);
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_provider_txn ON payment_requests(provider_txn_id);
+		CREATE INDEX IF NOT EXISTS idx_payment_requests_traffic_active ON payment_requests(uuid, kind, status, extension_expires_at, extension_restored_at);
 	`)
 	return err
 }

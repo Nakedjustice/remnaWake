@@ -149,6 +149,9 @@ The bot chat and Mini App both support this step. JPEG/PNG photos are limited to
 | `/tariffs`                    | List current tariffs          |
 | `/settariff <months> <price>` | Add or update a tariff        |
 | `/deltariff <months>`         | Remove a tariff               |
+| `/traffic`                    | List traffic-extension packages |
+| `/settraffic <GB> <price>`    | Add or update a 30-day traffic package |
+| `/deltraffic <GB>`            | Remove a traffic package      |
 | `/setrequisites`              | Set payment requisites shown after «Я оплатил» (two-step) |
 | `/requisites`                 | Show the saved payment requisites |
 | `/stats`                      | 📊 Panel users, 30-day payments & revenue, pending requests, gift codes, pending invites |
@@ -157,7 +160,10 @@ The **`/admin`** menu also offers 📊 statistics, a 🎁 gift-codes browser (by
 buyer → used/not-used → individual codes, with one-tap revoke), and a
 🛡 **default-squad** picker for new users created via `/gift` and `/invite`
 (falls back to the stock `Default-Squad`; user creation fails visibly if no
-squad can be resolved). The same controls live in the Mini App admin panel.
+squad can be resolved). Admins can also configure 30-day traffic-extension
+packages; linked users with finite traffic limits can buy one package per
+rolling 30-day window, and the bot restores the base limit after it expires.
+The same controls live in the Mini App admin panel.
 
 In the Mini App, the **payment history** merges subscription payments, gift
 codes and invites into one list: filter it by type (payments / gifts / invites)
@@ -342,7 +348,12 @@ Admins also get a **Statistics** page with panel user totals, gift-code counts,
 and pending invites. Its payment report provides 7/30/90-day revenue,
 conversion and provider breakdowns, a daily trend, and searchable, paginated
 renewal history for P2P, Platega, and Telegram Stars. Gateway transaction IDs
-are shown when available.
+are shown when available. The same page also shows local-only operator analytics
+from SQLite: subscription, traffic-extension, gift and invite revenue, renewals,
+local lapsed/winback signals, referral conversion, gift funnel, traffic-extension
+GB, and provider mix. The admin hub starts with a read-only **Action Center** that
+groups pending queues, expiring or low-traffic users, proxy/infra/provider alerts,
+and last-known update status, linking each item to the existing detail page.
 
 **Requirements** — served by the bot on `WEBAPP_LISTEN` (default `:8080`).
 Telegram only opens Mini Apps over **HTTPS**, so put a reverse proxy
@@ -530,10 +541,14 @@ Maintenance helpers:
 ```bash
 ./install.sh configure   # first install walks every section; reopens the menu if .env exists
 ./install.sh menu        # jump straight to the reconfigure menu to edit one section
-./install.sh doctor      # check Docker, .env, compose config, ports and updates
+./install.sh doctor      # read-only health report: routes, ports, compose, Watchtower, xray, backups
 ./install.sh update      # back up config, pull the image and restart
 ./install.sh backup      # copy .env and compose files into ./backups
 ```
+
+`doctor` explains each finding with the detected value, expected invariant and a
+likely fix command. It does not rewrite generated files; use `./install.sh configure`
+for rewrites and `./install.sh backup` to create timestamped config backups.
 
 ### Local (development)
 

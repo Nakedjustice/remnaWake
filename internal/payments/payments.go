@@ -185,6 +185,7 @@ type UpdateChecker interface {
 	CheckNow(ctx context.Context) (autoupdate.CheckResult, error)
 	Interval() time.Duration
 	SetInterval(ctx context.Context, interval time.Duration) error
+	Snapshot(ctx context.Context) (autoupdate.CheckSnapshot, error)
 }
 
 type adminInputStep int
@@ -275,11 +276,15 @@ const userCtlTTL = 10 * time.Minute
 // attach a payment screenshot (the screenshot requirement is on): the tariff
 // is already picked, the request is created only once the photo arrives.
 type payPhotoState struct {
-	userID    int64 // remnawave user ID whose subscription is being renewed
-	months    int
-	price     int
-	plan      string
-	createdAt time.Time
+	userID     int64 // remnawave user ID whose subscription is being renewed
+	months     int
+	price      int
+	plan       string
+	kind       string
+	trafficGB  int
+	baseBytes  int64
+	extraBytes int64
+	createdAt  time.Time
 }
 
 const payPhotoTTL = 10 * time.Minute

@@ -26,6 +26,7 @@ const initDataMaxAge = 24 * time.Hour
 type Cabinet interface {
 	CabinetData(ctx context.Context, telegramID int64) (*payments.WebCabinet, error)
 	CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider, plan string, planChangeConfirmed bool) (*payments.RenewResult, error)
+	CreateTrafficExtensionRequest(ctx context.Context, telegramID, remnawaveID int64, trafficGB int, provider string) (*payments.RenewResult, error)
 	CreateGiftRequest(ctx context.Context, telegramID int64, months int) error
 	CreateInviteRequest(ctx context.Context, telegramID int64, username string) error
 	RegisterProfile(ctx context.Context, telegramID int64, query string) (*payments.WebRegistrationResult, error)
@@ -44,7 +45,9 @@ type Cabinet interface {
 // payments.ErrNotAdmin otherwise.
 type Admin interface {
 	AdminPanelData(ctx context.Context, telegramID int64) (*payments.WebAdminPanel, error)
+	AdminActionCenter(ctx context.Context, telegramID int64) (*payments.WebAdminActionCenter, error)
 	AdminStatsData(ctx context.Context, telegramID int64) (*payments.WebAdminStats, error)
+	AdminOperatorAnalytics(ctx context.Context, telegramID int64, days int) (*payments.WebOperatorAnalytics, error)
 	AdminProxyHealth(ctx context.Context, telegramID int64) (*payments.WebProxyHealth, error)
 	AdminSetProxyNotification(ctx context.Context, telegramID int64, name, address, subName string, muted bool) error
 	AdminPaymentReport(ctx context.Context, telegramID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error)
@@ -55,6 +58,8 @@ type Admin interface {
 	AdminSetUpdateInterval(ctx context.Context, telegramID int64, interval string) error
 	AdminSetTariff(ctx context.Context, telegramID int64, plan string, months, price int) error
 	AdminDeleteTariff(ctx context.Context, telegramID int64, plan string, months int) error
+	AdminSetTrafficExtensionOption(ctx context.Context, telegramID int64, trafficGB, price int) error
+	AdminDeleteTrafficExtensionOption(ctx context.Context, telegramID int64, trafficGB int) error
 	AdminSetPlan(ctx context.Context, telegramID int64, in payments.WebAdminPlan) error
 	AdminDeletePlan(ctx context.Context, telegramID int64, code string) error
 	AdminSetRequisites(ctx context.Context, telegramID int64, text string) error
@@ -124,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /platega/callback", s.handlePlategaCallback)
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("POST /api/renew", s.handleRenew)
+	mux.HandleFunc("POST /api/traffic-extension", s.handleTrafficExtension)
 	mux.HandleFunc("POST /api/gift", s.handleGift)
 	mux.HandleFunc("POST /api/invite", s.handleInvite)
 	mux.HandleFunc("POST /api/register", s.handleRegister)
@@ -136,7 +142,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/support/send", s.handleSupportSend)
 	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
+	mux.HandleFunc("GET /api/admin/action-center", s.handleAdminActionCenter)
 	mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
+	mux.HandleFunc("GET /api/admin/analytics", s.handleAdminAnalytics)
 	mux.HandleFunc("GET /api/admin/proxy-health", s.handleAdminProxyHealth)
 	mux.HandleFunc("POST /api/admin/proxy-notification", s.handleAdminSetProxyNotification)
 	mux.HandleFunc("GET /api/admin/payments", s.handleAdminPayments)
@@ -159,6 +167,8 @@ func (s *Server) Handler() http.Handler {
 	}))
 	mux.HandleFunc("POST /api/admin/tariff", s.handleAdminSetTariff)
 	mux.HandleFunc("POST /api/admin/tariff/delete", s.handleAdminDeleteTariff)
+	mux.HandleFunc("POST /api/admin/traffic-extension", s.handleAdminSetTrafficExtension)
+	mux.HandleFunc("POST /api/admin/traffic-extension/delete", s.handleAdminDeleteTrafficExtension)
 	mux.HandleFunc("POST /api/admin/plan", s.handleAdminSetPlan)
 	mux.HandleFunc("POST /api/admin/plan/delete", s.handleAdminDeletePlan)
 	mux.HandleFunc("POST /api/admin/requisites", s.handleAdminSetRequisites)
@@ -342,6 +352,50 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) handleTrafficExtension(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		RemnawaveID int64  `json:"remnawave_id"`
+		TrafficGB   int    `json:"traffic_gb"`
+		Provider    string `json:"provider"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	result, err := s.cabinet.CreateTrafficExtensionRequest(r.Context(), userID, req.RemnawaveID, req.TrafficGB, req.Provider)
+	if errors.Is(err, payments.ErrScreenshotRequired) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "awaiting_screenshot"})
+		return
+	}
+	if err != nil {
+		s.writeCabinetError(w, "traffic extension", userID, err)
+		return
+	}
+	resp := map[string]any{"ok": true}
+	if result != nil {
+		if result.Status != "" {
+			resp["status"] = result.Status
+		}
+		if result.PayURL != "" {
+			resp["payment_url"] = result.PayURL
+		}
+		if result.RequestID != 0 {
+			resp["request_id"] = result.RequestID
+		}
+		if result.InvoiceURL != "" {
+			resp["invoice_url"] = result.InvoiceURL
+		}
+		if len(result.Providers) > 0 {
+			resp["providers"] = result.Providers
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // writeCabinetError maps user-facing cabinet service errors to HTTP statuses.
 func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegramID int64, err error) {
 	switch {
@@ -349,6 +403,12 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 		writeJSONError(w, http.StatusForbidden, "profile is not linked to this account")
 	case errors.Is(err, payments.ErrTariffUnknown):
 		writeJSONError(w, http.StatusBadRequest, "tariff not found")
+	case errors.Is(err, payments.ErrTrafficExtensionUnknown):
+		writeJSONError(w, http.StatusBadRequest, "traffic extension option not found")
+	case errors.Is(err, payments.ErrTrafficExtensionActive):
+		writeJSONError(w, http.StatusConflict, "traffic extension already active")
+	case errors.Is(err, payments.ErrTrafficExtensionUnavailable):
+		writeJSONError(w, http.StatusConflict, "traffic extension is unavailable for this profile")
 	case errors.Is(err, payments.ErrPlanUnknown):
 		writeJSONError(w, http.StatusBadRequest, "plan not found")
 	case errors.Is(err, payments.ErrBadInput):
@@ -576,7 +636,7 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 		writeJSONError(w, http.StatusForbidden, "доступ запрещён")
 	case errors.Is(err, payments.ErrBadInput):
 		writeJSONError(w, http.StatusBadRequest, "некорректные данные")
-	case errors.Is(err, payments.ErrTariffUnknown), errors.Is(err, payments.ErrPlanUnknown),
+	case errors.Is(err, payments.ErrTariffUnknown), errors.Is(err, payments.ErrPlanUnknown), errors.Is(err, payments.ErrTrafficExtensionUnknown),
 		errors.Is(err, payments.ErrRequestNotFound), errors.Is(err, payments.ErrInfraServerUnknown):
 		writeJSONError(w, http.StatusNotFound, "не найдено")
 	case errors.Is(err, payments.ErrRequestResolved):
@@ -606,6 +666,19 @@ func (s *Server) handleAdminPanel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, panel)
 }
 
+func (s *Server) handleAdminActionCenter(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	center, err := s.admin.AdminActionCenter(r.Context(), userID)
+	if err != nil {
+		s.writeAdminError(w, "action center", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, center)
+}
+
 func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	userID, ok := s.authenticate(w, r)
 	if !ok {
@@ -617,6 +690,24 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
+}
+
+func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	days, err := positiveQueryInt(r.URL.Query().Get("days"), 30)
+	if err != nil || (days != 7 && days != 30 && days != 90) {
+		writeJSONError(w, http.StatusBadRequest, "invalid analytics filters")
+		return
+	}
+	report, err := s.admin.AdminOperatorAnalytics(r.Context(), userID, days)
+	if err != nil {
+		s.writeAdminError(w, "operator analytics", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
 }
 
 func (s *Server) handleAdminProxyHealth(w http.ResponseWriter, r *http.Request) {
@@ -788,6 +879,45 @@ func (s *Server) handleAdminDeleteTariff(w http.ResponseWriter, r *http.Request)
 	}
 	if err := s.admin.AdminDeleteTariff(r.Context(), userID, req.Plan, req.Months); err != nil {
 		s.writeAdminError(w, "delete tariff", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminSetTrafficExtension(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		TrafficGB int `json:"traffic_gb"`
+		Price     int `json:"price"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetTrafficExtensionOption(r.Context(), userID, req.TrafficGB, req.Price); err != nil {
+		s.writeAdminError(w, "set traffic extension", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminDeleteTrafficExtension(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		TrafficGB int `json:"traffic_gb"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminDeleteTrafficExtensionOption(r.Context(), userID, req.TrafficGB); err != nil {
+		s.writeAdminError(w, "delete traffic extension", userID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

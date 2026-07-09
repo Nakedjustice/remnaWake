@@ -17,22 +17,23 @@ import (
 )
 
 type fakeCabinet struct {
-	data           *payments.WebCabinet
-	renewErr       error
-	renewResult    *payments.RenewResult
-	renewed        []int64
-	renewConfirmed []bool
-	giftErr        error
-	gifted         []int
-	inviteErr      error
-	invited        []string
-	notifErr       error
-	notifSet       []string // "<kind>:<muted>" per call
-	trialErr       error
-	trialResult    *payments.WebTrialResult
-	trialNames     []string
-	parityErr      error
-	receipt        payments.WebReceipt
+	data            *payments.WebCabinet
+	renewErr        error
+	renewResult     *payments.RenewResult
+	renewed         []int64
+	renewConfirmed  []bool
+	trafficExtended []int
+	giftErr         error
+	gifted          []int
+	inviteErr       error
+	invited         []string
+	notifErr        error
+	notifSet        []string // "<kind>:<muted>" per call
+	trialErr        error
+	trialResult     *payments.WebTrialResult
+	trialNames      []string
+	parityErr       error
+	receipt         payments.WebReceipt
 }
 
 func TestWebParityJSONRoutes(t *testing.T) {
@@ -97,7 +98,7 @@ func TestEmbeddedFrontendContainsNativeParityFlows(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	body := w.Body.String()
-	for _, want := range []string{"/api/register", "/api/gift/redeem", "/api/receipt", "/api/platega/check", "localStorage.setItem(checkKey"} {
+	for _, want := range []string{"/api/register", "/api/gift/redeem", "/api/receipt", "/api/platega/check", "/api/admin/action-center", "localStorage.setItem(checkKey"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("frontend missing %q", want)
 		}
@@ -114,6 +115,12 @@ func (f *fakeCabinet) CabinetData(_ context.Context, _ int64) (*payments.WebCabi
 func (f *fakeCabinet) CreateRenewRequest(_ context.Context, _, remnawaveID int64, _ int, _, _ string, planChangeConfirmed bool) (*payments.RenewResult, error) {
 	f.renewed = append(f.renewed, remnawaveID)
 	f.renewConfirmed = append(f.renewConfirmed, planChangeConfirmed)
+	return f.renewResult, f.renewErr
+}
+
+func (f *fakeCabinet) CreateTrafficExtensionRequest(_ context.Context, _ int64, remnawaveID int64, trafficGB int, _ string) (*payments.RenewResult, error) {
+	f.renewed = append(f.renewed, remnawaveID)
+	f.trafficExtended = append(f.trafficExtended, trafficGB)
 	return f.renewResult, f.renewErr
 }
 
@@ -165,21 +172,31 @@ type adminCall struct {
 }
 
 type fakeAdmin struct {
-	panel       *payments.WebAdminPanel
-	stats       *payments.WebAdminStats
-	report      *payments.WebPaymentReport
-	proxyHealth *payments.WebProxyHealth
-	err         error
-	calls       []adminCall
+	panel        *payments.WebAdminPanel
+	actionCenter *payments.WebAdminActionCenter
+	stats        *payments.WebAdminStats
+	analytics    *payments.WebOperatorAnalytics
+	report       *payments.WebPaymentReport
+	proxyHealth  *payments.WebProxyHealth
+	err          error
+	calls        []adminCall
 }
 
 func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.WebAdminPanel, error) {
 	f.calls = append(f.calls, adminCall{Name: "panel", A: tgID})
 	return f.panel, f.err
 }
+func (f *fakeAdmin) AdminActionCenter(_ context.Context, tgID int64) (*payments.WebAdminActionCenter, error) {
+	f.calls = append(f.calls, adminCall{Name: "action-center", A: tgID})
+	return f.actionCenter, f.err
+}
 func (f *fakeAdmin) AdminStatsData(_ context.Context, tgID int64) (*payments.WebAdminStats, error) {
 	f.calls = append(f.calls, adminCall{Name: "stats", A: tgID})
 	return f.stats, f.err
+}
+func (f *fakeAdmin) AdminOperatorAnalytics(_ context.Context, tgID int64, days int) (*payments.WebOperatorAnalytics, error) {
+	f.calls = append(f.calls, adminCall{Name: "analytics", A: tgID, B: int64(days)})
+	return f.analytics, f.err
 }
 func (f *fakeAdmin) AdminProxyHealth(_ context.Context, tgID int64) (*payments.WebProxyHealth, error) {
 	f.calls = append(f.calls, adminCall{Name: "proxy-health", A: tgID})
@@ -219,6 +236,14 @@ func (f *fakeAdmin) AdminSetTariff(_ context.Context, tgID int64, plan string, m
 }
 func (f *fakeAdmin) AdminDeleteTariff(_ context.Context, tgID int64, plan string, months int) error {
 	f.calls = append(f.calls, adminCall{Name: "deltariff", A: int64(months), Text: plan})
+	return f.err
+}
+func (f *fakeAdmin) AdminSetTrafficExtensionOption(_ context.Context, tgID int64, trafficGB, price int) error {
+	f.calls = append(f.calls, adminCall{Name: "settraffic", A: int64(trafficGB), B: int64(price)})
+	return f.err
+}
+func (f *fakeAdmin) AdminDeleteTrafficExtensionOption(_ context.Context, tgID int64, trafficGB int) error {
+	f.calls = append(f.calls, adminCall{Name: "deltraffic", A: int64(trafficGB)})
 	return f.err
 }
 func (f *fakeAdmin) AdminSetPlan(_ context.Context, tgID int64, in payments.WebAdminPlan) error {
@@ -737,6 +762,71 @@ func TestHandleAdminOK(t *testing.T) {
 	}
 }
 
+func TestHandleAdminActionCenterAuth(t *testing.T) {
+	srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: payments.ErrNotAdmin})
+	for _, auth := range []string{"", "tma garbage"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/action-center", nil)
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("auth %q: status = %d, want 401", auth, w.Code)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/action-center", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("non-admin: status = %d, want 403; body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleAdminActionCenterOK(t *testing.T) {
+	adm := &fakeAdmin{actionCenter: &payments.WebAdminActionCenter{
+		GeneratedAt: "2026-07-03T12:00:00Z",
+		Summary:     payments.WebAdminActionSummary{Total: 1, Warning: 1},
+		Items: []payments.WebAdminActionItem{{
+			ID:       "pending_payments",
+			Category: "payments",
+			Severity: "warning",
+			Title:    "Заявки на оплату ждут решения",
+			Detail:   "Откройте список заявок на оплату.",
+			Count:    2,
+			Target:   "payment_requests",
+		}},
+		Sources: []payments.WebAdminActionSource{
+			{Name: "local_store", Status: "ok"},
+			{Name: "remnawave", Status: "degraded", Error: "panel down"},
+		},
+	}}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/action-center", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var got payments.WebAdminActionCenter
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Summary.Total != 1 || len(got.Items) != 1 || got.Items[0].Target != "payment_requests" {
+		t.Fatalf("unexpected action-center payload: %+v", got)
+	}
+	if len(got.Sources) != 2 || got.Sources[1].Status != "degraded" || got.Sources[1].Error == "" {
+		t.Fatalf("missing degraded source metadata: %+v", got.Sources)
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "action-center" || adm.calls[0].A != 42 {
+		t.Fatalf("unexpected service calls: %+v", adm.calls)
+	}
+}
+
 func TestHandleAdminStats(t *testing.T) {
 	adm := &fakeAdmin{stats: &payments.WebAdminStats{
 		UsersTotal: 25, UsersActive: 20, PaymentsConfirmed30d: 7, RevenueLabel: "3500₽",
@@ -787,6 +877,55 @@ func TestHandleAdminPaymentsDefaultsAndFilters(t *testing.T) {
 	}
 }
 
+func TestHandleAdminAnalyticsDefaultsValidationAndAuth(t *testing.T) {
+	adm := &fakeAdmin{analytics: &payments.WebOperatorAnalytics{
+		RangeDays: 30,
+		Revenue:   payments.WebRevenueAnalytics{TotalRevenue: 500, TotalRevenueLabel: "500₽"},
+	}}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/analytics", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("default status = %d body=%s", w.Code, w.Body.String())
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "analytics" || adm.calls[0].A != 42 || adm.calls[0].B != 30 {
+		t.Fatalf("calls = %+v", adm.calls)
+	}
+	var got payments.WebOperatorAnalytics
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.RangeDays != 30 || got.Revenue.TotalRevenueLabel != "500₽" {
+		t.Fatalf("payload = %+v", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/analytics?days=7", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || adm.calls[1].B != 7 {
+		t.Fatalf("days status=%d calls=%+v", w.Code, adm.calls)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/analytics?days=14", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest || len(adm.calls) != 2 {
+		t.Fatalf("invalid status=%d calls=%+v", w.Code, adm.calls)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/analytics", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized || len(adm.calls) != 2 {
+		t.Fatalf("unauthorized status=%d calls=%+v", w.Code, adm.calls)
+	}
+}
+
 func TestHandleAdminPaymentsDefaultQueryAndValidation(t *testing.T) {
 	adm := &fakeAdmin{report: &payments.WebPaymentReport{}}
 	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
@@ -825,9 +964,11 @@ func TestStaticAdminStatisticsView(t *testing.T) {
 	for _, want := range []string{
 		"/api/admin/stats",
 		"/api/admin/payments",
+		"/api/admin/analytics",
 		"/api/admin/gift/delete",
 		"/api/admin/invite/delete",
 		"showAdminStats",
+		"renderOperatorAnalytics",
 		"📊 Статистика",
 		"Panel users",
 		"conversion_rate",
