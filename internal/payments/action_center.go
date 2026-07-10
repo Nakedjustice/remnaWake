@@ -15,9 +15,16 @@ const (
 	actionSeverityWarning  = "warning"
 	actionSeverityInfo     = "info"
 
+	actionGroupNeedsAction = "needs_action"
+	actionGroupIncident    = "incident"
+	actionGroupOpportunity = "opportunity"
+
 	actionSourceOK       = "ok"
 	actionSourceDisabled = "disabled"
 	actionSourceDegraded = "degraded"
+
+	paymentActionStaleAfter = 2 * time.Hour
+	adminActionStaleAfter   = 24 * time.Hour
 )
 
 // WebAdminActionCenter is the read-only triage snapshot for the Mini App admin
@@ -30,14 +37,19 @@ type WebAdminActionCenter struct {
 }
 
 type WebAdminActionSummary struct {
-	Total    int `json:"total"`
-	Critical int `json:"critical"`
-	Warning  int `json:"warning"`
-	Info     int `json:"info"`
+	Total         int `json:"total"`
+	Affected      int `json:"affected"`
+	Critical      int `json:"critical"`
+	Warning       int `json:"warning"`
+	Info          int `json:"info"`
+	NeedsAction   int `json:"needs_action"`
+	Incidents     int `json:"incidents"`
+	Opportunities int `json:"opportunities"`
 }
 
 type WebAdminActionItem struct {
 	ID       string            `json:"id"`
+	Group    string            `json:"group"`
 	Category string            `json:"category"`
 	Severity string            `json:"severity"`
 	Title    string            `json:"title"`
@@ -45,6 +57,8 @@ type WebAdminActionItem struct {
 	Count    int               `json:"count"`
 	Target   string            `json:"target"`
 	Filter   map[string]string `json:"filter,omitempty"`
+	OldestAt string            `json:"oldest_at,omitempty"`
+	DueAt    string            `json:"due_at,omitempty"`
 }
 
 type WebAdminActionSource struct {
@@ -86,10 +100,10 @@ func (s *Service) addLocalActionItems(ctx context.Context, out *WebAdminActionCe
 	if err != nil {
 		return fmt.Errorf("list pending payment requests: %w", err)
 	}
-	out.addCountItem(len(requests), WebAdminActionItem{
+	out.addTimedCountItem(len(requests), oldestCreatedAt(requests, func(item store.PaymentRequest) time.Time { return item.CreatedAt }), paymentActionStaleAfter, now, WebAdminActionItem{
 		ID:       "pending_payments",
+		Group:    actionGroupNeedsAction,
 		Category: "payments",
-		Severity: actionSeverityWarning,
 		Title:    "Заявки на оплату ждут решения",
 		Detail:   "Откройте список заявок на оплату.",
 		Target:   "payment_requests",
@@ -99,10 +113,10 @@ func (s *Service) addLocalActionItems(ctx context.Context, out *WebAdminActionCe
 	if err != nil {
 		return fmt.Errorf("list pending gift codes: %w", err)
 	}
-	out.addCountItem(len(gifts), WebAdminActionItem{
+	out.addTimedCountItem(len(gifts), oldestCreatedAt(gifts, func(item store.GiftCode) time.Time { return item.CreatedAt }), adminActionStaleAfter, now, WebAdminActionItem{
 		ID:       "pending_gifts",
+		Group:    actionGroupNeedsAction,
 		Category: "gifts",
-		Severity: actionSeverityWarning,
 		Title:    "Заявки на подарки ждут решения",
 		Detail:   "Откройте список заявок на подарки.",
 		Target:   "gift_requests",
@@ -112,10 +126,10 @@ func (s *Service) addLocalActionItems(ctx context.Context, out *WebAdminActionCe
 	if err != nil {
 		return fmt.Errorf("list pending invite requests: %w", err)
 	}
-	out.addCountItem(len(invites), WebAdminActionItem{
+	out.addTimedCountItem(len(invites), oldestCreatedAt(invites, func(item store.InviteRequest) time.Time { return item.CreatedAt }), adminActionStaleAfter, now, WebAdminActionItem{
 		ID:       "pending_invites",
+		Group:    actionGroupNeedsAction,
 		Category: "invites",
-		Severity: actionSeverityWarning,
 		Title:    "Приглашения ждут одобрения",
 		Detail:   "Откройте список заявок на приглашения.",
 		Target:   "invite_requests",
@@ -125,13 +139,41 @@ func (s *Service) addLocalActionItems(ctx context.Context, out *WebAdminActionCe
 	if err != nil {
 		return fmt.Errorf("list pending trial requests: %w", err)
 	}
-	out.addCountItem(len(trials), WebAdminActionItem{
+	out.addTimedCountItem(len(trials), oldestCreatedAt(trials, func(item store.TrialRequest) time.Time { return item.CreatedAt }), adminActionStaleAfter, now, WebAdminActionItem{
 		ID:       "pending_trials",
+		Group:    actionGroupNeedsAction,
 		Category: "trials",
-		Severity: actionSeverityWarning,
 		Title:    "Пробные периоды ждут одобрения",
 		Detail:   "Откройте список заявок на пробный период.",
 		Target:   "trial_requests",
+	})
+
+	support, err := s.store.ReadAdminSupportAttention(ctx)
+	if err != nil {
+		return fmt.Errorf("read unread support: %w", err)
+	}
+	out.addTimedCountItem(support.Tickets, support.OldestUnreadAt, adminActionStaleAfter, now, WebAdminActionItem{
+		ID:       "unread_support",
+		Group:    actionGroupNeedsAction,
+		Category: "support",
+		Title:    "Есть непрочитанные обращения в поддержку",
+		Detail:   "Откройте чат поддержки и ответьте пользователям.",
+		Target:   "support",
+	})
+
+	blocked, err := s.store.ListBlockedRegistrationGuards(ctx)
+	if err != nil {
+		return fmt.Errorf("list blocked registrations: %w", err)
+	}
+	out.addCountItem(len(blocked), WebAdminActionItem{
+		ID:       "blocked_registrations",
+		Group:    actionGroupNeedsAction,
+		Category: "registration_guard",
+		Severity: actionSeverityWarning,
+		Title:    "Есть заблокированные регистрации",
+		Detail:   "Проверьте блокировки и снимите ложные срабатывания.",
+		Target:   "registration_guard",
+		OldestAt: formatActionTime(oldestCreatedAt(blocked, func(item store.RegistrationGuard) time.Time { return item.CreatedAt })),
 	})
 
 	rejectedOnline, err := s.rejectedOnlineProviderPayments(ctx, now.Add(-7*24*time.Hour))
@@ -140,6 +182,7 @@ func (s *Service) addLocalActionItems(ctx context.Context, out *WebAdminActionCe
 	}
 	out.addCountItem(rejectedOnline, WebAdminActionItem{
 		ID:       "provider_rejections",
+		Group:    actionGroupNeedsAction,
 		Category: "providers",
 		Severity: actionSeverityWarning,
 		Title:    "Есть отклонённые онлайн-платежи",
@@ -176,6 +219,11 @@ func (s *Service) addPanelActionItems(ctx context.Context, out *WebAdminActionCe
 	subs, err := s.finder.ListAll(ctx)
 	if err != nil {
 		out.addSource("remnawave", actionSourceDegraded, err.Error())
+		out.addCountItem(1, WebAdminActionItem{
+			ID: "remnawave_unavailable", Group: actionGroupIncident, Category: "users",
+			Severity: actionSeverityCritical, Title: "Не удалось загрузить данные Remnawave",
+			Detail: "Панель временно недоступна, данные пользователей могут быть неполными.", Target: "action_center_refresh",
+		})
 		return
 	}
 	out.addSource("remnawave", actionSourceOK, "")
@@ -193,6 +241,7 @@ func (s *Service) addPanelActionItems(ctx context.Context, out *WebAdminActionCe
 	}
 	out.addCountItem(expiringSoon, WebAdminActionItem{
 		ID:       "expiring_users",
+		Group:    actionGroupOpportunity,
 		Category: "users",
 		Severity: actionSeverityWarning,
 		Title:    "Подписки скоро истекают",
@@ -202,6 +251,7 @@ func (s *Service) addPanelActionItems(ctx context.Context, out *WebAdminActionCe
 	})
 	out.addCountItem(lowTraffic, WebAdminActionItem{
 		ID:       "low_traffic_users",
+		Group:    actionGroupOpportunity,
 		Category: "users",
 		Severity: actionSeverityWarning,
 		Title:    "Пользователи почти исчерпали трафик",
@@ -226,6 +276,11 @@ func (s *Service) addProxyActionItems(ctx context.Context, out *WebAdminActionCe
 	health, err := s.proxyHealth(ctx)
 	if err != nil {
 		out.addSource("xray_checker", actionSourceDegraded, err.Error())
+		out.addCountItem(1, WebAdminActionItem{
+			ID: "xray_checker_unavailable", Group: actionGroupIncident, Category: "proxy",
+			Severity: actionSeverityCritical, Title: "Не удалось проверить состояние прокси",
+			Detail: "Источник мониторинга временно недоступен.", Target: "action_center_refresh",
+		})
 		return
 	}
 	if health == nil || !health.Configured {
@@ -235,6 +290,7 @@ func (s *Service) addProxyActionItems(ctx context.Context, out *WebAdminActionCe
 	out.addSource("xray_checker", actionSourceOK, "")
 	out.addCountItem(health.Down, WebAdminActionItem{
 		ID:       "proxy_down",
+		Group:    actionGroupIncident,
 		Category: "proxy",
 		Severity: actionSeverityCritical,
 		Title:    "Прокси недоступны",
@@ -252,6 +308,7 @@ func (s *Service) addInfraActionItems(ctx context.Context, out *WebAdminActionCe
 	now := s.now()
 	overdue := 0
 	soon := 0
+	var overdueDueAt, soonDueAt time.Time
 	for i := range servers {
 		if servers[i].NextDueAt.IsZero() {
 			continue
@@ -259,27 +316,33 @@ func (s *Service) addInfraActionItems(ctx context.Context, out *WebAdminActionCe
 		switch infraDueStatus(servers[i].NextDueAt, now) {
 		case "overdue":
 			overdue++
+			overdueDueAt = earliestActionTime(overdueDueAt, servers[i].NextDueAt)
 		case "soon":
 			soon++
+			soonDueAt = earliestActionTime(soonDueAt, servers[i].NextDueAt)
 		}
 	}
 	out.addCountItem(overdue, WebAdminActionItem{
 		ID:       "infra_overdue",
+		Group:    actionGroupIncident,
 		Category: "infra",
 		Severity: actionSeverityCritical,
 		Title:    "Просрочены оплаты серверов",
 		Detail:   "Откройте инфраструктуру.",
 		Target:   "infra",
 		Filter:   map[string]string{"due_status": "overdue"},
+		DueAt:    formatActionTime(overdueDueAt),
 	})
 	out.addCountItem(soon, WebAdminActionItem{
 		ID:       "infra_due_soon",
+		Group:    actionGroupNeedsAction,
 		Category: "infra",
 		Severity: actionSeverityWarning,
 		Title:    "Скоро нужно оплатить серверы",
 		Detail:   "Откройте инфраструктуру.",
 		Target:   "infra",
 		Filter:   map[string]string{"due_status": "soon"},
+		DueAt:    formatActionTime(soonDueAt),
 	})
 	return nil
 }
@@ -293,6 +356,11 @@ func (s *Service) addUpdateActionItems(ctx context.Context, out *WebAdminActionC
 	snapshot, err := checker.Snapshot(ctx)
 	if err != nil {
 		out.addSource("autoupdate", actionSourceDegraded, err.Error())
+		out.addCountItem(1, WebAdminActionItem{
+			ID: "autoupdate_unavailable", Group: actionGroupIncident, Category: "updates",
+			Severity: actionSeverityWarning, Title: "Не удалось прочитать состояние обновлений",
+			Detail: "Сохранённое состояние проверки временно недоступно.", Target: "action_center_refresh",
+		})
 		return
 	}
 	out.addSource("autoupdate", actionSourceOK, "")
@@ -300,6 +368,7 @@ func (s *Service) addUpdateActionItems(ctx context.Context, out *WebAdminActionC
 	case autoupdate.CheckStatusUpdateAvailable, autoupdate.CheckStatusAlreadyNotified:
 		out.addCountItem(1, WebAdminActionItem{
 			ID:       "update_available",
+			Group:    actionGroupNeedsAction,
 			Category: "updates",
 			Severity: actionSeverityWarning,
 			Title:    "Доступно обновление",
@@ -318,6 +387,12 @@ func (out *WebAdminActionCenter) addCountItem(count int, item WebAdminActionItem
 	out.Items = append(out.Items, item)
 }
 
+func (out *WebAdminActionCenter) addTimedCountItem(count int, oldest time.Time, threshold time.Duration, now time.Time, item WebAdminActionItem) {
+	item.Severity = actionSeverityForAge(now, oldest, threshold)
+	item.OldestAt = formatActionTime(oldest)
+	out.addCountItem(count, item)
+}
+
 func (out *WebAdminActionCenter) addSource(name, status, err string) {
 	src := WebAdminActionSource{Name: name, Status: status}
 	if err != "" {
@@ -328,10 +403,22 @@ func (out *WebAdminActionCenter) addSource(name, status, err string) {
 
 func (out *WebAdminActionCenter) finish() {
 	sort.SliceStable(out.Items, func(i, j int) bool {
-		return actionSeverityRank(out.Items[i].Severity) < actionSeverityRank(out.Items[j].Severity)
+		left, right := out.Items[i], out.Items[j]
+		if actionGroupRank(left.Group) != actionGroupRank(right.Group) {
+			return actionGroupRank(left.Group) < actionGroupRank(right.Group)
+		}
+		if actionSeverityRank(left.Severity) != actionSeverityRank(right.Severity) {
+			return actionSeverityRank(left.Severity) < actionSeverityRank(right.Severity)
+		}
+		leftAt, rightAt := actionItemTime(left), actionItemTime(right)
+		if leftAt != "" && rightAt != "" && leftAt != rightAt {
+			return leftAt < rightAt
+		}
+		return false
 	})
 	for _, item := range out.Items {
 		out.Summary.Total++
+		out.Summary.Affected += item.Count
 		switch item.Severity {
 		case actionSeverityCritical:
 			out.Summary.Critical++
@@ -340,6 +427,67 @@ func (out *WebAdminActionCenter) finish() {
 		default:
 			out.Summary.Info++
 		}
+		switch item.Group {
+		case actionGroupIncident:
+			out.Summary.Incidents++
+		case actionGroupOpportunity:
+			out.Summary.Opportunities++
+		default:
+			out.Summary.NeedsAction++
+		}
+	}
+}
+
+func oldestCreatedAt[T any](items []T, createdAt func(T) time.Time) time.Time {
+	var oldest time.Time
+	for _, item := range items {
+		at := createdAt(item)
+		if at.IsZero() {
+			continue
+		}
+		if oldest.IsZero() || at.Before(oldest) {
+			oldest = at
+		}
+	}
+	return oldest
+}
+
+func earliestActionTime(current, candidate time.Time) time.Time {
+	if candidate.IsZero() || (!current.IsZero() && !candidate.Before(current)) {
+		return current
+	}
+	return candidate
+}
+
+func actionSeverityForAge(now, oldest time.Time, threshold time.Duration) string {
+	if !oldest.IsZero() && !now.Before(oldest.Add(threshold)) {
+		return actionSeverityCritical
+	}
+	return actionSeverityWarning
+}
+
+func formatActionTime(at time.Time) string {
+	if at.IsZero() {
+		return ""
+	}
+	return at.UTC().Format(time.RFC3339)
+}
+
+func actionItemTime(item WebAdminActionItem) string {
+	if item.DueAt != "" {
+		return item.DueAt
+	}
+	return item.OldestAt
+}
+
+func actionGroupRank(group string) int {
+	switch group {
+	case actionGroupIncident:
+		return 1
+	case actionGroupOpportunity:
+		return 2
+	default:
+		return 0
 	}
 }
 
