@@ -53,6 +53,15 @@ type SupportConversation struct {
 	Unread         int // user messages with read_by_admin = 0
 }
 
+// AdminSupportAttention summarizes unresolved user messages for read-only
+// operator triage. A ticket is affected only while it is open and has at least
+// one user message the admins have not read.
+type AdminSupportAttention struct {
+	Tickets        int
+	UnreadMessages int
+	OldestUnreadAt time.Time
+}
+
 // AddSupportMessage appends a message to a conversation. The sender's own copy
 // is marked read (the user's own messages are read by the user; an admin's
 // replies are read by the admins).
@@ -271,6 +280,30 @@ func (s *Store) ListSupportTicketsAdmin(ctx context.Context) ([]SupportTicket, e
 		return nil, err
 	}
 	return append(open, closed...), nil
+}
+
+// ReadAdminSupportAttention returns the current unread support workload without
+// marking any messages as read.
+func (s *Store) ReadAdminSupportAttention(ctx context.Context) (AdminSupportAttention, error) {
+	var (
+		out    AdminSupportAttention
+		oldest sql.NullString
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT t.id), COUNT(*), MIN(m.created_at)
+		FROM support_tickets t
+		JOIN support_messages m ON m.ticket_id = t.id
+		WHERE t.status = 'open'
+		  AND m.from_admin = 0
+		  AND m.read_by_admin = 0
+	`).Scan(&out.Tickets, &out.UnreadMessages, &oldest)
+	if err != nil {
+		return AdminSupportAttention{}, fmt.Errorf("read admin support attention: %w", err)
+	}
+	if oldest.Valid {
+		out.OldestUnreadAt, _ = parseTime(oldest.String)
+	}
+	return out, nil
 }
 
 // ticketListQuery builds the shared ticket-summary SELECT. unreadCond counts

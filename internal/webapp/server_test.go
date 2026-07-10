@@ -105,7 +105,8 @@ func TestEmbeddedFrontendContainsNativeParityFlows(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	body := w.Body.String()
 	for _, want := range []string{"/api/register", "/api/gift/redeem", "/api/receipt", "/api/platega/check", "/api/admin/action-center", "localStorage.setItem(checkKey",
-		"registration_blocked", "/api/admin/registration-guard/pattern", "/api/admin/registration-guard/unblock", "renderAdminRegistrationGuard"} {
+		"registration_blocked", "/api/admin/registration-guard/pattern", "/api/admin/registration-guard/unblock", "renderAdminRegistrationGuard",
+		"refreshAdminActionCenter", "action-group", "admin-registration-guard"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("frontend missing %q", want)
 		}
@@ -931,15 +932,17 @@ func TestHandleAdminActionCenterAuth(t *testing.T) {
 func TestHandleAdminActionCenterOK(t *testing.T) {
 	adm := &fakeAdmin{actionCenter: &payments.WebAdminActionCenter{
 		GeneratedAt: "2026-07-03T12:00:00Z",
-		Summary:     payments.WebAdminActionSummary{Total: 1, Warning: 1},
+		Summary:     payments.WebAdminActionSummary{Total: 1, Affected: 2, Warning: 1, NeedsAction: 1},
 		Items: []payments.WebAdminActionItem{{
 			ID:       "pending_payments",
+			Group:    "needs_action",
 			Category: "payments",
 			Severity: "warning",
 			Title:    "Заявки на оплату ждут решения",
 			Detail:   "Откройте список заявок на оплату.",
 			Count:    2,
 			Target:   "payment_requests",
+			OldestAt: "2026-07-03T10:00:00Z",
 		}},
 		Sources: []payments.WebAdminActionSource{
 			{Name: "local_store", Status: "ok"},
@@ -959,8 +962,11 @@ func TestHandleAdminActionCenterOK(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.Summary.Total != 1 || len(got.Items) != 1 || got.Items[0].Target != "payment_requests" {
+	if got.Summary.Total != 1 || got.Summary.Affected != 2 || got.Summary.NeedsAction != 1 || len(got.Items) != 1 || got.Items[0].Target != "payment_requests" {
 		t.Fatalf("unexpected action-center payload: %+v", got)
+	}
+	if got.Items[0].Group != "needs_action" || got.Items[0].OldestAt != "2026-07-03T10:00:00Z" {
+		t.Fatalf("missing action-center group/timing fields: %+v", got.Items[0])
 	}
 	if len(got.Sources) != 2 || got.Sources[1].Status != "degraded" || got.Sources[1].Error == "" {
 		t.Fatalf("missing degraded source metadata: %+v", got.Sources)

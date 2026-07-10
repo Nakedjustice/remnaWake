@@ -9,6 +9,11 @@ func init() {
 // enPayments translates the payments-package texts (user flows, admin flows,
 // gift/invite/register conversations, /stats). Merged into en at init.
 var enPayments = map[string]string{
+	"Есть непрочитанные обращения в поддержку":  "Support messages need a reply",
+	"Есть заблокированные регистрации":          "Registrations are blocked",
+	"Не удалось загрузить данные Remnawave":     "Remnawave data is unavailable",
+	"Не удалось проверить состояние прокси":     "Proxy health could not be checked",
+	"Не удалось прочитать состояние обновлений": "Update status could not be read",
 	// Action center (/pending): summary, drill-down lists, and the item
 	// titles it reuses from the Mini App action-center payload (those reach
 	// i18n.T as data, so they must be listed here explicitly).
