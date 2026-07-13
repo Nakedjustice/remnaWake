@@ -347,6 +347,13 @@
     color: var(--accent); text-align: center; font-size: 12px; font-weight: 800; }
   .admin-chevron { color: var(--hint); font-size: 22px; font-weight: 400; line-height: 1; }
   .action-center .admin-section-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .action-center-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 4px 10px; }
+  .action-center-head-copy { min-width: 0; }
+  .action-center-title { font-size: 17px; font-weight: 850; }
+  .action-center-summary { margin-top: 3px; color: var(--hint); font-size: 12.5px; line-height: 1.4; }
+  .action-refresh { width: auto; min-width: 92px; margin: 0; padding: 9px 12px; flex: none; border-radius: 12px; font-size: 12px; }
+  .action-group { margin-top: 12px; }
+  .action-group:first-of-type { margin-top: 0; }
   .action-center-panel { overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
   .action-source-warning { margin: 0 0 8px; padding: 10px 12px; border: 1px solid rgba(255, 210, 61, 0.26);
     border-radius: 14px; background: var(--tint-pending); color: var(--tone-expiring); font-size: 12.5px; font-weight: 800; line-height: 1.35; }
@@ -363,6 +370,7 @@
   .action-copy { flex: 1; min-width: 0; }
   .action-title { font-size: 14.5px; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
   .action-detail { margin-top: 2px; color: var(--hint); font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
+  .action-timing { margin-top: 4px; color: var(--hint); font-size: 11.5px; font-weight: 700; line-height: 1.3; }
   .action-meta { display: grid; justify-items: end; gap: 6px; flex: none; }
   .action-severity { color: var(--hint); font-size: 10px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
   .admin-page-title { font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
@@ -897,6 +905,25 @@ const EN = {
   'Ошибка загрузки сквадов': 'Failed to load squads',
   '⚙️ Админ-панель': '⚙️ Admin panel',
   'Что требует внимания': 'Needs attention',
+  'Нужны действия': 'Needs action',
+  'Инциденты': 'Incidents',
+  'Возможности': 'Opportunities',
+  'Обновить': 'Refresh',
+  'Обновление…': 'Refreshing…',
+  'Обновлено {time}': 'Updated {time}',
+  '{items} задач · {affected} объектов': '{items} items · {affected} affected',
+  'только что': 'just now',
+  '{n} мин. назад': '{n} min ago',
+  '{n} ч. назад': '{n} hr ago',
+  '{n} дн. назад': '{n} d ago',
+  'Старейшая: {time}': 'Oldest: {time}',
+  'Просрочено на {time}': 'Overdue by {time}',
+  'Срок через {time}': 'Due in {time}',
+  'меньше минуты': 'less than a minute',
+  '{n} мин.': '{n} min',
+  '{n} ч.': '{n} hr',
+  '{n} дн.': '{n} d',
+  'Не удалось обновить центр действий. Показаны предыдущие данные.': 'Could not refresh the action center. Previous data is still shown.',
   'Ничего срочного': 'Nothing urgent',
   'Все ключевые очереди пусты.': 'All key queues are clear.',
   'Часть источников временно недоступна.': 'Some sources are temporarily unavailable.',
@@ -924,6 +951,16 @@ const EN = {
   'Скоро нужно оплатить серверы': 'Server payments are due soon',
   'Доступно обновление': 'Update available',
   'Откройте настройки обновлений.': 'Open update settings.',
+  'Есть непрочитанные обращения в поддержку': 'Support messages need a reply',
+  'Откройте чат поддержки и ответьте пользователям.': 'Open the support inbox and reply to users.',
+  'Есть заблокированные регистрации': 'Registrations are blocked',
+  'Проверьте блокировки и снимите ложные срабатывания.': 'Review blocks and clear false positives.',
+  'Не удалось загрузить данные Remnawave': 'Remnawave data is unavailable',
+  'Панель временно недоступна, данные пользователей могут быть неполными.': 'The panel is temporarily unavailable; user data may be incomplete.',
+  'Не удалось проверить состояние прокси': 'Proxy health could not be checked',
+  'Источник мониторинга временно недоступен.': 'The monitoring source is temporarily unavailable.',
+  'Не удалось прочитать состояние обновлений': 'Update status could not be read',
+  'Сохранённое состояние проверки временно недоступно.': 'The saved check state is temporarily unavailable.',
   'Слабый трафик': 'Low traffic',
   'Заявки': 'Requests',
   'Заявки на оплату': 'Payment requests',
@@ -933,6 +970,9 @@ const EN = {
   'Управление': 'Management',
   'Статистика': 'Statistics',
   'Настройки': 'Settings',
+  'Резервная копия': 'Backup',
+  'Создаю архив…': 'Creating archive…',
+  'Резервная копия отправлена в чат с ботом.': 'Backup sent to your bot chat.',
   'Управление пользователями': 'Manage users',
   'Активные подарочные коды': 'Active gift codes',
   'Рассылка': 'Broadcast',
@@ -2471,6 +2511,7 @@ function showRegistrationBlocked() {
 // sub-views render from the same data without re-fetching on every navigation.
 let adminData = null;
 let adminActionCenter = null;
+let adminActionCenterError = '';
 let adminPaymentFilters = { days: 30, status: 'all', provider: 'all', kind: 'all', query: '', page: 1 };
 
 // showAdmin (re)loads the admin payloads and renders the admin hub.
@@ -2483,8 +2524,23 @@ async function showAdmin() {
       api('/api/admin'),
       api('/api/admin/action-center'),
     ]);
+    adminActionCenterError = '';
   } catch (e) { tg.showAlert(e.message); return; }
   renderAdminHome();
+}
+
+async function refreshAdminActionCenter(button) {
+  setButtonLoading(button, true, t('Обновление…'));
+  try {
+    const next = await api('/api/admin/action-center');
+    adminActionCenter = next;
+    adminActionCenterError = '';
+  } catch (e) {
+    adminActionCenterError = t('Не удалось обновить центр действий. Показаны предыдущие данные.');
+  } finally {
+    setButtonLoading(button, false);
+    renderAdminHome();
+  }
 }
 
 // ---- Support chat (user + admin) ----
@@ -3318,6 +3374,7 @@ function renderAdminReferral(data) {
 // always passed to el(), which writes textContent rather than HTML.
 function renderAdminRegistrationGuard(data) {
   const card = el('div', 'admin-card');
+  card.id = 'admin-registration-guard';
   card.appendChild(el('h2', null, t('🛡 Антискам-регистрации')));
   card.appendChild(el('div', 'hint', t('Встроенные паттерны защищают от имитации поддержки и администрации. Добавьте свои слова для проверки имени и ника.')));
 
@@ -3591,6 +3648,7 @@ const ADMIN_ICONS = {
   ticket: ['M3 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2z', 'M13 5v2', 'M13 11v2', 'M13 17v2'],
   megaphone: ['M3 11l18-5v12L3 13', 'M11.6 16.8a3 3 0 1 1-5.8-1.6'],
   chat: ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'],
+  archive: ['M21 8v13H3V8', 'M1 3h22v5H1z', 'M10 12h4'],
   activity: ['M22 12h-4l-3 9L9 3l-3 9H2'],
 };
 
@@ -3632,6 +3690,12 @@ function actionCenterIcon(item) {
       return ADMIN_ICONS.server;
     case 'updates':
       return ADMIN_ICONS.sliders;
+    case 'support':
+      return ADMIN_ICONS.chat;
+    case 'registration_guard':
+      return ADMIN_ICONS.userPlus;
+    case 'action_center_refresh':
+      return ADMIN_ICONS.activity;
     default:
       return ADMIN_ICONS.activity;
   }
@@ -3643,7 +3707,7 @@ function actionSeverityLabel(severity) {
   return t('Инфо');
 }
 
-function openActionCenterItem(item) {
+function openActionCenterItem(item, button) {
   const filter = item.filter || {};
   switch (item.target) {
     case 'payment_requests':
@@ -3681,25 +3745,79 @@ function openActionCenterItem(item) {
     case 'updates':
       showAdminSettings();
       return;
+    case 'support':
+      showAdminSupport();
+      return;
+    case 'registration_guard':
+      showAdminSettings({ focus: 'registration_guard' });
+      return;
+    case 'action_center_refresh':
+      refreshAdminActionCenter(button);
+      return;
     default:
       renderAdminHome();
   }
+}
+
+function actionDuration(ms) {
+  const minutes = Math.floor(Math.abs(ms) / 60000);
+  if (minutes < 1) return t('меньше минуты');
+  if (minutes < 60) return t('{n} мин.', { n: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return t('{n} ч.', { n: hours });
+  return t('{n} дн.', { n: Math.floor(hours / 24) });
+}
+
+function actionPastLabel(value) {
+  const at = new Date(value || '');
+  if (isNaN(at.getTime())) return '';
+  const ms = Date.now() - at.getTime();
+  if (ms < 60000) return t('только что');
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) return t('{n} мин. назад', { n: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return t('{n} ч. назад', { n: hours });
+  return t('{n} дн. назад', { n: Math.floor(hours / 24) });
+}
+
+function actionTimingLabel(item) {
+  if (item.due_at) {
+    const due = new Date(item.due_at);
+    if (isNaN(due.getTime())) return '';
+    const delta = due.getTime() - Date.now();
+    return delta < 0
+      ? t('Просрочено на {time}', { time: actionDuration(delta) })
+      : t('Срок через {time}', { time: actionDuration(delta) });
+  }
+  if (item.oldest_at) {
+    const oldest = new Date(item.oldest_at);
+    if (!isNaN(oldest.getTime())) return t('Старейшая: {time}', { time: actionDuration(Date.now() - oldest.getTime()) });
+  }
+  return '';
 }
 
 function renderActionCenter(center) {
   const section = el('section', 'admin-section action-center');
   const items = (center && center.items) || [];
   const summary = center && center.summary ? center.summary : {};
-  const label = el('div', 'admin-section-label');
-  label.appendChild(el('span', null, t('Что требует внимания')));
-  if (summary.total || items.length) label.appendChild(el('span', null, String(summary.total || items.length)));
-  section.appendChild(label);
+  const total = Number(summary.total || items.length || 0);
+  const affected = Number(summary.affected || items.reduce((sum, item) => sum + (Number(item.count) || 0), 0));
+  const head = el('div', 'action-center-head');
+  const headCopy = el('div', 'action-center-head-copy');
+  headCopy.appendChild(el('div', 'action-center-title', t('Что требует внимания')));
+  const updated = actionPastLabel(center && center.generated_at);
+  const meta = t('{items} задач · {affected} объектов', { items: total, affected });
+  headCopy.appendChild(el('div', 'action-center-summary', updated ? meta + ' · ' + t('Обновлено {time}', { time: updated }) : meta));
+  head.appendChild(headCopy);
+  const refresh = el('button', 'secondary action-refresh', t('Обновить'));
+  refresh.onclick = () => refreshAdminActionCenter(refresh);
+  head.appendChild(refresh);
+  section.appendChild(head);
 
-  const degraded = ((center && center.sources) || []).filter(src => src.status === 'degraded');
-  if (degraded.length) section.appendChild(el('div', 'action-source-warning', t('Часть источников временно недоступна.')));
+  if (adminActionCenterError) section.appendChild(el('div', 'action-source-warning', adminActionCenterError));
 
-  const panel = el('div', 'action-center-panel');
   if (!items.length) {
+    const panel = el('div', 'action-center-panel');
     const empty = el('div', 'action-empty');
     empty.appendChild(el('div', 'action-empty-title', t('Ничего срочного')));
     empty.appendChild(el('div', 'action-empty-meta', t('Все ключевые очереди пусты.')));
@@ -3708,26 +3826,43 @@ function renderActionCenter(center) {
     return section;
   }
 
-  items.forEach(item => {
-    const button = el('button', 'action-item ' + (item.severity || 'info'));
-    const iconSpan = el('span', 'admin-nav-icon');
-    iconSpan.appendChild(svg(actionCenterIcon(item)));
-    button.appendChild(iconSpan);
+  [
+    { key: 'needs_action', label: 'Нужны действия' },
+    { key: 'incident', label: 'Инциденты' },
+    { key: 'opportunity', label: 'Возможности' },
+  ].forEach(group => {
+    const groupItems = items.filter(item => (item.group || 'needs_action') === group.key);
+    if (!groupItems.length) return;
+    const wrap = el('div', 'action-group');
+    const label = el('div', 'admin-section-label');
+    label.appendChild(el('span', null, t(group.label)));
+    label.appendChild(el('span', null, String(groupItems.length)));
+    wrap.appendChild(label);
+    const panel = el('div', 'action-center-panel');
+    groupItems.forEach(item => {
+      const button = el('button', 'action-item ' + (item.severity || 'info'));
+      const iconSpan = el('span', 'admin-nav-icon');
+      iconSpan.appendChild(svg(actionCenterIcon(item)));
+      button.appendChild(iconSpan);
 
-    const copy = el('div', 'action-copy');
-    copy.appendChild(el('div', 'action-title', t(item.title || '')));
-    if (item.detail) copy.appendChild(el('div', 'action-detail', t(item.detail)));
-    button.appendChild(copy);
+      const copy = el('div', 'action-copy');
+      copy.appendChild(el('div', 'action-title', t(item.title || '')));
+      if (item.detail) copy.appendChild(el('div', 'action-detail', t(item.detail)));
+      const timing = actionTimingLabel(item);
+      if (timing) copy.appendChild(el('div', 'action-timing', timing));
+      button.appendChild(copy);
 
-    const meta = el('div', 'action-meta');
-    meta.appendChild(el('span', 'action-severity', actionSeverityLabel(item.severity)));
-    if (item.count) meta.appendChild(el('span', 'admin-count', String(item.count)));
-    button.appendChild(meta);
-    button.appendChild(el('span', 'admin-chevron', '›'));
-    button.onclick = () => openActionCenterItem(item);
-    panel.appendChild(button);
+      const itemMeta = el('div', 'action-meta');
+      itemMeta.appendChild(el('span', 'action-severity', actionSeverityLabel(item.severity)));
+      if (item.count) itemMeta.appendChild(el('span', 'admin-count', String(item.count)));
+      button.appendChild(itemMeta);
+      button.appendChild(el('span', 'admin-chevron', '›'));
+      button.onclick = () => openActionCenterItem(item, button);
+      panel.appendChild(button);
+    });
+    wrap.appendChild(panel);
+    section.appendChild(wrap);
   });
-  section.appendChild(panel);
   return section;
 }
 
@@ -3754,6 +3889,7 @@ function renderAdminHome() {
     { icon: ADMIN_ICONS.barChart, label: t('Статистика'), action: showAdminStats },
     { icon: ADMIN_ICONS.server, label: t('Инфраструктура'), action: showAdminServers },
     { icon: ADMIN_ICONS.sliders, label: t('Настройки'), action: showAdminSettings },
+    { icon: ADMIN_ICONS.archive, label: t('Резервная копия'), action: event => sendAdminBackup(event.currentTarget) },
     { icon: ADMIN_ICONS.users, label: t('Управление пользователями'), action: showUserAdmin },
     { icon: ADMIN_ICONS.ticket, label: t('Активные подарочные коды'), action: showAdminGiftCodes },
     { icon: ADMIN_ICONS.megaphone, label: t('Рассылка'), action: showAdminBroadcast },
@@ -3767,6 +3903,16 @@ function renderAdminHome() {
 
   statusEl.hidden = true;
   appEl.hidden = false;
+}
+
+async function sendAdminBackup(button) {
+  try {
+    await withButtonLoading(button, t('Создаю архив…'), () =>
+      api('/api/admin/backup', { method: 'POST', body: '{}' }));
+    tg.showAlert(t('Резервная копия отправлена в чат с ботом.'));
+  } catch (e) {
+    tg.showAlert(e.message);
+  }
 }
 
 function showAdminBilling() {
@@ -4530,8 +4676,9 @@ function showAdminTrialRequests() {
   appEl.hidden = false;
 }
 
-function showAdminSettings() {
-  currentRender = showAdminSettings;
+function showAdminSettings(opts) {
+  if (!opts || typeof opts !== 'object' || opts instanceof Event) opts = {};
+  currentRender = () => showAdminSettings(opts);
   const data = adminData || {};
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Настройки')));
@@ -4546,6 +4693,12 @@ function showAdminSettings() {
   appEl.appendChild(renderAdminRegistrationGuard(data));
   statusEl.hidden = true;
   appEl.hidden = false;
+  if (opts.focus === 'registration_guard') {
+    requestAnimationFrame(() => {
+      const target = document.getElementById('admin-registration-guard');
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 }
 
 function showAdminGiftCodes(onBack) {

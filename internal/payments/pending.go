@@ -67,18 +67,6 @@ func (s *Service) sendPendingSummary(ctx context.Context, chatID int64) {
 			}
 		}
 	}
-	degraded := false
-	for _, src := range ac.Sources {
-		if src.Status != actionSourceDegraded {
-			continue
-		}
-		if !degraded {
-			b.WriteString("\n")
-			degraded = true
-		}
-		b.WriteString("\n" + fmt.Sprintf(i18n.T("⚠️ Источник %s недоступен"), src.Name))
-	}
-
 	if len(rows) == 0 {
 		_ = s.bot.SendPlain(ctx, chatID, b.String())
 		return

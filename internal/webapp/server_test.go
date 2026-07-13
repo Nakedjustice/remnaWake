@@ -105,7 +105,8 @@ func TestEmbeddedFrontendContainsNativeParityFlows(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	body := w.Body.String()
 	for _, want := range []string{"/api/register", "/api/gift/redeem", "/api/receipt", "/api/platega/check", "/api/admin/action-center", "localStorage.setItem(checkKey",
-		"registration_blocked", "/api/admin/registration-guard/pattern", "/api/admin/registration-guard/unblock", "renderAdminRegistrationGuard"} {
+		"registration_blocked", "/api/admin/registration-guard/pattern", "/api/admin/registration-guard/unblock", "renderAdminRegistrationGuard",
+		"refreshAdminActionCenter", "action-group", "admin-registration-guard"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("frontend missing %q", want)
 		}
@@ -253,6 +254,11 @@ type fakeAdmin struct {
 	proxyHealth  *payments.WebProxyHealth
 	err          error
 	calls        []adminCall
+}
+
+func (f *fakeAdmin) AdminSendBackup(_ context.Context, tgID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "backup", A: tgID})
+	return f.err
 }
 
 func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.WebAdminPanel, error) {
@@ -705,6 +711,48 @@ func TestHandleAdminScreenshotToggle(t *testing.T) {
 	}
 }
 
+func TestHandleAdminBackup(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/backup", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "backup" || adm.calls[0].A != 42 {
+		t.Fatalf("unexpected admin calls: %+v", adm.calls)
+	}
+
+	unauthenticated := httptest.NewRequest(http.MethodPost, "/api/admin/backup", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, unauthenticated)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("missing initData: status=%d want=%d body=%s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+
+	for _, tc := range []struct {
+		err  error
+		want int
+	}{
+		{payments.ErrNotAdmin, http.StatusForbidden},
+		{payments.ErrBackupDryRun, http.StatusConflict},
+		{payments.ErrBackupTooLarge, http.StatusRequestEntityTooLarge},
+		{payments.ErrBackupCreate, http.StatusInternalServerError},
+		{payments.ErrBackupDelivery, http.StatusInternalServerError},
+	} {
+		srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: tc.err})
+		req := httptest.NewRequest(http.MethodPost, "/api/admin/backup", nil)
+		req.Header.Set("Authorization", validAuth(t))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Fatalf("err=%v: status=%d want=%d body=%s", tc.err, w.Code, tc.want, w.Body.String())
+		}
+	}
+}
+
 func TestHandleAdminRegistrationGuardMutations(t *testing.T) {
 	adm := &fakeAdmin{}
 	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
@@ -931,15 +979,17 @@ func TestHandleAdminActionCenterAuth(t *testing.T) {
 func TestHandleAdminActionCenterOK(t *testing.T) {
 	adm := &fakeAdmin{actionCenter: &payments.WebAdminActionCenter{
 		GeneratedAt: "2026-07-03T12:00:00Z",
-		Summary:     payments.WebAdminActionSummary{Total: 1, Warning: 1},
+		Summary:     payments.WebAdminActionSummary{Total: 1, Affected: 2, Warning: 1, NeedsAction: 1},
 		Items: []payments.WebAdminActionItem{{
 			ID:       "pending_payments",
+			Group:    "needs_action",
 			Category: "payments",
 			Severity: "warning",
 			Title:    "Заявки на оплату ждут решения",
 			Detail:   "Откройте список заявок на оплату.",
 			Count:    2,
 			Target:   "payment_requests",
+			OldestAt: "2026-07-03T10:00:00Z",
 		}},
 		Sources: []payments.WebAdminActionSource{
 			{Name: "local_store", Status: "ok"},
@@ -959,8 +1009,11 @@ func TestHandleAdminActionCenterOK(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.Summary.Total != 1 || len(got.Items) != 1 || got.Items[0].Target != "payment_requests" {
+	if got.Summary.Total != 1 || got.Summary.Affected != 2 || got.Summary.NeedsAction != 1 || len(got.Items) != 1 || got.Items[0].Target != "payment_requests" {
 		t.Fatalf("unexpected action-center payload: %+v", got)
+	}
+	if got.Items[0].Group != "needs_action" || got.Items[0].OldestAt != "2026-07-03T10:00:00Z" {
+		t.Fatalf("missing action-center group/timing fields: %+v", got.Items[0])
 	}
 	if len(got.Sources) != 2 || got.Sources[1].Status != "degraded" || got.Sources[1].Error == "" {
 		t.Fatalf("missing degraded source metadata: %+v", got.Sources)
@@ -1386,6 +1439,11 @@ func TestServesIndex(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "Личный кабинет") {
 		t.Fatalf("index not served: status=%d", w.Code)
+	}
+	for _, want := range []string{"Резервная копия", "/api/admin/backup", "Создаю архив…", "Backup sent to your bot chat."} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("index missing manual-backup UI marker %q", want)
+		}
 	}
 }
 

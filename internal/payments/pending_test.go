@@ -241,14 +241,17 @@ func TestPendingCommandCallbackAndMenuWiring(t *testing.T) {
 	}
 }
 
-func TestPendingSummaryReportsDegradedSources(t *testing.T) {
+func TestPendingSummaryReportsNamedSourceIncident(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
 	svc.finder = &fakeFinder{listErr: errors.New("panel down")}
 	svc.sendPendingSummary(context.Background(), 1000)
 	if len(bot.sent) != 1 {
 		t.Fatalf("sent = %d, want 1", len(bot.sent))
 	}
-	if !strings.Contains(bot.sent[0].Text, "remnawave") {
-		t.Fatalf("degraded source note missing:\n%s", bot.sent[0].Text)
+	if !strings.Contains(bot.sent[0].Text, "Не удалось загрузить данные Remnawave") {
+		t.Fatalf("named source incident missing:\n%s", bot.sent[0].Text)
+	}
+	if strings.Contains(bot.sent[0].Text, "panel down") {
+		t.Fatalf("raw source error leaked:\n%s", bot.sent[0].Text)
 	}
 }

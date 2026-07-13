@@ -182,6 +182,55 @@ func TestListSupportTicketsAdminUnreadAndOrdering(t *testing.T) {
 	}
 }
 
+func TestReadAdminSupportAttentionCountsOnlyUnreadOpenTickets(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	openID, _ := st.CreateSupportTicket(ctx, 1, "alice", "open")
+	readID, _ := st.CreateSupportTicket(ctx, 2, "bob", "read")
+	closedID, _ := st.CreateSupportTicket(ctx, 3, "carol", "closed")
+
+	oldest := time.Now().UTC().Add(-25 * time.Hour).Truncate(time.Second)
+	firstID, err := st.AddSupportMessage(ctx, SupportMessage{TicketID: openID, UserTelegramID: 1, Text: "first unread"})
+	if err != nil {
+		t.Fatalf("add first unread: %v", err)
+	}
+	if _, err := st.AddSupportMessage(ctx, SupportMessage{TicketID: openID, UserTelegramID: 1, Text: "second unread"}); err != nil {
+		t.Fatalf("add second unread: %v", err)
+	}
+	if _, err := st.AddSupportMessage(ctx, SupportMessage{TicketID: openID, UserTelegramID: 1, FromAdmin: true, Text: "admin reply"}); err != nil {
+		t.Fatalf("add admin reply: %v", err)
+	}
+	if _, err := st.db.ExecContext(ctx, `UPDATE support_messages SET created_at = ? WHERE id = ?`, formatTime(oldest), firstID); err != nil {
+		t.Fatalf("age first unread: %v", err)
+	}
+
+	if _, err := st.AddSupportMessage(ctx, SupportMessage{TicketID: readID, UserTelegramID: 2, Text: "already read"}); err != nil {
+		t.Fatalf("add read message: %v", err)
+	}
+	if err := st.MarkTicketReadByAdmin(ctx, readID); err != nil {
+		t.Fatalf("mark ticket read: %v", err)
+	}
+
+	if _, err := st.AddSupportMessage(ctx, SupportMessage{TicketID: closedID, UserTelegramID: 3, Text: "closed unread"}); err != nil {
+		t.Fatalf("add closed message: %v", err)
+	}
+	if _, err := st.CloseSupportTicket(ctx, closedID, "admin", time.Now()); err != nil {
+		t.Fatalf("close ticket: %v", err)
+	}
+
+	attention, err := st.ReadAdminSupportAttention(ctx)
+	if err != nil {
+		t.Fatalf("read support attention: %v", err)
+	}
+	if attention.Tickets != 1 || attention.UnreadMessages != 2 {
+		t.Fatalf("attention counts = %+v, want 1 ticket and 2 messages", attention)
+	}
+	if attention.OldestUnreadAt.IsZero() || !attention.OldestUnreadAt.Equal(oldest) {
+		t.Fatalf("oldest unread = %v, want %v", attention.OldestUnreadAt, oldest)
+	}
+}
+
 func TestListSupportTicketsAdminCapsClosed(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()

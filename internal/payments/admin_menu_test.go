@@ -20,13 +20,13 @@ func TestSendAdminMenu(t *testing.T) {
 	if m.ChatID != 1000 {
 		t.Fatalf("sent to %d, want adminID 1000", m.ChatID)
 	}
-	if m.Keyboard == nil || len(m.Keyboard.InlineKeyboard) != 18 {
-		t.Fatalf("expected 18 keyboard rows, got %+v", m.Keyboard)
+	if m.Keyboard == nil || len(m.Keyboard.InlineKeyboard) != 19 {
+		t.Fatalf("expected 19 keyboard rows, got %+v", m.Keyboard)
 	}
 	callbackData := func(row int) string {
 		return m.Keyboard.InlineKeyboard[row][0].CallbackData
 	}
-	for i, want := range []string{"adm:pending", "adm:stats", "adm:tariffs", "adm:addtariff", "adm:del_list", "adm:traffic_ext", "adm:req", "adm:gifts", "adm:setreq", "adm:shot_toggle", "adm:guard", "adm:squad", "adm:user", "adm:treset", "adm:trial", "adm:referral", "adm:upd", "adm:bcast"} {
+	for i, want := range []string{"adm:pending", "adm:stats", "adm:backup", "adm:tariffs", "adm:addtariff", "adm:del_list", "adm:traffic_ext", "adm:req", "adm:gifts", "adm:setreq", "adm:shot_toggle", "adm:guard", "adm:squad", "adm:user", "adm:treset", "adm:trial", "adm:referral", "adm:upd", "adm:bcast"} {
 		if callbackData(i) != want {
 			t.Errorf("row %d: got %q, want %q", i, callbackData(i), want)
 		}

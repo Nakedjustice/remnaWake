@@ -9,6 +9,11 @@ func init() {
 // enPayments translates the payments-package texts (user flows, admin flows,
 // gift/invite/register conversations, /stats). Merged into en at init.
 var enPayments = map[string]string{
+	"Есть непрочитанные обращения в поддержку":  "Support messages need a reply",
+	"Есть заблокированные регистрации":          "Registrations are blocked",
+	"Не удалось загрузить данные Remnawave":     "Remnawave data is unavailable",
+	"Не удалось проверить состояние прокси":     "Proxy health could not be checked",
+	"Не удалось прочитать состояние обновлений": "Update status could not be read",
 	// Action center (/pending): summary, drill-down lists, and the item
 	// titles it reuses from the Mini App action-center payload (those reach
 	// i18n.T as data, so they must be listed here explicitly).
@@ -42,11 +47,14 @@ var enPayments = map[string]string{
 	"Доступно обновление":                              "Update available",
 
 	// Database backup
-	"📦 Плановая резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.":                         "📦 Scheduled backup of the bot database. To restore: ./install.sh restore <file>.",
-	"📦 Резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.":                                  "📦 Backup of the bot database. To restore: ./install.sh restore <file>.",
+	"📦 Плановая резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.":                "📦 Scheduled backup of the bot database. To restore: ./install.sh restore <file>.",
+	"📦 Резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.":                         "📦 Backup of the bot database. To restore: ./install.sh restore <file>.",
+	"📦 Резервная копия базы данных бота. Извлеките файл .db из ZIP, затем выполните: ./install.sh restore <файл>.": "📦 Backup of the bot database. Extract the .db file from the ZIP, then run: ./install.sh restore <file>.",
+	"📦 Создать резервную копию": "📦 Create backup",
 	"⚠️ Резервная копия базы данных больше 50 МБ и не может быть отправлена в Telegram. Сделайте бэкап на сервере вручную.": "⚠️ The database backup exceeds 50 MB and cannot be sent via Telegram. Back up on the server manually.",
-	"Резервная копия не отправлена (dry-run).":                                                                              "Backup not sent (dry-run).",
-	"Не удалось создать резервную копию.":                                                                                   "Failed to create the backup.",
+	"Резервная копия не отправлена (dry-run).": "Backup not sent (dry-run).",
+	"Не удалось создать резервную копию.":      "Failed to create the backup.",
+	"Не удалось отправить резервную копию.":    "Failed to send the backup.",
 
 	// Auto-update
 	"🆕 Доступно обновление бота.\n\nТекущая версия: %s\nНовая версия: %s": "🆕 A bot update is available.\n\nCurrent version: %s\nNew version: %s",

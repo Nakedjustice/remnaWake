@@ -46,6 +46,7 @@ type Cabinet interface {
 // Every method re-checks that telegramID is an admin and returns
 // payments.ErrNotAdmin otherwise.
 type Admin interface {
+	AdminSendBackup(ctx context.Context, telegramID int64) error
 	AdminPanelData(ctx context.Context, telegramID int64) (*payments.WebAdminPanel, error)
 	AdminActionCenter(ctx context.Context, telegramID int64) (*payments.WebAdminActionCenter, error)
 	AdminStatsData(ctx context.Context, telegramID int64) (*payments.WebAdminStats, error)
@@ -147,6 +148,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/support/send", s.handleSupportSend)
 	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
+	mux.HandleFunc("POST /api/admin/backup", s.handleAdminBackup)
 	mux.HandleFunc("GET /api/admin/action-center", s.handleAdminActionCenter)
 	mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
 	mux.HandleFunc("GET /api/admin/analytics", s.handleAdminAnalytics)
@@ -679,6 +681,16 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 		writeJSONError(w, http.StatusConflict, "уже обработано")
 	case errors.Is(err, payments.ErrRegistrationGuardPatternExists):
 		writeJSONError(w, http.StatusConflict, "паттерн уже добавлен")
+	case errors.Is(err, payments.ErrBackupDryRun):
+		writeJSONError(w, http.StatusConflict, "резервная копия недоступна в dry-run")
+	case errors.Is(err, payments.ErrBackupTooLarge):
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "резервная копия больше 50 МБ")
+	case errors.Is(err, payments.ErrBackupCreate):
+		s.logger.Error("webapp: admin "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
+		writeJSONError(w, http.StatusInternalServerError, "не удалось создать резервную копию")
+	case errors.Is(err, payments.ErrBackupDelivery):
+		s.logger.Error("webapp: admin "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
+		writeJSONError(w, http.StatusInternalServerError, "не удалось отправить резервную копию")
 	case errors.Is(err, payments.ErrPanelCreateFailed):
 		s.logger.Error("webapp: admin "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusBadGateway, "ошибка создания пользователя в панели, попробуйте позже")
@@ -689,6 +701,18 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 		s.logger.Error("webapp: admin "+action+" failed", "err", err.Error(), "telegram_id", telegramID)
 		writeJSONError(w, http.StatusInternalServerError, "internal error, try again later")
 	}
+}
+
+func (s *Server) handleAdminBackup(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	if err := s.admin.AdminSendBackup(r.Context(), userID); err != nil {
+		s.writeAdminError(w, "send backup", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleAdminPanel(w http.ResponseWriter, r *http.Request) {
