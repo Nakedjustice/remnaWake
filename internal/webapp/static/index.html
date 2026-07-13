@@ -970,6 +970,9 @@ const EN = {
   'Управление': 'Management',
   'Статистика': 'Statistics',
   'Настройки': 'Settings',
+  'Резервная копия': 'Backup',
+  'Создаю архив…': 'Creating archive…',
+  'Резервная копия отправлена в чат с ботом.': 'Backup sent to your bot chat.',
   'Управление пользователями': 'Manage users',
   'Активные подарочные коды': 'Active gift codes',
   'Рассылка': 'Broadcast',
@@ -3645,6 +3648,7 @@ const ADMIN_ICONS = {
   ticket: ['M3 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2z', 'M13 5v2', 'M13 11v2', 'M13 17v2'],
   megaphone: ['M3 11l18-5v12L3 13', 'M11.6 16.8a3 3 0 1 1-5.8-1.6'],
   chat: ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'],
+  archive: ['M21 8v13H3V8', 'M1 3h22v5H1z', 'M10 12h4'],
   activity: ['M22 12h-4l-3 9L9 3l-3 9H2'],
 };
 
@@ -3885,6 +3889,7 @@ function renderAdminHome() {
     { icon: ADMIN_ICONS.barChart, label: t('Статистика'), action: showAdminStats },
     { icon: ADMIN_ICONS.server, label: t('Инфраструктура'), action: showAdminServers },
     { icon: ADMIN_ICONS.sliders, label: t('Настройки'), action: showAdminSettings },
+    { icon: ADMIN_ICONS.archive, label: t('Резервная копия'), action: event => sendAdminBackup(event.currentTarget) },
     { icon: ADMIN_ICONS.users, label: t('Управление пользователями'), action: showUserAdmin },
     { icon: ADMIN_ICONS.ticket, label: t('Активные подарочные коды'), action: showAdminGiftCodes },
     { icon: ADMIN_ICONS.megaphone, label: t('Рассылка'), action: showAdminBroadcast },
@@ -3898,6 +3903,16 @@ function renderAdminHome() {
 
   statusEl.hidden = true;
   appEl.hidden = false;
+}
+
+async function sendAdminBackup(button) {
+  try {
+    await withButtonLoading(button, t('Создаю архив…'), () =>
+      api('/api/admin/backup', { method: 'POST', body: '{}' }));
+    tg.showAlert(t('Резервная копия отправлена в чат с ботом.'));
+  } catch (e) {
+    tg.showAlert(e.message);
+  }
 }
 
 function showAdminBilling() {

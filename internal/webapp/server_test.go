@@ -256,6 +256,11 @@ type fakeAdmin struct {
 	calls        []adminCall
 }
 
+func (f *fakeAdmin) AdminSendBackup(_ context.Context, tgID int64) error {
+	f.calls = append(f.calls, adminCall{Name: "backup", A: tgID})
+	return f.err
+}
+
 func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.WebAdminPanel, error) {
 	f.calls = append(f.calls, adminCall{Name: "panel", A: tgID})
 	return f.panel, f.err
@@ -703,6 +708,48 @@ func TestHandleAdminScreenshotToggle(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != 403 {
 		t.Fatalf("status = %d, want 403; body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleAdminBackup(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/backup", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "backup" || adm.calls[0].A != 42 {
+		t.Fatalf("unexpected admin calls: %+v", adm.calls)
+	}
+
+	unauthenticated := httptest.NewRequest(http.MethodPost, "/api/admin/backup", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, unauthenticated)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("missing initData: status=%d want=%d body=%s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+
+	for _, tc := range []struct {
+		err  error
+		want int
+	}{
+		{payments.ErrNotAdmin, http.StatusForbidden},
+		{payments.ErrBackupDryRun, http.StatusConflict},
+		{payments.ErrBackupTooLarge, http.StatusRequestEntityTooLarge},
+		{payments.ErrBackupCreate, http.StatusInternalServerError},
+		{payments.ErrBackupDelivery, http.StatusInternalServerError},
+	} {
+		srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: tc.err})
+		req := httptest.NewRequest(http.MethodPost, "/api/admin/backup", nil)
+		req.Header.Set("Authorization", validAuth(t))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Fatalf("err=%v: status=%d want=%d body=%s", tc.err, w.Code, tc.want, w.Body.String())
+		}
 	}
 }
 
@@ -1392,6 +1439,11 @@ func TestServesIndex(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "Личный кабинет") {
 		t.Fatalf("index not served: status=%d", w.Code)
+	}
+	for _, want := range []string{"Резервная копия", "/api/admin/backup", "Создаю архив…", "Backup sent to your bot chat."} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("index missing manual-backup UI marker %q", want)
+		}
 	}
 }
 
