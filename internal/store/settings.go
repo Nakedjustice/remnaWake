@@ -34,6 +34,13 @@ func (s *Store) UpsertSetting(ctx context.Context, key, value string) error {
 
 // UpsertSettings updates a related group of settings in one transaction.
 func (s *Store) UpsertSettings(ctx context.Context, values map[string]string) error {
+	return s.UpdateSettings(ctx, values, nil)
+}
+
+// UpdateSettings atomically upserts values and removes deleteKeys. It is used
+// when a configuration change must invalidate related persisted state in the
+// same transaction.
+func (s *Store) UpdateSettings(ctx context.Context, values map[string]string, deleteKeys []string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -52,6 +59,13 @@ func (s *Store) UpsertSettings(ctx context.Context, values map[string]string) er
 			VALUES (?, ?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
 		`, key, values[key], now); err != nil {
+			return err
+		}
+	}
+	deleteKeys = append([]string(nil), deleteKeys...)
+	sort.Strings(deleteKeys)
+	for _, key := range deleteKeys {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, key); err != nil {
 			return err
 		}
 	}

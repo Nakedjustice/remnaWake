@@ -209,6 +209,7 @@ const (
 	adminInputSupportReply
 	adminInputUpdateInterval
 	adminInputRegistrationGuardPattern
+	adminInputBackupInterval
 )
 
 type adminInputState struct {
@@ -304,8 +305,8 @@ type Service struct {
 	logger      *slog.Logger
 	now         func() time.Time
 
-	// Scheduled database backup (SetBackupConfig; set once before the
-	// scheduler starts, read-only afterwards).
+	// Scheduled database backup. Environment values seed this runtime cache;
+	// persisted admin settings take precedence and can update it safely.
 	backupEnabled      bool
 	backupIntervalDays int
 
@@ -457,33 +458,34 @@ const (
 
 func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater UserUpdater, finder Finder, registrar Registrar, squads SquadLister, adminIDs []int64, currency string, dryRun bool, logger *slog.Logger) *Service {
 	s := &Service{
-		store:           st,
-		bot:             bot,
-		extender:        ext,
-		creator:         creator,
-		userUpdater:     updater,
-		registrar:       registrar,
-		finder:          finder,
-		squads:          squads,
-		adminIDs:        adminIDs,
-		currency:        currency,
-		dryRun:          dryRun,
-		logger:          logger,
-		now:             time.Now,
-		updateDelay:     time.Second,
-		invites:         make(map[int64]*inviteState),
-		registers:       make(map[int64]*registerState),
-		giftCodes:       make(map[int64]*giftCodeState),
-		redeems:         make(map[int64]*redeemState),
-		payPhotos:       make(map[int64]*payPhotoState),
-		userCtl:         make(map[int64]*userCtlState),
-		supportSessions: make(map[int64]bool),
-		adminInput:      make(map[int64]adminInputState),
-		payMsgs:         make(map[int64]adminMsgEntry),
-		inviteMsgs:      make(map[int64]adminMsgEntry),
-		giftMsgs:        make(map[int64]adminMsgEntry),
-		trialReqMsgs:    make(map[int64]adminMsgEntry),
-		trials:          make(map[int64]*trialState),
+		store:              st,
+		bot:                bot,
+		extender:           ext,
+		creator:            creator,
+		userUpdater:        updater,
+		registrar:          registrar,
+		finder:             finder,
+		squads:             squads,
+		adminIDs:           adminIDs,
+		currency:           currency,
+		dryRun:             dryRun,
+		logger:             logger,
+		now:                time.Now,
+		backupIntervalDays: 1,
+		updateDelay:        time.Second,
+		invites:            make(map[int64]*inviteState),
+		registers:          make(map[int64]*registerState),
+		giftCodes:          make(map[int64]*giftCodeState),
+		redeems:            make(map[int64]*redeemState),
+		payPhotos:          make(map[int64]*payPhotoState),
+		userCtl:            make(map[int64]*userCtlState),
+		supportSessions:    make(map[int64]bool),
+		adminInput:         make(map[int64]adminInputState),
+		payMsgs:            make(map[int64]adminMsgEntry),
+		inviteMsgs:         make(map[int64]adminMsgEntry),
+		giftMsgs:           make(map[int64]adminMsgEntry),
+		trialReqMsgs:       make(map[int64]adminMsgEntry),
+		trials:             make(map[int64]*trialState),
 	}
 	// Load persisted payment requisites into the in-memory cache so the user
 	// flow never needs a DB read on each button tap.

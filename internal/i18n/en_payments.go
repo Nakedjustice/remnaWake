@@ -47,6 +47,12 @@ var enPayments = map[string]string{
 	"Доступно обновление":                              "Update available",
 
 	// Database backup
+	"💾 Резервные копии": "💾 Database backups",
+	"💾 Резервные копии базы данных\n\nСтатус: %s\nИнтервал: каждые %d %s\nВремя запуска: общее расписание RUN_AT.": "💾 Database backups\n\nStatus: %s\nInterval: every %d %s\nRun time: shared RUN_AT schedule.",
+	"включены":  "enabled",
+	"выключены": "disabled",
+	"✏️ Другой интервал": "✏️ Custom interval",
+	"Введите интервал резервного копирования в днях (целое ≥ 1):": "Enter the backup interval in days (integer ≥ 1):",
 	"📦 Плановая резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.":                         "📦 Scheduled backup of the bot database. To restore: ./install.sh restore <file>.",
 	"📦 Резервная копия базы данных бота. Для восстановления: ./install.sh restore <файл>.":                                  "📦 Backup of the bot database. To restore: ./install.sh restore <file>.",
 	"⚠️ Резервная копия базы данных больше 50 МБ и не может быть отправлена в Telegram. Сделайте бэкап на сервере вручную.": "⚠️ The database backup exceeds 50 MB and cannot be sent via Telegram. Back up on the server manually.",

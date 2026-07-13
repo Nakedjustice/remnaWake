@@ -139,6 +139,8 @@ func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 		return s.consumeUpdateInterval(ctx, chatID, text)
 	case adminInputRegistrationGuardPattern:
 		return s.consumeRegistrationGuardPattern(ctx, chatID, text)
+	case adminInputBackupInterval:
+		return s.consumeBackupInterval(ctx, chatID, text)
 	}
 	return false
 }
@@ -272,6 +274,7 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 		{{Text: i18n.T("🎁 Пробный период"), CallbackData: "adm:trial"}},
 		{{Text: i18n.T("🎉 Реферальная программа"), CallbackData: "adm:referral"}},
 		{{Text: i18n.T("🔄 Обновления бота"), CallbackData: "adm:upd"}},
+		{{Text: i18n.T("💾 Резервные копии"), CallbackData: "adm:backup"}},
 		{{Text: i18n.T("📢 Рассылка всем"), CallbackData: "adm:bcast"}},
 	}
 	// The payment-provider picker is only meaningful when at least one automatic

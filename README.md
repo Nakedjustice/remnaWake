@@ -519,8 +519,8 @@ docker compose restart caddy    # in your caddy directory
 | `REFERRAL_ENABLED`     | no       | `false`          | Reward approved invites with bonus days for inviter and/or invitee          |
 | `REFERRAL_INVITER_BONUS_DAYS` | no | `30`            | Bonus days added to the inviter's own subscription per approved invite      |
 | `REFERRAL_INVITEE_BONUS_DAYS` | no | `0`             | Extra days granted to the invited user on top of the 1-month invite term    |
-| `DB_BACKUP_ENABLED`    | no       | `false`          | DM a copy of the bot database to every admin during the daily run           |
-| `DB_BACKUP_INTERVAL_DAYS` | no    | `1`              | Minimum days between scheduled database backups (positive integer)          |
+| `DB_BACKUP_ENABLED`    | no       | `false`          | Initial scheduled-backup state; a saved admin-menu override takes precedence |
+| `DB_BACKUP_INTERVAL_DAYS` | no    | `1`              | Initial interval in days; a saved admin-menu override takes precedence       |
 
 ## 🚀 Running
 
@@ -579,7 +579,11 @@ for rewrites and `./install.sh backup` to create timestamped config backups.
 With `DB_BACKUP_ENABLED=true` the bot DMs every admin a compacted copy of its
 SQLite database (`remnawake-backup-<date>.db`) during the daily run, at most
 once per `DB_BACKUP_INTERVAL_DAYS` days. Admins can also request a copy anytime
-with `/backup`. To roll a server back to a saved file:
+with `/backup`. The environment values seed the initial schedule; **Admin menu
+→ 💾 Database backups** can enable or disable it and select a 1/3/7/30-day or
+custom interval. Saved menu settings take precedence after restarts. Enabling
+or changing an active interval makes a backup due at the next daily `RUN_AT`
+without sending one immediately. To roll a server back to a saved file:
 
 ```bash
 ./install.sh restore /path/to/remnawake-backup-2026-07-05-0900.db
