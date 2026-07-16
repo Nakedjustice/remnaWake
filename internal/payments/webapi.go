@@ -632,9 +632,9 @@ func (s *Service) CreateInviteRequest(ctx context.Context, telegramID int64, use
 	if !s.isEnabled() || s.creator == nil {
 		return ErrPaymentsDisabled
 	}
-	username = strings.TrimSpace(username)
-	if !isValidUsername(username) {
-		return ErrBadInput
+	username, err := normalizeProfileUsername(username)
+	if err != nil {
+		return err
 	}
 	subs, err := s.finder.FindByTelegramID(ctx, telegramID)
 	if err != nil {

@@ -311,6 +311,8 @@ func (s *Service) handleGiftCodeApprove(ctx context.Context, cb *tg.CallbackQuer
 // invite admin actions to callback answer texts.
 func resolveErrorText(err error) string {
 	switch {
+	case errors.Is(err, ErrInvalidUsername):
+		return i18n.T("Некорректное имя профиля. Пользователю нужно отправить новую заявку.")
 	case errors.Is(err, ErrRequestNotFound):
 		return i18n.T("Заявка не найдена.")
 	case errors.Is(err, ErrRequestResolved):

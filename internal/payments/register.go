@@ -62,7 +62,7 @@ func (s *Service) RegisterProfile(ctx context.Context, telegramID int64, query s
 		}
 		sub, err = s.finder.FindByShortUUID(ctx, short)
 	} else {
-		if !isValidUsername(query) {
+		if !isValidProfileLookupUsername(query) {
 			return nil, ErrInvalidProfileQuery
 		}
 		sub, err = s.finder.FindByUsername(ctx, query)
@@ -168,7 +168,7 @@ func (s *Service) handleRegisterUsernameInput(ctx context.Context, m *tg.Message
 		return true
 	}
 
-	if !isValidUsername(text) {
+	if !isValidProfileLookupUsername(text) {
 		_ = s.bot.SendPlain(ctx, chatID,
 			i18n.T("Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов."))
 		return true

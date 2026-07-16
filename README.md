@@ -31,7 +31,8 @@ extends the subscription by the chosen number of months.
   creates a shaped trial profile once per Telegram ID, with configurable
   duration, total traffic, HWID/device limit, and an optional dedicated squad
   (`TRIAL_ENABLED`). Admins can change all trial settings at runtime from the
-  bot admin menu or the Mini App admin panel.
+  bot admin menu or the Mini App admin panel. New profile names must contain
+  3–36 ASCII characters: Latin letters, digits, `_`, or `-`, with no spaces.
 - 🎉 **Referral bonus** (optional) — an approved invite grants bonus days to the
   inviter and/or the invitee (`REFERRAL_ENABLED`). Runtime-configurable from the
   bot admin menu and the Mini App admin panel.
@@ -214,7 +215,8 @@ A gift needs no recipient up front — the buyer gets a transferable code:
 4. The recipient opens it (or sends `/start gift_<CODE>`): an existing linked
    profile is **extended**; otherwise the bot asks for a username, **creates** a
    profile, links their Telegram and sends the subscription URL (clock starts at
-   activation).
+   activation). A new profile name must be 3–36 ASCII characters: Latin letters,
+   digits, `_`, or `-`, with no spaces.
 5. The buyer is notified on activation.
 
 Each code is strictly **single-use** (atomic DB claim — no double-spend),
@@ -227,7 +229,8 @@ may start `/gift`; every purchase is admin-gated. Check anytime with `/mygifts`
 Any subscriber can request a new Remnawave account:
 
 1. Send `/invite`.
-2. Enter the desired **username** (3–32 chars, letters / digits / underscore).
+2. Enter the desired **username** (3–36 ASCII characters: Latin letters, digits,
+   `_`, or `-`; no spaces).
 3. The bot shows the cost (1-month tariff) + **«Отправить заявку»** (`/cancel`
    aborts).
 4. The admin gets **«✅ Одобрить»** / **«❌ Отклонить»**; on approval the bot
@@ -519,8 +522,8 @@ docker compose restart caddy    # in your caddy directory
 | `REFERRAL_ENABLED`     | no       | `false`          | Reward approved invites with bonus days for inviter and/or invitee          |
 | `REFERRAL_INVITER_BONUS_DAYS` | no | `30`            | Bonus days added to the inviter's own subscription per approved invite      |
 | `REFERRAL_INVITEE_BONUS_DAYS` | no | `0`             | Extra days granted to the invited user on top of the 1-month invite term    |
-| `DB_BACKUP_ENABLED`    | no       | `false`          | DM a copy of the bot database to every admin during the daily run           |
-| `DB_BACKUP_INTERVAL_DAYS` | no    | `1`              | Minimum days between scheduled database backups (positive integer)          |
+| `DB_BACKUP_ENABLED`    | no       | `false`          | Initial scheduled-backup state; a saved admin-menu override takes precedence |
+| `DB_BACKUP_INTERVAL_DAYS` | no    | `1`              | Initial interval in days; a saved admin-menu override takes precedence       |
 
 ## 🚀 Running
 
@@ -581,7 +584,11 @@ SQLite database (`remnawake-backup-<date>.db`) during the daily run, at most
 once per `DB_BACKUP_INTERVAL_DAYS` days. Admins can also request a ZIP archive
 anytime with `/backup`, the Telegram `/admin` menu, or the Mini App admin hub;
 the bot sends it to the requesting admin's chat. Extract the `.db` file before
-restoring it:
+restoring it. The environment values seed the initial schedule; **Admin menu
+→ 💾 Database backups** can enable or disable it and select a 1/3/7/30-day or
+custom interval. Saved menu settings take precedence after restarts. Enabling
+or changing an active interval makes a backup due at the next daily `RUN_AT`
+without sending one immediately:
 
 ```bash
 ./install.sh restore /path/to/remnawake-backup-2026-07-05-0900.db

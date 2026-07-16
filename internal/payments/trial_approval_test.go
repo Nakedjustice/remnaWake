@@ -131,6 +131,33 @@ func TestRejectTrialRequestIsFinal(t *testing.T) {
 	}
 }
 
+func TestApproveLegacyInvalidTrialRejectsAndReleasesClaim(t *testing.T) {
+	svc, st, creator, _ := webTrialFixture(t, &fakeFinder{})
+	enableTrialWithApproval(svc)
+	ctx := context.Background()
+
+	if ok, err := st.ClaimTrial(ctx, 555, "профиль", svc.now()); err != nil || !ok {
+		t.Fatalf("seed trial claim: ok=%v err=%v", ok, err)
+	}
+	reqID, err := st.CreateTrialRequest(ctx, 555, "профиль", svc.now())
+	if err != nil {
+		t.Fatalf("seed legacy trial request: %v", err)
+	}
+
+	if _, _, _, err := svc.approveTrialRequest(ctx, reqID); !errors.Is(err, ErrInvalidUsername) {
+		t.Fatalf("approve invalid legacy request err=%v, want ErrInvalidUsername", err)
+	}
+	if len(creator.created) != 0 {
+		t.Fatalf("invalid legacy request reached profile creator: %+v", creator.created)
+	}
+	if req, _ := st.GetTrialRequest(ctx, reqID); req == nil || req.Status != "rejected" {
+		t.Fatalf("invalid legacy request was not rejected: %+v", req)
+	}
+	if ok, err := st.ClaimTrial(ctx, 555, "corrected-name", svc.now()); err != nil || !ok {
+		t.Fatalf("invalid legacy request did not release trial claim: ok=%v err=%v", ok, err)
+	}
+}
+
 func TestSetTrialApprovalPersists(t *testing.T) {
 	svc, _, _, _ := newTestService(t) // admin 1000
 	ctx := context.Background()

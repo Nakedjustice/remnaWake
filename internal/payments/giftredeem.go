@@ -105,7 +105,7 @@ func (s *Service) StartGiftRedemption(ctx context.Context, chatID int64, rawCode
 		st.awaitingUsername = true
 		s.setRedeem(chatID, st)
 		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
-			i18n.T("🎁 Вам подарили подписку на %d мес.!\n\nВведите желаемое имя пользователя для вашего профиля (буквы, цифры и «_», от 3 до 32 символов). /cancel — отмена."),
+			i18n.T("🎁 Вам подарили подписку на %d мес.!\n\nВведите имя профиля: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов. /cancel — отмена."),
 			g.Months))
 	case 1:
 		// Existing subscriber: ask for confirmation so an accidental tap on
@@ -183,12 +183,12 @@ func (s *Service) handleRedeemUsernameInput(ctx context.Context, m *tg.Message) 
 
 	text := strings.TrimSpace(m.Text)
 	if strings.HasPrefix(text, "/") {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите имя пользователя или /cancel для отмены."))
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите имя профиля: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов. /cancel — отмена."))
 		return true
 	}
-	if !isValidUsername(text) {
+	if !isValidNewProfileUsername(text) {
 		_ = s.bot.SendPlain(ctx, chatID,
-			i18n.T("Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов."))
+			i18n.T("Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов."))
 		return true
 	}
 
@@ -299,9 +299,9 @@ func (s *Service) RedeemGift(ctx context.Context, telegramID int64, rawCode stri
 	}
 	st := &redeemState{giftID: g.ID, code: g.Code, months: g.Months, createdAt: s.now()}
 	if len(subs) == 0 {
-		username = strings.TrimSpace(username)
-		if !isValidUsername(username) {
-			return nil, ErrInvalidProfileQuery
+		username, err = normalizeProfileUsername(username)
+		if err != nil {
+			return nil, err
 		}
 		existing, err := s.finder.FindByUsername(ctx, username)
 		if err != nil {
@@ -346,6 +346,10 @@ func (s *Service) redeemGiftExtend(ctx context.Context, telegramID int64, st *re
 func (s *Service) redeemGiftCreate(ctx context.Context, telegramID int64, st *redeemState, username string) (*WebGiftRedemptionResult, error) {
 	if s.creator == nil {
 		return nil, ErrPanelCreateFailed
+	}
+	username, err := normalizeProfileUsername(username)
+	if err != nil {
+		return nil, err
 	}
 	ok, err := s.store.RedeemGiftCode(ctx, st.code, telegramID, username, s.now())
 	if err != nil {

@@ -29,3 +29,27 @@ func TestSettingsUpsertAndGet(t *testing.T) {
 		t.Fatalf("get after update: got=%q found=%v err=%v", got, found, err)
 	}
 }
+
+func TestUpdateSettingsUpsertsAndDeletesAtomically(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.UpsertSetting(ctx, "old", "value"); err != nil {
+		t.Fatalf("seed old setting: %v", err)
+	}
+
+	if err := st.UpdateSettings(ctx, map[string]string{
+		"enabled":  "1",
+		"interval": "7",
+	}, []string{"old"}); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+	if _, found, err := st.GetSetting(ctx, "old"); err != nil || found {
+		t.Fatalf("deleted setting: found=%v err=%v", found, err)
+	}
+	for key, want := range map[string]string{"enabled": "1", "interval": "7"} {
+		got, found, err := st.GetSetting(ctx, key)
+		if err != nil || !found || got != want {
+			t.Fatalf("%s: got=%q found=%v err=%v", key, got, found, err)
+		}
+	}
+}

@@ -167,7 +167,8 @@ func TestRedeemCreatesNewProfile(t *testing.T) {
 	g := issueGift(t, st, 555, 2)
 
 	svc.StartGiftRedemption(ctx, 700, g.Code)
-	if !strings.Contains(bot.sent[len(bot.sent)-1].Text, "имя пользователя") {
+	prompt := bot.sent[len(bot.sent)-1].Text
+	if !strings.Contains(prompt, "A–Z/a–z") || !strings.Contains(prompt, "36") {
 		t.Fatalf("expected username prompt: %+v", bot.sent)
 	}
 
