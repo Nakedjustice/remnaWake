@@ -20,13 +20,13 @@ func TestSendAdminMenu(t *testing.T) {
 	if m.ChatID != 1000 {
 		t.Fatalf("sent to %d, want adminID 1000", m.ChatID)
 	}
-	if m.Keyboard == nil || len(m.Keyboard.InlineKeyboard) != 19 {
-		t.Fatalf("expected 19 keyboard rows, got %+v", m.Keyboard)
+	if m.Keyboard == nil || len(m.Keyboard.InlineKeyboard) != 20 {
+		t.Fatalf("expected 20 keyboard rows, got %+v", m.Keyboard)
 	}
 	callbackData := func(row int) string {
 		return m.Keyboard.InlineKeyboard[row][0].CallbackData
 	}
-	for i, want := range []string{"adm:pending", "adm:stats", "adm:tariffs", "adm:addtariff", "adm:del_list", "adm:traffic_ext", "adm:req", "adm:gifts", "adm:setreq", "adm:shot_toggle", "adm:guard", "adm:squad", "adm:user", "adm:treset", "adm:trial", "adm:referral", "adm:upd", "adm:backup", "adm:bcast"} {
+	for i, want := range []string{"adm:pending", "adm:stats", "adm:backup", "adm:tariffs", "adm:addtariff", "adm:del_list", "adm:traffic_ext", "adm:req", "adm:gifts", "adm:setreq", "adm:shot_toggle", "adm:guard", "adm:squad", "adm:user", "adm:treset", "adm:trial", "adm:referral", "adm:upd", "adm:backup_settings", "adm:bcast"} {
 		if callbackData(i) != want {
 			t.Errorf("row %d: got %q, want %q", i, callbackData(i), want)
 		}
@@ -179,7 +179,7 @@ func TestAdmDelTariffCallback(t *testing.T) {
 
 func TestAdmCallbacksIgnoreNonAdmin(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
-	for _, data := range []string{"adm:menu", "adm:tariffs", "adm:req", "adm:del_list", "adm:guard", "adm:backup"} {
+	for _, data := range []string{"adm:menu", "adm:tariffs", "adm:req", "adm:del_list", "adm:guard", "adm:backup", "adm:backup_settings"} {
 		bot.sent = nil
 		cb := &tg.CallbackQuery{ID: "cb1", From: tg.User{ID: 9999}, Data: data}
 		if !svc.HandleCallback(context.Background(), cb) {

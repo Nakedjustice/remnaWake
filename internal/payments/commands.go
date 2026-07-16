@@ -259,6 +259,7 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 	rows := [][]tg.InlineKeyboardButton{
 		{{Text: i18n.T("🚨 Центр действий"), CallbackData: "adm:pending"}},
 		{{Text: i18n.T("📊 Статистика"), CallbackData: "adm:stats"}},
+		{{Text: i18n.T("📦 Создать резервную копию"), CallbackData: "adm:backup"}},
 		{{Text: i18n.T("📋 Посмотреть тарифы"), CallbackData: "adm:tariffs"}},
 		{{Text: i18n.T("➕ Добавить тариф"), CallbackData: "adm:addtariff"}},
 		{{Text: i18n.T("❌ Удалить тариф"), CallbackData: "adm:del_list"}},
@@ -274,7 +275,7 @@ func (s *Service) SendAdminMenu(ctx context.Context, chatID int64) {
 		{{Text: i18n.T("🎁 Пробный период"), CallbackData: "adm:trial"}},
 		{{Text: i18n.T("🎉 Реферальная программа"), CallbackData: "adm:referral"}},
 		{{Text: i18n.T("🔄 Обновления бота"), CallbackData: "adm:upd"}},
-		{{Text: i18n.T("💾 Резервные копии"), CallbackData: "adm:backup"}},
+		{{Text: i18n.T("💾 Резервные копии"), CallbackData: "adm:backup_settings"}},
 		{{Text: i18n.T("📢 Рассылка всем"), CallbackData: "adm:bcast"}},
 	}
 	// The payment-provider picker is only meaningful when at least one automatic

@@ -161,9 +161,9 @@ The bot chat and Mini App both support this step. JPEG/PNG photos are limited to
 | `/requisites`                 | Show the saved payment requisites |
 | `/stats`                      | 📊 Panel users, 30-day payments & revenue, pending requests, gift codes, pending invites |
 | `/pending`                    | 🚨 Action center: pending payments/gifts/invites/trials with inline ✅/❌ buttons, plus panel/proxy/infra/update alerts |
-| `/backup`                     | 📦 Send a backup of the bot database (`.db` file) to your DM |
+| `/backup`                     | 📦 Send a ZIP archive containing the bot database to your DM |
 
-The **`/admin`** menu also offers 📊 statistics, a 🎁 gift-codes browser (by
+The **`/admin`** menu also offers one-tap 📦 database backup, 📊 statistics, a 🎁 gift-codes browser (by
 buyer → used/not-used → individual codes, with one-tap revoke), and a
 🛡 **default-squad** picker for new users created via `/gift` and `/invite`
 (falls back to the stock `Default-Squad`; user creation fails visibly if no
@@ -578,12 +578,14 @@ for rewrites and `./install.sh backup` to create timestamped config backups.
 
 With `DB_BACKUP_ENABLED=true` the bot DMs every admin a compacted copy of its
 SQLite database (`remnawake-backup-<date>.db`) during the daily run, at most
-once per `DB_BACKUP_INTERVAL_DAYS` days. Admins can also request a copy anytime
-with `/backup`. The environment values seed the initial schedule; **Admin menu
+once per `DB_BACKUP_INTERVAL_DAYS` days. Admins can also request a ZIP archive
+anytime with `/backup`, the Telegram `/admin` menu, or the Mini App admin hub;
+the bot sends it to the requesting admin's chat. Extract the `.db` file before
+restoring it. The environment values seed the initial schedule; **Admin menu
 → 💾 Database backups** can enable or disable it and select a 1/3/7/30-day or
 custom interval. Saved menu settings take precedence after restarts. Enabling
 or changing an active interval makes a backup due at the next daily `RUN_AT`
-without sending one immediately. To roll a server back to a saved file:
+without sending one immediately:
 
 ```bash
 ./install.sh restore /path/to/remnawake-backup-2026-07-05-0900.db

@@ -1,8 +1,10 @@
 package payments
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -58,6 +60,28 @@ func TestScheduledBackupSendsToAllAdmins(t *testing.T) {
 	if _, found, err := st.GetSetting(ctx, "db_backup_last_at"); err != nil || !found {
 		t.Fatalf("db_backup_last_at not written: found=%v err=%v", found, err)
 	}
+}
+
+func backupZIPEntry(t *testing.T, data []byte) (string, []byte) {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("open backup ZIP: %v", err)
+	}
+	if len(zr.File) != 1 {
+		t.Fatalf("ZIP entries = %d, want 1", len(zr.File))
+	}
+	f := zr.File[0]
+	r, err := f.Open()
+	if err != nil {
+		t.Fatalf("open ZIP entry: %v", err)
+	}
+	defer r.Close()
+	payload, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read ZIP entry: %v", err)
+	}
+	return f.Name, payload
 }
 
 func TestScheduledBackupDisabledByDefault(t *testing.T) {
@@ -250,8 +274,8 @@ func TestBackupAdminCardAndPreset(t *testing.T) {
 	svc.InitBackupConfig(false, 3)
 	ctx := context.Background()
 
-	if !svc.HandleCallback(ctx, &tg.CallbackQuery{ID: "cb", From: tg.User{ID: 1000}, Data: "adm:backup"}) {
-		t.Fatal("adm:backup should be handled")
+	if !svc.HandleCallback(ctx, &tg.CallbackQuery{ID: "cb", From: tg.User{ID: 1000}, Data: "adm:backup_settings"}) {
+		t.Fatal("adm:backup_settings should be handled")
 	}
 	if len(bot.sent) != 1 || bot.sent[0].Keyboard == nil {
 		t.Fatalf("expected backup settings card: %+v", bot.sent)
@@ -359,11 +383,44 @@ func TestBackupCommandSendsToRequestingAdminOnly(t *testing.T) {
 	if len(bot.docs) != 1 || bot.docs[0].ChatID != 1000 {
 		t.Fatalf("document went to %+v, want chat 1000", bot.docs)
 	}
-	if !bytes.HasPrefix(bot.docUploadData[0], sqliteMagic) {
-		t.Fatal("/backup upload is not a SQLite file")
+	if filepath.Ext(bot.docUploadNames[0]) != ".zip" {
+		t.Fatalf("/backup filename = %q, want .zip", bot.docUploadNames[0])
+	}
+	entryName, entryData := backupZIPEntry(t, bot.docUploadData[0])
+	if filepath.Ext(entryName) != ".db" || !bytes.HasPrefix(entryData, sqliteMagic) {
+		t.Fatalf("/backup ZIP entry %q is not a SQLite database", entryName)
 	}
 	if _, found, _ := st.GetSetting(ctx, "db_backup_last_at"); found {
 		t.Fatal("/backup must not touch the scheduled-backup stamp")
+	}
+}
+
+func TestBackupAdminMenuCallbackSendsZIPToRequestingAdmin(t *testing.T) {
+	svc, bot, st := newBackupTestService(t, []int64{1000, 2000}, false)
+	ctx := context.Background()
+
+	if !svc.HandleCallback(ctx, cbq(1000, "adm:backup")) {
+		t.Fatal("expected adm:backup to be handled for an admin")
+	}
+	if bot.documentUploads != 1 || len(bot.docs) != 1 || bot.docs[0].ChatID != 1000 {
+		t.Fatalf("document went to %+v, want only chat 1000", bot.docs)
+	}
+	entryName, entryData := backupZIPEntry(t, bot.docUploadData[0])
+	if filepath.Ext(entryName) != ".db" || !bytes.HasPrefix(entryData, sqliteMagic) {
+		t.Fatalf("callback ZIP entry %q is not a SQLite database", entryName)
+	}
+	if _, found, _ := st.GetSetting(ctx, settingBackupLastAt); found {
+		t.Fatal("manual callback must not touch the scheduled-backup stamp")
+	}
+}
+
+func TestBackupAdminMenuCallbackRejectedForNonAdmin(t *testing.T) {
+	svc, bot, _ := newBackupTestService(t, []int64{1000}, false)
+	if !svc.HandleCallback(context.Background(), cbq(2222, "adm:backup")) {
+		t.Fatal("non-admin callback should be handled as rejected")
+	}
+	if bot.documentUploads != 0 {
+		t.Fatalf("documentUploads = %d, want 0", bot.documentUploads)
 	}
 }
 
@@ -404,5 +461,32 @@ func TestBackupOversizeSendsWarningInsteadOfDocument(t *testing.T) {
 	}
 	if len(bot.sent) == 0 {
 		t.Fatal("expected a warning message for oversize backup")
+	}
+}
+
+func TestManualBackupOversizeSendsWarningInsteadOfDocument(t *testing.T) {
+	svc, bot, _ := newBackupTestService(t, []int64{1000}, false)
+	old := maxBackupUploadBytes
+	maxBackupUploadBytes = 16
+	t.Cleanup(func() { maxBackupUploadBytes = old })
+
+	if !svc.HandleAdminCommand(context.Background(), msg(1000, "/backup")) {
+		t.Fatal("expected /backup to be handled")
+	}
+	if bot.documentUploads != 0 {
+		t.Fatalf("documentUploads = %d, want 0 for oversize ZIP", bot.documentUploads)
+	}
+	if len(bot.sent) == 0 {
+		t.Fatal("expected a warning message for oversize ZIP")
+	}
+}
+
+func TestAdminSendBackupReportsDeliveryFailure(t *testing.T) {
+	svc, bot, _ := newBackupTestService(t, []int64{1000}, false)
+	bot.sendErrs = map[int64]error{1000: io.ErrClosedPipe}
+
+	err := svc.AdminSendBackup(context.Background(), 1000)
+	if !errors.Is(err, ErrBackupDelivery) {
+		t.Fatalf("AdminSendBackup error = %v, want ErrBackupDelivery", err)
 	}
 }

@@ -799,6 +799,8 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.sendAdminTariffs(ctx, chatID)
 	case cb.Data == "adm:stats":
 		s.sendAdminStats(ctx, chatID)
+	case cb.Data == "adm:backup":
+		s.cmdBackup(ctx, chatID)
 	case cb.Data == "adm:del_list":
 		s.sendAdminDelList(ctx, chatID)
 	case cb.Data == "adm:traffic_ext":
@@ -895,7 +897,7 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.manualUpdateCheck(ctx, chatID)
 	case cb.Data == "adm:upd:interval":
 		s.startUpdateIntervalInput(ctx, chatID)
-	case cb.Data == "adm:backup":
+	case cb.Data == "adm:backup_settings":
 		s.sendBackupSettings(ctx, chatID)
 	case cb.Data == "adm:backup:toggle":
 		s.handleBackupToggle(ctx, chatID)

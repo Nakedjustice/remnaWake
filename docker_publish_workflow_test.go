@@ -14,7 +14,7 @@ func TestDockerPublishWorkflowSeparatesMainAndDevPackages(t *testing.T) {
 	src := string(b)
 	for _, want := range []string{
 		`branches: [ "main", "dev" ]`,
-		`github.ref_name == 'dev' || github.base_ref == 'dev'`,
+		`github.ref_name == 'dev' || github.event.pull_request.base.ref == 'dev'`,
 		`format('{0}-dev', github.repository)`,
 		`type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}`,
 	} {
