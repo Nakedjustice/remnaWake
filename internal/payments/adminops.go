@@ -13,8 +13,11 @@ import (
 // Errors returned by admin operations, mapped to HTTP statuses by the webapp
 // handler and to callback answers by the bot.
 var (
-	ErrNotAdmin        = errors.New("not an admin")
-	ErrBadInput        = errors.New("invalid input")
+	ErrNotAdmin = errors.New("not an admin")
+	ErrBadInput = errors.New("invalid input")
+	// ErrInvalidUsername identifies a profile-creation username that violates
+	// Remnawave's contract while remaining compatible with ErrBadInput callers.
+	ErrInvalidUsername = fmt.Errorf("%w: invalid profile username", ErrBadInput)
 	ErrRequestNotFound = errors.New("request not found")
 	ErrRequestResolved = errors.New("request already resolved")
 	// ErrPlanUnknown: the referenced tariff preset does not exist (and is not

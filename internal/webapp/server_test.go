@@ -1524,6 +1524,24 @@ func TestHandleTrial(t *testing.T) {
 			t.Errorf("err=%v: status = %d, want %d", tc.err, rw.Code, tc.want)
 		}
 	}
+
+	// Username validation has a stable machine-readable code so the mini app
+	// can show the exact profile-name rules instead of a generic input error.
+	invalid := newTestServer(&fakeCabinet{trialErr: payments.ErrInvalidUsername})
+	invalidReq := httptest.NewRequest("POST", "/api/trial", strings.NewReader(`{"username":"профиль"}`))
+	invalidReq.Header.Set("Authorization", validAuth(t))
+	invalidResp := httptest.NewRecorder()
+	invalid.Handler().ServeHTTP(invalidResp, invalidReq)
+	if invalidResp.Code != http.StatusBadRequest {
+		t.Fatalf("invalid username: status=%d want=%d body=%s", invalidResp.Code, http.StatusBadRequest, invalidResp.Body.String())
+	}
+	var invalidBody map[string]any
+	if err := json.Unmarshal(invalidResp.Body.Bytes(), &invalidBody); err != nil {
+		t.Fatalf("decode invalid username response: %v", err)
+	}
+	if invalidBody["code"] != "invalid_username" {
+		t.Fatalf("invalid username response code=%v, want invalid_username; body=%v", invalidBody["code"], invalidBody)
+	}
 }
 
 func TestHandleAdminTrialReferral(t *testing.T) {

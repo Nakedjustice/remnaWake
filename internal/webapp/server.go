@@ -448,6 +448,8 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 		writeJSONError(w, http.StatusConflict, "traffic extension is unavailable for this profile")
 	case errors.Is(err, payments.ErrPlanUnknown):
 		writeJSONError(w, http.StatusBadRequest, "plan not found")
+	case errors.Is(err, payments.ErrInvalidUsername):
+		writeJSONErrorCode(w, http.StatusBadRequest, "invalid username", "invalid_username")
 	case errors.Is(err, payments.ErrBadInput):
 		writeJSONError(w, http.StatusBadRequest, "invalid input")
 	case errors.Is(err, payments.ErrInvalidProfileQuery), errors.Is(err, payments.ErrGiftInvalid), errors.Is(err, payments.ErrReceiptType):

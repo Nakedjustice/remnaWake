@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
 	"github.com/Nakedjustice/remnaWake/internal/store"
@@ -82,7 +81,7 @@ func (s *Service) beginInviteFlow(ctx context.Context, chatID int64) {
 		createdAt:   s.now(),
 	})
 	_ = s.bot.SendPlain(ctx, chatID,
-		i18n.T("Введите желаемое имя пользователя для нового участника. /cancel — отмена."))
+		i18n.T("Введите имя профиля нового участника: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов. /cancel — отмена."))
 }
 
 // handleMenuInvite starts the invite flow from the menu button.
@@ -113,13 +112,13 @@ func (s *Service) handleInviteUsernameInput(ctx context.Context, m *tg.Message) 
 
 	if strings.HasPrefix(text, "/") {
 		_ = s.bot.SendPlain(ctx, chatID,
-			i18n.T("Введите имя пользователя или /cancel для отмены."))
+			i18n.T("Введите имя профиля: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов. /cancel — отмена."))
 		return true
 	}
 
-	if !isValidUsername(text) {
+	if !isValidNewProfileUsername(text) {
 		_ = s.bot.SendPlain(ctx, chatID,
-			i18n.T("Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов."))
+			i18n.T("Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов."))
 		return true
 	}
 
@@ -171,6 +170,13 @@ func (s *Service) handleInviteSubmit(ctx context.Context, cb *tg.CallbackQuery) 
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Сессия истекла. Запустите /invite заново."))
 		return true
 	}
+	username, err := normalizeProfileUsername(inv.newUsername)
+	if err != nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID,
+			i18n.T("Некорректное имя: используйте латинские буквы, цифры, «_» или «-», от 3 до 36 символов, без пробелов."))
+		return true
+	}
+	inv.newUsername = username
 
 	reqID, err := s.store.CreateInviteRequest(ctx, store.InviteRequest{
 		InviterTelegramID: inv.inviterTGID,
@@ -285,6 +291,27 @@ func (s *Service) approveInviteRequest(ctx context.Context, reqID int64) (*store
 	if req.Status != "pending" {
 		return nil, nil, time.Time{}, ErrRequestResolved
 	}
+
+	// A pending request may predate the strict Remnawave contract. Reject an
+	// invalid legacy request before dry-run handling, squad resolution or any
+	// panel call, and let the inviter submit a corrected name.
+	username, validationErr := normalizeProfileUsername(req.NewUsername)
+	if validationErr != nil {
+		resolved, err := s.store.ResolveInviteRequest(ctx, reqID, "rejected", s.now())
+		if err != nil {
+			return req, nil, time.Time{}, fmt.Errorf("invite: reject invalid legacy request: %w", err)
+		}
+		if !resolved {
+			return req, nil, time.Time{}, ErrRequestResolved
+		}
+		s.clearInviteButtons(ctx, reqID)
+		if req.InviterTelegramID != 0 {
+			_ = s.bot.SendPlain(ctx, req.InviterTelegramID,
+				i18n.T("Некорректное имя профиля. Запустите /invite заново и выберите другое имя."))
+		}
+		return req, nil, time.Time{}, validationErr
+	}
+	req.NewUsername = username
 
 	// Referral: the invitee may be granted bonus days on top of the invite's
 	// base term so the new user starts with a longer subscription.
@@ -469,18 +496,5 @@ func (s *Service) handleInviteCancel(ctx context.Context, cb *tg.CallbackQuery) 
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Отменено."))
-	return true
-}
-
-// isValidUsername accepts Remnawave usernames: 3-32 chars, letters/digits/underscore.
-func isValidUsername(s string) bool {
-	if len(s) < 3 || len(s) > 32 {
-		return false
-	}
-	for _, r := range s {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
-			return false
-		}
-	}
 	return true
 }

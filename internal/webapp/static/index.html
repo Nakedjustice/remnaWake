@@ -644,10 +644,11 @@ const EN = {
   'Оформить подарочную подписку на {months} мес.?': 'Order a gift subscription for {months} mo.?',
   'Заявка отправлена администратору. После подтверждения оплаты вы получите код и ссылку.': 'Your request has been sent to the administrator. Once payment is confirmed, you will receive the code and link.',
   '👥 Пригласить пользователя': '👥 Invite a user',
-  'Имя нового пользователя: буквы, цифры и «_», от 3 до 32 символов. Заявку рассмотрит администратор.': 'New user name: letters, digits and "_", 3 to 32 characters. The administrator will review the request.',
+  'Имя профиля: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов.': 'Profile name: Latin letters A–Z/a–z, digits 0–9, "_" or "-", 3 to 36 characters, with no spaces.',
+  'Заявку рассмотрит администратор.': 'The administrator will review the request.',
   'Имя пользователя': 'Username',
   '👥 Отправить заявку': '👥 Send request',
-  'Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов.': 'Invalid name: only letters, digits and "_", 3 to 32 characters.',
+  'Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов.': 'Invalid profile name. Use Latin letters A–Z/a–z, digits 0–9, "_" or "-"; 3 to 36 characters, with no spaces.',
   'Отправить заявку на пользователя «{name}»?': 'Send a request for user "{name}"?',
   'Заявка отправлена администратору.': 'Your request has been sent to the administrator.',
   '⏳ Ожидают оплаты': '⏳ Awaiting payment',
@@ -1032,7 +1033,7 @@ const EN = {
   'Создайте профиль и попробуйте сервис бесплатно. Доступно один раз.': 'Create a profile and try the service for free. Available once.',
   'Срок: {days} дн. · Трафик: {traffic} · Устройства: {devices}': 'Duration: {days} days · Traffic: {traffic} · Devices: {devices}',
   'Без ограничений': 'Unlimited',
-  'Имя пользователя (буквы, цифры и «_»)': 'Username (letters, digits and "_")',
+  'Имя профиля': 'Profile name',
   '🎁 Активировать пробный период': '🎁 Activate trial',
   'Введите имя пользователя.': 'Enter a username.',
   '✅ Пробный период активирован!': '✅ Trial activated!',
@@ -1309,6 +1310,30 @@ async function api(path, opts = {}) {
     throw error;
   }
   return body;
+}
+
+const PROFILE_USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,36}$/;
+
+function isValidProfileUsername(value) {
+  return PROFILE_USERNAME_PATTERN.test(value);
+}
+
+function profileUsernameInput(placeholder = t('Имя пользователя')) {
+  const input = Object.assign(el('input'), {
+    type: 'text', placeholder, minLength: 3, maxLength: 36,
+  });
+  input.setAttribute('pattern', '[A-Za-z0-9_-]{3,36}');
+  input.setAttribute('autocapitalize', 'none');
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('spellcheck', 'false');
+  return input;
+}
+
+function profileUsernameError(error) {
+  if (error && error.code === 'invalid_username') {
+    return t('Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов.');
+  }
+  return error.message;
 }
 
 function daysWord(n) {
@@ -1836,15 +1861,15 @@ function renderGiftBuy(data) {
 function renderInvite() {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, t('👥 Пригласить пользователя')));
-  card.appendChild(el('div', 'hint',
-    t('Имя нового пользователя: буквы, цифры и «_», от 3 до 32 символов. Заявку рассмотрит администратор.')));
-  const input = Object.assign(el('input'), { placeholder: t('Имя пользователя') });
+  card.appendChild(el('div', 'hint', t('Имя профиля: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов.')));
+  card.appendChild(el('div', 'hint', t('Заявку рассмотрит администратор.')));
+  const input = profileUsernameInput();
   card.appendChild(input);
   const send = el('button', null, t('👥 Отправить заявку'));
   send.onclick = async () => {
     const name = input.value.trim();
-    if (!/^[\p{L}\p{N}_]{3,32}$/u.test(name)) {
-      tg.showAlert(t('Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов.'));
+    if (!isValidProfileUsername(name)) {
+      tg.showAlert(t('Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов.'));
       return;
     }
     if (!(await confirmDialog(t('Отправить заявку на пользователя «{name}»?', { name })))) return;
@@ -1855,7 +1880,7 @@ function renderInvite() {
         input.value = '';
         await showCabinet();
       });
-    } catch (e) { tg.showAlert(e.message); }
+    } catch (e) { tg.showAlert(profileUsernameError(e)); }
   };
   card.appendChild(send);
   return card;
@@ -1938,13 +1963,22 @@ function renderGiftRedemption() {
   const code = Object.assign(el('input'), { type: 'text', placeholder: t('Подарочный код') }); card.appendChild(code);
   let target;
   if (profiles.length) { target = el('select'); profiles.forEach(p => { const o = el('option', null, p.username); o.value = p.remnawave_id; target.appendChild(o); }); }
-  else { target = Object.assign(el('input'), { type: 'text', placeholder: t('Имя пользователя') }); }
+  else {
+    card.appendChild(el('div', 'hint', t('Имя профиля: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов.')));
+    target = profileUsernameInput();
+  }
   card.appendChild(target);
   const btn = el('button', null, t('🎁 Активировать'));
   btn.onclick = async () => {
     const body = { code: code.value.trim() };
     if (profiles.length) body.remnawave_id = Number(target.value);
-    else body.username = target.value.trim();
+    else {
+      body.username = target.value.trim();
+      if (!isValidProfileUsername(body.username)) {
+        tg.showAlert(t('Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов.'));
+        return;
+      }
+    }
     try {
       await withButtonLoading(btn, t('Отправка…'), async () => {
         await api('/api/gift/redeem', { method: 'POST', body: JSON.stringify(body) });
@@ -1952,7 +1986,7 @@ function renderGiftRedemption() {
         tg.showAlert(t('✅ Подарок активирован'));
         showHome();
       });
-    } catch(e) { tg.showAlert(e.message); }
+    } catch(e) { tg.showAlert(profiles.length ? e.message : profileUsernameError(e)); }
   };
   card.appendChild(btn); return card;
 }
@@ -2219,12 +2253,16 @@ function renderTrialClaim(terms) {
       days: terms.days, traffic, devices,
     })));
   }
-  const input = Object.assign(el('input'), { type: 'text', placeholder: t('Имя пользователя (буквы, цифры и «_»)') });
+  card.appendChild(el('div', 'hint', t('Имя профиля: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов.')));
+  const input = profileUsernameInput(t('Имя профиля'));
   card.appendChild(input);
   const btn = el('button', null, t('🎁 Активировать пробный период'));
   btn.onclick = async () => {
     const username = input.value.trim();
-    if (!username) { tg.showAlert(t('Введите имя пользователя.')); return; }
+    if (!isValidProfileUsername(username)) {
+      tg.showAlert(t('Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов.'));
+      return;
+    }
     try {
       const res = await withButtonLoading(btn, t('Отправка…'), () =>
         api('/api/trial', { method: 'POST', body: JSON.stringify({ username }) }));
@@ -2239,7 +2277,7 @@ function renderTrialClaim(terms) {
       tg.showAlert(msg);
       showHome();
     } catch (e) {
-      tg.showAlert(e.message);
+      tg.showAlert(profileUsernameError(e));
     }
   };
   card.appendChild(btn);
