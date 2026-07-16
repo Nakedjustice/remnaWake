@@ -8,15 +8,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Nakedjustice/remnaWake/internal/i18n"
+	tg "github.com/Nakedjustice/remnaWake/internal/telegram"
 )
 
-// settingBackupLastAt is the settings key holding the RFC3339 time of the last
-// successfully delivered scheduled backup (code-managed state, not admin-facing).
-const settingBackupLastAt = "db_backup_last_at"
+const (
+	settingBackupEnabled      = "db_backup_enabled"
+	settingBackupIntervalDays = "db_backup_interval_days"
+	// settingBackupLastAt holds the RFC3339 time of the last successfully
+	// delivered scheduled backup (code-managed state, not admin-facing).
+	settingBackupLastAt = "db_backup_last_at"
+)
 
 // maxBackupUploadBytes is the Telegram Bot API ceiling for bot file uploads;
 // a var so tests can lower it.
@@ -33,18 +39,74 @@ var (
 	ErrBackupDelivery = errors.New("backup delivery failed")
 )
 
-// SetBackupConfig enables the scheduled database backup. Called once from
-// main.go before the scheduler starts (same lifecycle as dryRun, no locking).
-func (s *Service) SetBackupConfig(enabled bool, intervalDays int) {
+// InitBackupConfig loads persisted admin settings over deployment-provided
+// defaults. It is called once at startup before callback polling begins.
+func (s *Service) InitBackupConfig(envEnabled bool, envIntervalDays int) {
+	ctx := context.Background()
+	enabled := envEnabled
+	intervalDays := envIntervalDays
+	if intervalDays < 1 {
+		intervalDays = 1
+	}
+	if value, found, err := s.store.GetSetting(ctx, settingBackupEnabled); err != nil {
+		s.logger.Error("load backup enabled setting failed", "err", err.Error())
+	} else if found {
+		switch value {
+		case "0":
+			enabled = false
+		case "1":
+			enabled = true
+		}
+	}
+	if value, found, err := s.store.GetSetting(ctx, settingBackupIntervalDays); err != nil {
+		s.logger.Error("load backup interval setting failed", "err", err.Error())
+	} else if found {
+		if parsed, parseErr := strconv.Atoi(value); parseErr == nil && parsed >= 1 {
+			intervalDays = parsed
+		}
+	}
+	s.mu.Lock()
 	s.backupEnabled = enabled
 	s.backupIntervalDays = intervalDays
+	s.mu.Unlock()
+}
+
+func (s *Service) backupConfig() (enabled bool, intervalDays int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.backupEnabled, s.backupIntervalDays
+}
+
+// setBackupConfig persists the complete schedule before publishing it to the
+// in-memory snapshot. resetCadence makes the next daily run eligible by
+// atomically removing the last-success timestamp.
+func (s *Service) setBackupConfig(ctx context.Context, enabled bool, intervalDays int, resetCadence bool) error {
+	if intervalDays < 1 {
+		return fmt.Errorf("backup interval must be positive")
+	}
+	var deleteKeys []string
+	if resetCadence {
+		deleteKeys = []string{settingBackupLastAt}
+	}
+	if err := s.store.UpdateSettings(ctx, map[string]string{
+		settingBackupEnabled:      boolSetting(enabled),
+		settingBackupIntervalDays: strconv.Itoa(intervalDays),
+	}, deleteKeys); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.backupEnabled = enabled
+	s.backupIntervalDays = intervalDays
+	s.mu.Unlock()
+	return nil
 }
 
 // RunScheduledBackup sends a snapshot of the database to every admin's DM when
 // the backup feature is on and at least the configured interval has passed
 // since the last delivered backup. Runs inside the daily scheduler job.
 func (s *Service) RunScheduledBackup(ctx context.Context) {
-	if !s.backupEnabled || !s.isEnabled() {
+	enabled, intervalDays := s.backupConfig()
+	if !enabled || !s.isEnabled() {
 		return
 	}
 	value, found, err := s.store.GetSetting(ctx, settingBackupLastAt)
@@ -54,8 +116,10 @@ func (s *Service) RunScheduledBackup(ctx context.Context) {
 	}
 	if found {
 		if last, err := time.Parse(time.RFC3339, value); err == nil {
-			interval := time.Duration(s.backupIntervalDays) * 24 * time.Hour
-			if s.now().Sub(last) < interval {
+			// Compare whole 24-hour periods without multiplying an unbounded
+			// admin-provided day count into time.Duration (which could overflow).
+			elapsed := s.now().Sub(last)
+			if elapsed < 0 || elapsed/(24*time.Hour) < time.Duration(intervalDays) {
 				return
 			}
 		}
@@ -98,6 +162,94 @@ func (s *Service) RunScheduledBackup(ctx context.Context) {
 		}
 		s.logger.Info("backup: sent to admins", "file", filename, "bytes", len(data))
 	}
+}
+
+// sendBackupSettings renders the admin-facing scheduled-backup configuration.
+func (s *Service) sendBackupSettings(ctx context.Context, chatID int64) {
+	enabled, intervalDays := s.backupConfig()
+	state := i18n.T("выключены")
+	toggle := i18n.T("✅ Включить")
+	if enabled {
+		state = i18n.T("включены")
+		toggle = i18n.T("🚫 Выключить")
+	}
+	label := func(days int) string {
+		prefix := ""
+		if days == intervalDays {
+			prefix = "✅ "
+		}
+		return fmt.Sprintf("%s%d %s", prefix, days, i18n.PluralDays(days))
+	}
+	text := fmt.Sprintf(i18n.T("💾 Резервные копии базы данных\n\nСтатус: %s\nИнтервал: каждые %d %s\nВремя запуска: общее расписание RUN_AT."),
+		state, intervalDays, i18n.PluralDays(intervalDays))
+	kb := &tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{
+		{{Text: toggle, CallbackData: "adm:backup:toggle"}},
+		{
+			{Text: label(1), CallbackData: "adm:backup:days:1"},
+			{Text: label(3), CallbackData: "adm:backup:days:3"},
+		},
+		{
+			{Text: label(7), CallbackData: "adm:backup:days:7"},
+			{Text: label(30), CallbackData: "adm:backup:days:30"},
+		},
+		{{Text: i18n.T("✏️ Другой интервал"), CallbackData: "adm:backup:custom"}},
+		{{Text: i18n.T("← Меню"), CallbackData: "adm:menu"}},
+	}}
+	_, _ = s.bot.SendPlainWithKeyboard(ctx, chatID, text, kb)
+}
+
+func (s *Service) handleBackupToggle(ctx context.Context, chatID int64) {
+	enabled, intervalDays := s.backupConfig()
+	newEnabled := !enabled
+	if err := s.setBackupConfig(ctx, newEnabled, intervalDays, newEnabled); err != nil {
+		s.logger.Error("admin: save backup enabled failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
+		return
+	}
+	s.sendBackupSettings(ctx, chatID)
+}
+
+func (s *Service) handleBackupIntervalPick(ctx context.Context, chatID int64, raw string) {
+	days, err := strconv.Atoi(raw)
+	if err != nil || days < 1 {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 1. Пример: 3"))
+		return
+	}
+	enabled, current := s.backupConfig()
+	if err := s.setBackupConfig(ctx, enabled, days, enabled && days != current); err != nil {
+		s.logger.Error("admin: save backup interval failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
+		return
+	}
+	s.sendBackupSettings(ctx, chatID)
+}
+
+func (s *Service) startBackupIntervalInput(ctx context.Context, chatID int64) {
+	s.mu.Lock()
+	state := s.adminInput[chatID]
+	state.step = adminInputBackupInterval
+	s.adminInput[chatID] = state
+	s.mu.Unlock()
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите интервал резервного копирования в днях (целое ≥ 1):"))
+}
+
+func (s *Service) consumeBackupInterval(ctx context.Context, chatID int64, text string) bool {
+	days, err := strconv.Atoi(text)
+	if err != nil || days < 1 {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 1. Пример: 3"))
+		return true
+	}
+	enabled, current := s.backupConfig()
+	if err := s.setBackupConfig(ctx, enabled, days, enabled && days != current); err != nil {
+		s.logger.Error("admin: save backup interval failed", "err", err.Error())
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
+		return true
+	}
+	s.mu.Lock()
+	delete(s.adminInput, chatID)
+	s.mu.Unlock()
+	s.sendBackupSettings(ctx, chatID)
+	return true
 }
 
 // cmdBackup handles the /backup admin command: an immediate one-off backup

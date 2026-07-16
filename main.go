@@ -88,7 +88,7 @@ func main() {
 		RequireApproval: cfg.Trial.RequireApproval,
 	})
 	pay.InitReferral(cfg.Referral.Enabled, cfg.Referral.InviterDays, cfg.Referral.InviteeDays)
-	pay.SetBackupConfig(cfg.Backup.Enabled, cfg.Backup.IntervalDays)
+	pay.InitBackupConfig(cfg.Backup.Enabled, cfg.Backup.IntervalDays)
 	var winbackDays []int
 	if cfg.Winback.Enabled {
 		winbackDays = cfg.Winback.Days
