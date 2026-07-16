@@ -117,3 +117,33 @@ func (s *Store) ResolveTrialRequest(ctx context.Context, id int64, status string
 	n, err := res.RowsAffected()
 	return n > 0, err
 }
+
+// RejectInvalidTrialRequest rejects a legacy pending request and releases its
+// one-time trial claim in the same transaction. It is intentionally separate
+// from ordinary rejection, which keeps the claim and is final.
+func (s *Store) RejectInvalidTrialRequest(ctx context.Context, id, telegramID int64, resolvedAt time.Time) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE trial_requests SET status = 'rejected', resolved_at = ?
+		WHERE id = ? AND telegram_id = ? AND status = 'pending'
+	`, formatTime(resolvedAt), id, telegramID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil || n == 0 {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM trial_claims WHERE telegram_id = ?`, telegramID); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}

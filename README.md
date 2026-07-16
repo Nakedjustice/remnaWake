@@ -31,7 +31,8 @@ extends the subscription by the chosen number of months.
   creates a shaped trial profile once per Telegram ID, with configurable
   duration, total traffic, HWID/device limit, and an optional dedicated squad
   (`TRIAL_ENABLED`). Admins can change all trial settings at runtime from the
-  bot admin menu or the Mini App admin panel.
+  bot admin menu or the Mini App admin panel. New profile names must contain
+  3–36 ASCII characters: Latin letters, digits, `_`, or `-`, with no spaces.
 - 🎉 **Referral bonus** (optional) — an approved invite grants bonus days to the
   inviter and/or the invitee (`REFERRAL_ENABLED`). Runtime-configurable from the
   bot admin menu and the Mini App admin panel.
@@ -214,7 +215,8 @@ A gift needs no recipient up front — the buyer gets a transferable code:
 4. The recipient opens it (or sends `/start gift_<CODE>`): an existing linked
    profile is **extended**; otherwise the bot asks for a username, **creates** a
    profile, links their Telegram and sends the subscription URL (clock starts at
-   activation).
+   activation). A new profile name must be 3–36 ASCII characters: Latin letters,
+   digits, `_`, or `-`, with no spaces.
 5. The buyer is notified on activation.
 
 Each code is strictly **single-use** (atomic DB claim — no double-spend),
@@ -227,7 +229,8 @@ may start `/gift`; every purchase is admin-gated. Check anytime with `/mygifts`
 Any subscriber can request a new Remnawave account:
 
 1. Send `/invite`.
-2. Enter the desired **username** (3–32 chars, letters / digits / underscore).
+2. Enter the desired **username** (3–36 ASCII characters: Latin letters, digits,
+   `_`, or `-`; no spaces).
 3. The bot shows the cost (1-month tariff) + **«Отправить заявку»** (`/cancel`
    aborts).
 4. The admin gets **«✅ Одобрить»** / **«❌ Отклонить»**; on approval the bot

@@ -177,6 +177,29 @@ func TestInviteApprovePassesSquadToCreate(t *testing.T) {
 	}
 }
 
+func TestInviteApproveRejectsLegacyInvalidUsername(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	creator := &fakeCreator{}
+	svc.creator = creator
+	reqID, err := st.CreateInviteRequest(ctx, store.InviteRequest{
+		InviterTelegramID: 555, InviterUsername: "inviter", NewUsername: "профиль", Months: 1,
+	})
+	if err != nil {
+		t.Fatalf("seed legacy invite: %v", err)
+	}
+
+	if _, _, _, err := svc.approveInviteRequest(ctx, reqID); !errors.Is(err, ErrInvalidUsername) {
+		t.Fatalf("approve invalid legacy invite err=%v, want ErrInvalidUsername", err)
+	}
+	if len(creator.created) != 0 {
+		t.Fatalf("invalid legacy invite reached profile creator: %+v", creator.created)
+	}
+	if req, _ := st.GetInviteRequest(ctx, reqID); req == nil || req.Status != "rejected" {
+		t.Fatalf("invalid legacy invite was not rejected: %+v", req)
+	}
+}
+
 func TestAdmSquadCallbackShowsPicker(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()

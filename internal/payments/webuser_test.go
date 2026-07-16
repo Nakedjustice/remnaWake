@@ -152,7 +152,7 @@ func TestCreateInviteRequestErrors(t *testing.T) {
 	ctx := context.Background()
 	svc.finder = linkedFinder(42, "alice")
 
-	for _, bad := range []string{"", "ab", "with space", strings.Repeat("x", 33)} {
+	for _, bad := range []string{"", "ab", "with space", strings.Repeat("x", 37)} {
 		if err := svc.CreateInviteRequest(ctx, 42, bad); !errors.Is(err, ErrBadInput) {
 			t.Errorf("username %q: err=%v, want ErrBadInput", bad, err)
 		}

@@ -104,7 +104,7 @@ func (s *Service) beginTrialFlow(ctx context.Context, chatID int64) bool {
 	}
 	s.setTrial(chatID, &trialState{createdAt: s.now()})
 	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
-		i18n.T("🎁 Бесплатный пробный период на %d %s!\nТрафик: %s\nУстройства: %s\n\nВведите желаемое имя пользователя для вашего профиля (буквы, цифры и «_», от 3 до 32 символов). /cancel — отмена."),
+		i18n.T("🎁 Бесплатный пробный период на %d %s!\nТрафик: %s\nУстройства: %s\n\nВведите имя профиля: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов. /cancel — отмена."),
 		cfg.Days, i18n.PluralDays(cfg.Days), formatLimit(int64(cfg.TrafficLimitGB), " GB"), formatLimit(int64(cfg.HwidDeviceLimit), "")))
 	return true
 }
@@ -120,7 +120,7 @@ func (s *Service) handleTrialUsernameInput(ctx context.Context, m *tg.Message) b
 
 	text := strings.TrimSpace(m.Text)
 	if strings.HasPrefix(text, "/") {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите имя пользователя или /cancel для отмены."))
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите имя профиля: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов. /cancel — отмена."))
 		return true
 	}
 	s.createTrial(ctx, chatID, text)
@@ -138,7 +138,7 @@ func (s *Service) createTrial(ctx context.Context, chatID int64, username string
 		return
 	case errors.Is(err, ErrBadInput):
 		_ = s.bot.SendPlain(ctx, chatID,
-			i18n.T("Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов."))
+			i18n.T("Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов."))
 		return
 	case errors.Is(err, ErrTrialNotEligible):
 		s.clearTrial(chatID)
@@ -196,8 +196,9 @@ func (s *Service) claimTrial(ctx context.Context, telegramID int64, username str
 	if !cfg.Enabled || s.creator == nil {
 		return nil, time.Time{}, ErrTrialDisabled
 	}
-	if !isValidUsername(username) {
-		return nil, time.Time{}, ErrBadInput
+	username, err := normalizeProfileUsername(username)
+	if err != nil {
+		return nil, time.Time{}, err
 	}
 
 	subs, err := s.finder.FindByTelegramID(ctx, telegramID)
@@ -234,8 +235,11 @@ func (s *Service) claimTrial(ctx context.Context, telegramID int64, username str
 // re-claimed nor released on a transient panel error — the request stays pending
 // for the admin to retry.
 func (s *Service) grantTrial(ctx context.Context, telegramID int64, username string, cfg TrialConfig, alreadyClaimed bool) (*CreatedUser, time.Time, error) {
+	username, err := normalizeProfileUsername(username)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	var squadUUID string
-	var err error
 	if !s.dryRun {
 		squadUUID, err = s.resolveTrialSquadUUID(ctx, cfg.SquadUUID)
 		if err != nil {
@@ -460,6 +464,28 @@ func (s *Service) approveTrialRequest(ctx context.Context, reqID int64) (*store.
 	if req.Status != "pending" {
 		return nil, nil, time.Time{}, ErrRequestResolved
 	}
+
+	// Requests created before the stricter ASCII contract may contain a name
+	// that Remnawave will reject. Resolve those requests without touching the
+	// panel and atomically release the one-time claim so the user can submit a
+	// corrected username.
+	username, validationErr := normalizeProfileUsername(req.Username)
+	if validationErr != nil {
+		resolved, err := s.store.RejectInvalidTrialRequest(ctx, req.ID, req.TelegramID, s.now())
+		if err != nil {
+			return req, nil, time.Time{}, fmt.Errorf("trial: reject invalid legacy request: %w", err)
+		}
+		if !resolved {
+			return req, nil, time.Time{}, ErrRequestResolved
+		}
+		s.clearTrialButtons(ctx, reqID)
+		if req.TelegramID != 0 {
+			_ = s.bot.SendPlain(ctx, req.TelegramID,
+				i18n.T("Некорректное имя профиля. Запустите /trial заново и выберите другое имя."))
+		}
+		return req, nil, time.Time{}, validationErr
+	}
+	req.Username = username
 
 	// Re-check eligibility: the user may have gained a profile, or the username
 	// may have been taken, between request and approval.
