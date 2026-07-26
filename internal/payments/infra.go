@@ -29,6 +29,16 @@ const infraBaseCurrencyKey = "infra_base_currency"
 // first reminder is sent; a second reminder follows once it is overdue.
 const infraReminderLeadDays = 3
 
+// infraMaxPeriodMonths bounds a server's billing period. No hoster bills more
+// than five years ahead, so a larger value is a data-entry slip (a price typed
+// into the period box) that would otherwise push the due date decades out on
+// the next "paid" click.
+const infraMaxPeriodMonths = 60
+
+// infraMaxDueYears bounds how far ahead a due date may be set by hand, so a
+// mistyped year in the form is rejected instead of stored.
+const infraMaxDueYears = 5
+
 // currencySymbols maps ISO 4217 codes to display symbols used in original
 // per-server cost labels; unknown codes fall back to the code itself.
 var currencySymbols = map[string]string{
@@ -267,7 +277,10 @@ func (s *Service) AdminSaveInfraServer(ctx context.Context, telegramID int64, in
 	}
 	in.Name = strings.TrimSpace(in.Name)
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
-	if in.Name == "" || in.Price < 0 || in.PeriodMonths < 1 || !validCurrencyCode(in.Currency) {
+	if in.Name == "" || in.Price < 0 || !validCurrencyCode(in.Currency) {
+		return ErrBadInput
+	}
+	if in.PeriodMonths < 1 || in.PeriodMonths > infraMaxPeriodMonths {
 		return ErrBadInput
 	}
 	if in.CPUCores < 0 || in.RAMMB < 0 {
@@ -275,6 +288,9 @@ func (s *Service) AdminSaveInfraServer(ctx context.Context, telegramID int64, in
 	}
 	due, err := parseInfraDate(in.NextDue)
 	if err != nil {
+		return ErrBadInput
+	}
+	if !due.IsZero() && due.After(s.now().AddDate(infraMaxDueYears, 0, 0)) {
 		return ErrBadInput
 	}
 	srv := store.InfraServer{
@@ -314,9 +330,15 @@ func (s *Service) AdminDeleteInfraServer(ctx context.Context, telegramID, id int
 	return nil
 }
 
-// AdminMarkInfraServerPaid advances a server's next payment due date by its
-// billing period (from the current due date, or from today when unset) and
-// re-arms its reminders. Used by the panel button and the reminder message.
+// AdminMarkInfraServerPaid moves a server's payment due date to the next date
+// still ahead of today and re-arms its reminders. Used by the panel button and
+// the reminder message.
+//
+// The step is one billing period from the current due date (or from today when
+// unset), repeated when several periods went unpaid so a single click always
+// lands on a future date. Clicking again while the server is already paid past
+// the current period does nothing: the click that pays an invoice must not
+// stack another period on top, or a double tap walks the date years out.
 func (s *Service) AdminMarkInfraServerPaid(ctx context.Context, telegramID, id int64) error {
 	if err := s.adminGuard(telegramID); err != nil {
 		return err
@@ -332,11 +354,22 @@ func (s *Service) AdminMarkInfraServerPaid(ctx context.Context, telegramID, id i
 	if period < 1 {
 		period = 1
 	}
+	if period > infraMaxPeriodMonths {
+		period = infraMaxPeriodMonths
+	}
+	now := s.now()
+	if !srv.NextDueAt.IsZero() && !srv.NextDueAt.Before(now.AddDate(0, period, 0)) {
+		return nil // already covered for a full period ahead
+	}
 	from := srv.NextDueAt
 	if from.IsZero() {
-		from = s.now()
+		from = now
 	}
-	srv.NextDueAt = from.AddDate(0, period, 0)
+	next := from.AddDate(0, period, 0)
+	for !next.After(now) {
+		next = next.AddDate(0, period, 0)
+	}
+	srv.NextDueAt = next
 	if _, err := s.store.UpdateInfraServer(ctx, *srv); err != nil {
 		return fmt.Errorf("update infra server: %w", err)
 	}
