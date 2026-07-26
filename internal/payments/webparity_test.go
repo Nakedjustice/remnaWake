@@ -227,3 +227,64 @@ func TestCheckPlategaPaymentStatusesAndRepeat(t *testing.T) {
 		t.Fatalf("extension calls=%d", ext.calls)
 	}
 }
+
+// The mini app admin panel and the adm:backup:* callbacks must drive the same
+// schedule: whichever surface an admin uses, the persisted state, the runtime
+// cache and the reset-on-change rule have to come out identical.
+func TestBackupScheduleParityBetweenBotAndMiniApp(t *testing.T) {
+	ctx := context.Background()
+
+	fromMiniApp, _, _, miniStore := newTestService(t)
+	fromMiniApp.InitBackupConfig(false, 1)
+	if err := fromMiniApp.AdminSetBackupSchedule(ctx, adminTG, true, 7); err != nil {
+		t.Fatalf("mini app set schedule: %v", err)
+	}
+
+	fromBot, _, _, botStore := newTestService(t)
+	fromBot.InitBackupConfig(false, 1)
+	fromBot.handleBackupToggle(ctx, adminTG)
+	fromBot.applyBackupInterval(ctx, adminTG, "7")
+
+	miniEnabled, miniInterval := fromMiniApp.backupConfig()
+	botEnabled, botInterval := fromBot.backupConfig()
+	if miniEnabled != botEnabled || miniInterval != botInterval {
+		t.Fatalf("runtime config differs: mini app=%v/%d bot=%v/%d",
+			miniEnabled, miniInterval, botEnabled, botInterval)
+	}
+	if !miniEnabled || miniInterval != 7 {
+		t.Fatalf("schedule = enabled:%v interval:%d, want true/7", miniEnabled, miniInterval)
+	}
+	for _, key := range []string{settingBackupEnabled, settingBackupIntervalDays} {
+		miniValue, miniFound, err := miniStore.GetSetting(ctx, key)
+		if err != nil || !miniFound {
+			t.Fatalf("mini app %s: found=%v err=%v", key, miniFound, err)
+		}
+		botValue, botFound, err := botStore.GetSetting(ctx, key)
+		if err != nil || !botFound {
+			t.Fatalf("bot %s: found=%v err=%v", key, botFound, err)
+		}
+		if miniValue != botValue {
+			t.Fatalf("%s persisted as %q from the mini app and %q from the bot", key, miniValue, botValue)
+		}
+	}
+
+	// The panel payload reports the same schedule the bot card renders.
+	panel, err := fromMiniApp.AdminPanelData(ctx, adminTG)
+	if err != nil {
+		t.Fatalf("panel: %v", err)
+	}
+	if !panel.BackupEnabled || panel.BackupIntervalDays != 7 || panel.BackupMaxIntervalDays != maxBackupIntervalDays {
+		t.Fatalf("panel backup fields = %+v", panel)
+	}
+
+	// Out-of-range input is refused on both surfaces.
+	if err := fromMiniApp.AdminSetBackupSchedule(ctx, adminTG, true, maxBackupIntervalDays+1); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("above ceiling: err = %v, want ErrBadInput", err)
+	}
+	if err := fromMiniApp.AdminSetBackupSchedule(ctx, adminTG, true, 0); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("zero interval: err = %v, want ErrBadInput", err)
+	}
+	if _, interval := fromMiniApp.backupConfig(); interval != 7 {
+		t.Fatalf("rejected input changed the interval to %d", interval)
+	}
+}

@@ -14,6 +14,11 @@ const (
 // contract. Leading and trailing whitespace is treated as accidental input and
 // removed; the resulting username must contain only ASCII Latin letters,
 // digits, underscores or hyphens.
+//
+// It is the single normalization point for profile creation: each flow calls it
+// once at the edge where the name is first accepted (claimTrial, RedeemGift,
+// CreateInviteRequest, the Telegram conversation handlers) and the creation
+// cores below them receive an already-normalized value.
 func normalizeProfileUsername(raw string) (string, error) {
 	username := strings.TrimSpace(raw)
 	if len(username) < profileUsernameMinLength || len(username) > profileUsernameMaxLength {
@@ -32,23 +37,17 @@ func normalizeProfileUsername(raw string) (string, error) {
 	return username, nil
 }
 
-// isValidNewProfileUsername is the boolean form used by Telegram creation
-// conversations. Creation cores use normalizeProfileUsername so the normalized
-// value is also the value sent to Remnawave.
-func isValidNewProfileUsername(raw string) bool {
-	_, err := normalizeProfileUsername(raw)
-	return err == nil
-}
-
-// isValidProfileLookupUsername preserves the pre-existing lookup rules used by
-// /register. Registration links an existing Remnawave profile rather than
-// creating one, so imported or legacy Unicode usernames must remain linkable.
+// isValidProfileLookupUsername gates the /register profile lookup. Registration
+// links an existing Remnawave profile rather than creating one, so imported or
+// legacy Unicode usernames must remain linkable. It must also stay a superset of
+// normalizeProfileUsername: a hyphenated or 33-36 character name this bot just
+// created would otherwise be impossible to link back by name.
 func isValidProfileLookupUsername(username string) bool {
-	if len(username) < 3 || len(username) > 32 {
+	if len(username) < profileUsernameMinLength || len(username) > profileUsernameMaxLength {
 		return false
 	}
 	for _, r := range username {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' {
 			return false
 		}
 	}

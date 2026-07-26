@@ -170,7 +170,7 @@ func (s *Service) handleRegisterUsernameInput(ctx context.Context, m *tg.Message
 
 	if !isValidProfileLookupUsername(text) {
 		_ = s.bot.SendPlain(ctx, chatID,
-			i18n.T("Некорректное имя: только буквы, цифры и «_», от 3 до 32 символов."))
+			i18n.T("Некорректное имя профиля: буквы, цифры, «_» или «-», от 3 до 36 символов."))
 		return true
 	}
 

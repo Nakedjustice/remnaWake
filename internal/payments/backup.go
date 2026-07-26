@@ -24,6 +24,21 @@ const (
 	settingBackupLastAt = "db_backup_last_at"
 )
 
+const (
+	// maxBackupIntervalDays bounds the admin-entered cadence. Without a ceiling a
+	// typo ("30000") silently parks scheduled backups for decades with no warning.
+	maxBackupIntervalDays = 365
+	// backupIntervalSlack absorbs the gap between two RUN_AT firings being slightly
+	// under a whole number of days in absolute time, which would otherwise push
+	// every backup out by one extra day. Two things shrink it: the last-success
+	// stamp is written after the sweep, the FX refresh, the reminders and every
+	// admin upload have finished, and the scheduler fires at a fixed *local* time,
+	// so a DST spring-forward makes consecutive firings only 23 hours apart. The
+	// value therefore has to clear one hour of DST plus the job's own runtime, and
+	// stays far below 24h so a second run on the same day is still suppressed.
+	backupIntervalSlack = 2 * time.Hour
+)
+
 // maxBackupUploadBytes is the Telegram Bot API ceiling for bot file uploads;
 // a var so tests can lower it.
 var maxBackupUploadBytes = 50 * 1024 * 1024
@@ -39,15 +54,26 @@ var (
 	ErrBackupDelivery = errors.New("backup delivery failed")
 )
 
+// clampBackupIntervalDays folds any interval — an environment value, a value
+// persisted before the ceiling existed, or admin input — into the supported
+// range. Every writer of s.backupIntervalDays goes through it, which is what
+// lets RunScheduledBackup multiply the day count into a time.Duration safely.
+func clampBackupIntervalDays(days int) int {
+	if days < 1 {
+		return 1
+	}
+	if days > maxBackupIntervalDays {
+		return maxBackupIntervalDays
+	}
+	return days
+}
+
 // InitBackupConfig loads persisted admin settings over deployment-provided
 // defaults. It is called once at startup before callback polling begins.
 func (s *Service) InitBackupConfig(envEnabled bool, envIntervalDays int) {
 	ctx := context.Background()
 	enabled := envEnabled
-	intervalDays := envIntervalDays
-	if intervalDays < 1 {
-		intervalDays = 1
-	}
+	intervalDays := clampBackupIntervalDays(envIntervalDays)
 	if value, found, err := s.store.GetSetting(ctx, settingBackupEnabled); err != nil {
 		s.logger.Error("load backup enabled setting failed", "err", err.Error())
 	} else if found {
@@ -62,7 +88,7 @@ func (s *Service) InitBackupConfig(envEnabled bool, envIntervalDays int) {
 		s.logger.Error("load backup interval setting failed", "err", err.Error())
 	} else if found {
 		if parsed, parseErr := strconv.Atoi(value); parseErr == nil && parsed >= 1 {
-			intervalDays = parsed
+			intervalDays = clampBackupIntervalDays(parsed)
 		}
 	}
 	s.mu.Lock()
@@ -81,8 +107,8 @@ func (s *Service) backupConfig() (enabled bool, intervalDays int) {
 // in-memory snapshot. resetCadence makes the next daily run eligible by
 // atomically removing the last-success timestamp.
 func (s *Service) setBackupConfig(ctx context.Context, enabled bool, intervalDays int, resetCadence bool) error {
-	if intervalDays < 1 {
-		return fmt.Errorf("backup interval must be positive")
+	if intervalDays < 1 || intervalDays > maxBackupIntervalDays {
+		return fmt.Errorf("backup interval must be between 1 and %d days", maxBackupIntervalDays)
 	}
 	var deleteKeys []string
 	if resetCadence {
@@ -116,10 +142,10 @@ func (s *Service) RunScheduledBackup(ctx context.Context) {
 	}
 	if found {
 		if last, err := time.Parse(time.RFC3339, value); err == nil {
-			// Compare whole 24-hour periods without multiplying an unbounded
-			// admin-provided day count into time.Duration (which could overflow).
-			elapsed := s.now().Sub(last)
-			if elapsed < 0 || elapsed/(24*time.Hour) < time.Duration(intervalDays) {
+			// intervalDays is clamped to maxBackupIntervalDays on every write, so
+			// this multiplication cannot overflow time.Duration.
+			due := time.Duration(intervalDays)*24*time.Hour - backupIntervalSlack
+			if elapsed := s.now().Sub(last); elapsed < due {
 				return
 			}
 		}
@@ -209,19 +235,27 @@ func (s *Service) handleBackupToggle(ctx context.Context, chatID int64) {
 	s.sendBackupSettings(ctx, chatID)
 }
 
-func (s *Service) handleBackupIntervalPick(ctx context.Context, chatID int64, raw string) {
-	days, err := strconv.Atoi(raw)
-	if err != nil || days < 1 {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 1. Пример: 3"))
-		return
+// applyBackupInterval parses, validates and persists an admin-supplied cadence,
+// then re-renders the settings card. Shared by the preset buttons and the
+// free-text prompt so both paths keep identical rules and messages. Returns
+// false when the input was rejected and the admin should try again.
+func (s *Service) applyBackupInterval(ctx context.Context, chatID int64, raw string) bool {
+	days, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || days < 1 || days > maxBackupIntervalDays {
+		_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
+			i18n.T("Введите целое число от 1 до %d. Пример: 3"), maxBackupIntervalDays))
+		return false
 	}
+	// Changing the cadence of an active schedule restarts it from today, so the
+	// admin sees the new interval take effect from the next daily run.
 	enabled, current := s.backupConfig()
 	if err := s.setBackupConfig(ctx, enabled, days, enabled && days != current); err != nil {
 		s.logger.Error("admin: save backup interval failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
-		return
+		return false
 	}
 	s.sendBackupSettings(ctx, chatID)
+	return true
 }
 
 func (s *Service) startBackupIntervalInput(ctx context.Context, chatID int64) {
@@ -230,25 +264,18 @@ func (s *Service) startBackupIntervalInput(ctx context.Context, chatID int64) {
 	state.step = adminInputBackupInterval
 	s.adminInput[chatID] = state
 	s.mu.Unlock()
-	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите интервал резервного копирования в днях (целое ≥ 1):"))
+	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
+		i18n.T("Введите интервал резервного копирования в днях (целое от 1 до %d):"), maxBackupIntervalDays))
 }
 
 func (s *Service) consumeBackupInterval(ctx context.Context, chatID int64, text string) bool {
-	days, err := strconv.Atoi(text)
-	if err != nil || days < 1 {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 1. Пример: 3"))
-		return true
-	}
-	enabled, current := s.backupConfig()
-	if err := s.setBackupConfig(ctx, enabled, days, enabled && days != current); err != nil {
-		s.logger.Error("admin: save backup interval failed", "err", err.Error())
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
+	if !s.applyBackupInterval(ctx, chatID, text) {
+		// Keep the input step so the admin can correct the value in place.
 		return true
 	}
 	s.mu.Lock()
 	delete(s.adminInput, chatID)
 	s.mu.Unlock()
-	s.sendBackupSettings(ctx, chatID)
 	return true
 }
 

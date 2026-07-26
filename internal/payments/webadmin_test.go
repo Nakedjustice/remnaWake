@@ -39,6 +39,7 @@ func TestWebAdminRejectsNonAdmin(t *testing.T) {
 	calls["AdminApproveInviteRequest"] = svc.AdminApproveInviteRequest(ctx, userTG, 1)
 	calls["AdminRejectInviteRequest"] = svc.AdminRejectInviteRequest(ctx, userTG, 1)
 	calls["AdminSetDefaultTrafficReset"] = svc.AdminSetDefaultTrafficReset(ctx, userTG, "WEEK")
+	calls["AdminSetBackupSchedule"] = svc.AdminSetBackupSchedule(ctx, userTG, true, 7)
 	_, err = svc.AdminListUsers(ctx, userTG)
 	calls["AdminListUsers"] = err
 	_, err = svc.AdminFindUser(ctx, userTG, "alice")

@@ -233,13 +233,12 @@ func (s *Service) claimTrial(ctx context.Context, telegramID int64, username str
 // trial_claims row and rolls it back if creation fails. When true (admin
 // approval) the claim was already reserved at request time, so it is neither
 // re-claimed nor released on a transient panel error — the request stays pending
-// for the admin to retry.
+// for the admin to retry. username must already have passed
+// normalizeProfileUsername — both callers normalize before the eligibility
+// checks, because they look the name up in the panel first.
 func (s *Service) grantTrial(ctx context.Context, telegramID int64, username string, cfg TrialConfig, alreadyClaimed bool) (*CreatedUser, time.Time, error) {
-	username, err := normalizeProfileUsername(username)
-	if err != nil {
-		return nil, time.Time{}, err
-	}
 	var squadUUID string
+	var err error
 	if !s.dryRun {
 		squadUUID, err = s.resolveTrialSquadUUID(ctx, cfg.SquadUUID)
 		if err != nil {
@@ -471,7 +470,7 @@ func (s *Service) approveTrialRequest(ctx context.Context, reqID int64) (*store.
 	// corrected username.
 	username, validationErr := normalizeProfileUsername(req.Username)
 	if validationErr != nil {
-		resolved, err := s.store.RejectInvalidTrialRequest(ctx, req.ID, req.TelegramID, s.now())
+		resolved, err := s.store.RejectInvalidTrialRequest(ctx, req.ID, req.TelegramID, req.Username, s.now())
 		if err != nil {
 			return req, nil, time.Time{}, fmt.Errorf("trial: reject invalid legacy request: %w", err)
 		}

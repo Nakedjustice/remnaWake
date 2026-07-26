@@ -244,7 +244,9 @@ profile by its short UUID (`GET /api/users/by-short-uuid/{shortUuid}`) and
 offers to link it. The explicit flow:
 
 1. Send `/register` (or tap **🔗 Привязать аккаунт**).
-2. Send your **subscription link** or **profile name**.
+2. Send your **subscription link** or **profile name**. Lookup accepts every
+   name this bot can create plus legacy/imported Unicode names (letters, digits,
+   `_` or `-`, 3–36 characters).
 3. The bot looks it up; if unlinked, it asks for confirmation.
 4. Tap **«Привязать»** — the bot calls `PATCH /api/users` and links you
    immediately.
@@ -523,7 +525,7 @@ docker compose restart caddy    # in your caddy directory
 | `REFERRAL_INVITER_BONUS_DAYS` | no | `30`            | Bonus days added to the inviter's own subscription per approved invite      |
 | `REFERRAL_INVITEE_BONUS_DAYS` | no | `0`             | Extra days granted to the invited user on top of the 1-month invite term    |
 | `DB_BACKUP_ENABLED`    | no       | `false`          | Initial scheduled-backup state; a saved admin-menu override takes precedence |
-| `DB_BACKUP_INTERVAL_DAYS` | no    | `1`              | Initial interval in days; a saved admin-menu override takes precedence       |
+| `DB_BACKUP_INTERVAL_DAYS` | no    | `1`              | Initial interval in days (1–365, clamped); a saved admin override wins       |
 
 ## 🚀 Running
 
@@ -585,10 +587,11 @@ once per `DB_BACKUP_INTERVAL_DAYS` days. Admins can also request a ZIP archive
 anytime with `/backup`, the Telegram `/admin` menu, or the Mini App admin hub;
 the bot sends it to the requesting admin's chat. Extract the `.db` file before
 restoring it. The environment values seed the initial schedule; **Admin menu
-→ 💾 Database backups** can enable or disable it and select a 1/3/7/30-day or
-custom interval. Saved menu settings take precedence after restarts. Enabling
-or changing an active interval makes a backup due at the next daily `RUN_AT`
-without sending one immediately:
+→ 💾 Database backups** and the Mini App admin panel (**Settings → 💾 Database
+backups**) both enable or disable it and set the interval — 1/3/7/30-day presets
+or any value from 1 to 365 days. Saved settings take precedence after restarts.
+Enabling or changing an active interval makes a backup due at the next daily
+`RUN_AT` without sending one immediately:
 
 ```bash
 ./install.sh restore /path/to/remnawake-backup-2026-07-05-0900.db

@@ -571,6 +571,7 @@ const EN = {
   'Проверяю оплату…': 'Checking payment…',
   'Откройте это приложение из Telegram.': 'Open this app from Telegram.',
   'Ошибка {n}': 'Error {n}',
+  'Ошибка, попробуйте позже.': 'Something went wrong, please try again later.',
   'Статус': 'Status',
   'Действует до': 'Valid until',
   'осталось {n} {word}': '{n} {word} left',
@@ -848,6 +849,13 @@ const EN = {
   '💾 Сохранить интервал': '💾 Save interval',
   'Проверяю обновления…': 'Checking for updates…',
   'Интервал проверки обновлений сохранён.': 'Update check interval saved.',
+  '💾 Резервные копии': '💾 Database backups',
+  '💾 Плановые резервные копии': '💾 Scheduled backups',
+  'Включены: копия базы отправляется всем админам во время ежедневного запуска.': 'Enabled: a copy of the database is sent to every admin during the daily run.',
+  'Выключены.': 'Disabled.',
+  'Интервал (дни, 1–{max})': 'Interval (days, 1–{max})',
+  'Время запуска — общее расписание RUN_AT.': 'Run time follows the shared RUN_AT schedule.',
+  'Введите целое число от 1 до {max}.': 'Enter an integer between 1 and {max}.',
   'Включено: перед отправкой заявки пользователь обязан прикрепить чек (фото, скриншот или PDF-файл), админы получают заявку вместе с чеком в Telegram.': 'Enabled: before sending a request the user must attach a receipt (photo, screenshot or PDF), and admins receive the request together with the receipt in Telegram.',
   'Выключено: заявки на оплату отправляются без чека.': 'Disabled: payment requests are sent without a receipt.',
   '🚫 Выключить требование чека': '🚫 Disable receipt requirement',
@@ -1035,7 +1043,6 @@ const EN = {
   'Без ограничений': 'Unlimited',
   'Имя профиля': 'Profile name',
   '🎁 Активировать пробный период': '🎁 Activate trial',
-  'Введите имя пользователя.': 'Enter a username.',
   '✅ Пробный период активирован!': '✅ Trial activated!',
   '🕓 Заявка на пробный период отправлена администратору. Мы уведомим вас о решении.': '🕓 Your trial request was sent to an admin. We will notify you of the decision.',
   // Admin: trial & referral settings
@@ -1318,7 +1325,7 @@ function isValidProfileUsername(value) {
   return PROFILE_USERNAME_PATTERN.test(value);
 }
 
-function profileUsernameInput(placeholder = t('Имя пользователя')) {
+function profileUsernameInput(placeholder = t('Имя профиля')) {
   const input = Object.assign(el('input'), {
     type: 'text', placeholder, minLength: 3, maxLength: 36,
   });
@@ -1333,7 +1340,7 @@ function profileUsernameError(error) {
   if (error && error.code === 'invalid_username') {
     return t('Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов.');
   }
-  return error.message;
+  return (error && error.message) || t('Ошибка, попробуйте позже.');
 }
 
 function daysWord(n) {
@@ -2723,7 +2730,21 @@ async function adminAction(path, payload, message) {
     currentRender();
   } catch (e) {
     setButtonLoading(button, false);
-    tg.showAlert(e.message);
+    // 404/409 mean the record moved on without us: an approval can be
+    // resolved-and-rejected server side, and a concurrent decision from the bot
+    // makes the cached list stale. Re-read those so the admin is not left looking
+    // at a request that is already gone. Every other failure leaves the view
+    // alone — re-rendering rebuilds each card from the payload and would discard
+    // whatever the admin had typed into the form.
+    if (e && (e.status === 404 || e.status === 409)) {
+      try {
+        adminData = await api('/api/admin');
+        currentRender();
+      } catch (refreshErr) {
+        console.warn('admin refresh after failed action failed', refreshErr);
+      }
+    }
+    tg.showAlert((e && e.message) || t('Ошибка, попробуйте позже.'));
   }
 }
 
@@ -3298,6 +3319,48 @@ function renderAdminUpdates(data) {
     }
   };
   card.appendChild(check);
+  return card;
+}
+
+function renderAdminBackups(data) {
+  const card = el('div', 'admin-card');
+  card.appendChild(el('h2', null, t('💾 Резервные копии')));
+  card.appendChild(el('div', 'hint', data.backup_enabled
+    ? t('Включены: копия базы отправляется всем админам во время ежедневного запуска.')
+    : t('Выключены.')));
+  const maxDays = data.backup_max_interval_days || 365;
+  const interval = Object.assign(el('input'), {
+    type: 'number', min: '1', max: String(maxDays), value: data.backup_interval_days || 1,
+  });
+  const row = el('div', 'row input-row');
+  row.appendChild(el('span', 'k', t('Интервал (дни, 1–{max})', { max: maxDays })));
+  row.appendChild(interval);
+  card.appendChild(row);
+  card.appendChild(el('div', 'hint', t('Время запуска — общее расписание RUN_AT.')));
+  const payload = enabled => ({ enabled, interval_days: parseInt(interval.value, 10) });
+  const save = el('button', null, t('💾 Сохранить интервал'));
+  save.onclick = () => {
+    const days = parseInt(interval.value, 10);
+    if (!Number.isInteger(days) || days < 1 || days > maxDays) {
+      tg.showAlert(t('Введите целое число от 1 до {max}.', { max: maxDays }));
+      return;
+    }
+    adminAction('/api/admin/backup/schedule', payload(data.backup_enabled));
+  };
+  card.appendChild(save);
+  const toggle = el('button', 'switch' + (data.backup_enabled ? ' on' : ''));
+  toggle.appendChild(el('span', 'knob'));
+  toggle.setAttribute('aria-label', data.backup_enabled ? t('🚫 Выключить') : t('✅ Включить'));
+  // Toggling always sends the stored cadence, never the possibly-unsaved input,
+  // so flipping the switch cannot silently commit a half-typed interval.
+  toggle.onclick = () => adminAction('/api/admin/backup/schedule', {
+    enabled: !data.backup_enabled,
+    interval_days: data.backup_interval_days || 1,
+  });
+  const toggleRow = el('div', 'toggle-item');
+  toggleRow.appendChild(el('div', 'ti-label', t('💾 Плановые резервные копии')));
+  toggleRow.appendChild(toggle);
+  card.appendChild(toggleRow);
   return card;
 }
 
@@ -4726,6 +4789,7 @@ function showAdminSettings(opts) {
   appEl.appendChild(renderAdminSquad(data));
   appEl.appendChild(renderAdminTrafficReset(data));
   appEl.appendChild(renderAdminUpdates(data));
+  appEl.appendChild(renderAdminBackups(data));
   appEl.appendChild(renderAdminTrial(data));
   appEl.appendChild(renderAdminReferral(data));
   appEl.appendChild(renderAdminRegistrationGuard(data));

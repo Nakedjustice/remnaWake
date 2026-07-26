@@ -158,6 +158,36 @@ func TestApproveLegacyInvalidTrialRejectsAndReleasesClaim(t *testing.T) {
 	}
 }
 
+// Releasing the claim is only safe when the claim is the one this request
+// reserved. A claim recorded under another name belongs to a trial the user has
+// already been granted, and dropping it would hand out a second free trial.
+func TestApproveLegacyInvalidTrialKeepsAnUnrelatedClaim(t *testing.T) {
+	svc, st, creator, _ := webTrialFixture(t, &fakeFinder{})
+	enableTrialWithApproval(svc)
+	ctx := context.Background()
+
+	if ok, err := st.ClaimTrial(ctx, 555, "already-granted", svc.now()); err != nil || !ok {
+		t.Fatalf("seed granted trial claim: ok=%v err=%v", ok, err)
+	}
+	reqID, err := st.CreateTrialRequest(ctx, 555, "профиль", svc.now())
+	if err != nil {
+		t.Fatalf("seed stale legacy trial request: %v", err)
+	}
+
+	if _, _, _, err := svc.approveTrialRequest(ctx, reqID); !errors.Is(err, ErrInvalidUsername) {
+		t.Fatalf("approve stale legacy request err=%v, want ErrInvalidUsername", err)
+	}
+	if len(creator.created) != 0 {
+		t.Fatalf("stale legacy request reached profile creator: %+v", creator.created)
+	}
+	if req, _ := st.GetTrialRequest(ctx, reqID); req == nil || req.Status != "rejected" {
+		t.Fatalf("stale legacy request was not rejected: %+v", req)
+	}
+	if ok, err := st.ClaimTrial(ctx, 555, "second-trial", svc.now()); err != nil || ok {
+		t.Fatalf("the already-granted trial claim was released: ok=%v err=%v", ok, err)
+	}
+}
+
 func TestSetTrialApprovalPersists(t *testing.T) {
 	svc, _, _, _ := newTestService(t) // admin 1000
 	ctx := context.Background()
