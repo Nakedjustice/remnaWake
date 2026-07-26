@@ -3,6 +3,9 @@ package payments
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -228,6 +231,47 @@ func TestCheckPlategaPaymentStatusesAndRepeat(t *testing.T) {
 	}
 }
 
+// Device self-management has to work identically with WEBAPP_URL unset: the
+// dev:* callbacks and the Mini App methods must observe the same slots and
+// mutate the panel the same way, so a user is never told to "open the app".
+func TestDeviceParityBetweenBotAndMiniApp(t *testing.T) {
+	ctx := context.Background()
+
+	fromMiniApp, _, miniDevices := deviceService(t)
+	if _, err := fromMiniApp.RevokeDevice(ctx, 777, 42, "hw-phone"); err != nil {
+		t.Fatalf("mini app revoke: %v", err)
+	}
+
+	fromBot, _, botDevices := deviceService(t)
+	if !fromBot.HandleCallback(ctx, cbq(777, "dev:list")) {
+		t.Fatal("dev:list should be handled")
+	}
+	if !fromBot.HandleCallback(ctx, cbq(777, "dev:rev:0:ok")) {
+		t.Fatal("dev:rev:ok should be handled")
+	}
+
+	if len(miniDevices.deleted) != 1 || len(botDevices.deleted) != 1 ||
+		miniDevices.deleted[0] != botDevices.deleted[0] {
+		t.Fatalf("panel calls differ: mini app=%v bot=%v", miniDevices.deleted, botDevices.deleted)
+	}
+
+	// Both surfaces then read the same overview back.
+	miniView, err := fromMiniApp.DeviceOverview(ctx, 777)
+	if err != nil {
+		t.Fatalf("mini app overview: %v", err)
+	}
+	botView, err := fromBot.DeviceOverview(ctx, 777)
+	if err != nil {
+		t.Fatalf("bot overview: %v", err)
+	}
+	if !reflect.DeepEqual(miniView, botView) {
+		t.Fatalf("overview differs:\nmini app=%+v\nbot=%+v", miniView, botView)
+	}
+	if miniView.Profiles[0].Used != 1 || miniView.Profiles[0].Full {
+		t.Fatalf("freed slot not reflected: %+v", miniView.Profiles[0])
+	}
+}
+
 // The mini app admin panel and the adm:backup:* callbacks must drive the same
 // schedule: whichever surface an admin uses, the persisted state, the runtime
 // cache and the reset-on-change rule have to come out identical.
@@ -286,5 +330,87 @@ func TestBackupScheduleParityBetweenBotAndMiniApp(t *testing.T) {
 	}
 	if _, interval := fromMiniApp.backupConfig(); interval != 7 {
 		t.Fatalf("rejected input changed the interval to %d", interval)
+	}
+}
+
+// The multi-ticket support surface must be complete on both sides: the same
+// conversation driven through the bot's sup:* / adm:sup:* buttons and through
+// the Web* methods the mini app calls has to leave identical tickets behind.
+func TestSupportTicketParityBetweenBotAndMiniApp(t *testing.T) {
+	ctx := context.Background()
+	const (
+		opening = "Не работает VPN\nвторой день"
+		reply   = "смотрим"
+	)
+
+	// snapshot is everything either surface can show about the conversation.
+	snapshot := func(t *testing.T, svc *Service, ticketID int64) string {
+		t.Helper()
+		list, err := svc.SupportTicketsUser(ctx, supportUser)
+		if err != nil {
+			t.Fatalf("ticket list: %v", err)
+		}
+		thread, err := svc.SupportTicketThreadUser(ctx, supportUser, ticketID)
+		if err != nil {
+			t.Fatalf("ticket thread: %v", err)
+		}
+		stored, err := svc.store.GetSupportTicket(ctx, ticketID)
+		if err != nil || stored == nil {
+			t.Fatalf("stored ticket: %+v err %v", stored, err)
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "tickets=%d\n", len(list.Tickets))
+		for _, tk := range list.Tickets {
+			fmt.Fprintf(&b, "summary|%s|%s|%s|%s|%s|%d\n",
+				tk.Subject, tk.Status, tk.StatusLabel, tk.State, tk.LastText, tk.Unread)
+		}
+		for _, m := range thread.Messages {
+			fmt.Fprintf(&b, "message|%t|%s\n", m.FromAdmin, m.Text)
+		}
+		fmt.Fprintf(&b, "closed_by=%s state=%s", stored.ClosedBy, thread.Ticket.State)
+		return b.String()
+	}
+
+	fromBot, _ := newSupportService(t)
+	supportTap(t, fromBot, supportUser, "sup:new")
+	if !supportType(fromBot, supportUser, opening) {
+		t.Fatal("bot: the new-ticket text was not consumed")
+	}
+	botTicket, err := fromBot.store.LatestOpenTicketForUser(ctx, supportUser)
+	if err != nil || botTicket == nil {
+		t.Fatalf("bot ticket: %+v err %v", botTicket, err)
+	}
+	supportTicketTap(t, fromBot, adminTG, "adm:sup:re:", botTicket.ID)
+	if !supportTypeAdmin(fromBot, adminTG, reply) {
+		t.Fatal("bot: the admin reply was not consumed")
+	}
+	supportTicketTap(t, fromBot, supportUser, "sup:cl:", botTicket.ID)
+
+	fromMiniApp, _ := newSupportService(t)
+	webTicket, err := fromMiniApp.SupportCreateTicket(ctx, supportUser, "", opening)
+	if err != nil {
+		t.Fatalf("mini app create: %v", err)
+	}
+	if err := fromMiniApp.SupportReplyTicketAdmin(ctx, adminTG, webTicket, reply); err != nil {
+		t.Fatalf("mini app reply: %v", err)
+	}
+	if err := fromMiniApp.SupportCloseTicketUser(ctx, supportUser, webTicket); err != nil {
+		t.Fatalf("mini app close: %v", err)
+	}
+
+	if got, want := snapshot(t, fromBot, botTicket.ID), snapshot(t, fromMiniApp, webTicket); got != want {
+		t.Fatalf("the two surfaces disagree:\nbot:\n%s\nmini app:\n%s", got, want)
+	}
+
+	// Both surfaces also refuse the same follow-up on a closed ticket.
+	if err := fromMiniApp.SupportSendUserToTicket(ctx, supportUser, webTicket, "ещё"); !errors.Is(err, ErrTicketClosed) {
+		t.Fatalf("mini app reply to a closed ticket: %v", err)
+	}
+	supportTicketTap(t, fromBot, supportUser, "sup:re:", botTicket.ID)
+	if supportType(fromBot, supportUser, "ещё") {
+		t.Fatal("bot: a closed ticket must not accept a reply")
+	}
+	if msgs, _ := fromBot.store.ListSupportMessagesByTicket(ctx, botTicket.ID); len(msgs) != 2 {
+		t.Fatalf("bot ticket grew after the close: %+v", msgs)
 	}
 }

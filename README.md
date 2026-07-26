@@ -39,6 +39,15 @@ extends the subscription by the chosen number of months.
 - 🔔 **Notification preferences** — users mute expiry reminders and win-back
   messages independently, from the bot **🔔 Notifications** button or the Mini
   App cabinet.
+- 🗂 **Support tickets** — users keep a list of separate conversations with
+  subjects and history instead of one endless thread: open a new ticket, reply
+  to a specific one, close it when done. Admins get a 🛟 **Обращения** inbox in
+  `/admin` and in the Mini App to reply per thread. A ticket that belongs to
+  somebody else is indistinguishable from one that does not exist.
+- 📱 **Device slots** (`/devices`) — see which devices occupy your HWID slots
+  (platform, model, when they connected) and free one yourself instead of
+  messaging an admin. Each linked profile is listed separately, revoking asks
+  for confirmation first, and an unset limit shows as `n / ∞`.
 - 📊 **Stats** (`/stats`) — panel users, 30-day payments & revenue, gifts,
   invites.
 - 🩺 **Proxy monitoring** (optional) — bundles
@@ -146,6 +155,7 @@ The bot chat and Mini App both support this step. JPEG/PNG photos are limited to
 | `/mygifts`  | List your gift codes, their status, and re-send the link     |
 | `/invite`   | Invite a new user to the panel (subscribers)                 |
 | `/register` | Link your Telegram to an existing Remnawave profile          |
+| `/devices`  | Your registered devices per profile; free an HWID slot yourself |
 | `/cancel`   | Cancel the current `/gift` / `/invite` / `/register` step     |
 
 **Admin** (only `TELEGRAM_ADMIN_ID`; silently ignored otherwise):
@@ -255,6 +265,51 @@ Already linked to you → acknowledged idempotently. Linked to someone else →
 refused (contact the admin). Session expires after 10 minutes. On startup the
 bot registers its command menu via `setMyCommands`, so users get the blue
 **Menu** button and `/` autocomplete.
+
+## 🗂 Support tickets
+
+The support chat is organised into separate tickets. **🗂 Мои обращения** lists
+your conversations with their subject and status; opening one shows its history
+and replies go to that thread only. **Close** ends a ticket without ending the
+conversation — the next message you type simply opens a new one.
+
+Typing into the quick support chat still works and keeps riding your newest open
+ticket, so an in-progress conversation is unaffected.
+
+Admins get **🛟 Обращения** in `/admin` and in the Mini App admin panel: the
+inbox lists every ticket, and a reply is addressed to the thread it came from
+rather than to the user's latest message. Requesting a ticket that belongs to
+another user returns exactly what a nonexistent ticket returns, on every
+surface.
+
+The Mini App additionally lets a user type an explicit subject when opening a
+ticket; in the bot the subject is derived from the first message. Every other
+operation is identical on both surfaces.
+
+## 📱 Device slots (`/devices`)
+
+Subscriptions carry an HWID device limit, and until now a user who hit it on a
+new phone had to ask an admin to clear a slot. **📱 Мои устройства** shows each
+linked profile with its used and total slots, and lists every registered device
+with the platform, model and first-connected date the panel reports.
+
+Reach it with `/devices` (always), from the Mini App cabinet when `WEBAPP_URL`
+is set, or from the `/me` button when it is not — `/me` swaps its inline buttons
+for the Mini App entry once one is configured, as it already does for renewal
+and gifts.
+
+Revoking asks for confirmation first and frees the slot immediately; the device
+has to connect again from scratch afterwards. Points worth knowing:
+
+- Profiles are listed **separately** when one Telegram account is linked to
+  several — the bot never silently picks the first one.
+- A limit of `0` means unlimited — the Mini App renders `n / ∞`, the bot says
+  the limit is unset. Listing and revoking still work either way, since removing
+  a stale device is useful without slot pressure.
+- If any profile's device list cannot be fetched the whole screen reports the
+  panel as unavailable, because a partial list understates the used slots and
+  would point you at the wrong device.
+- With `DRY_RUN=true` the revoke is logged and the panel is left untouched.
 
 ## 🛡️ Scam-registration guard
 
