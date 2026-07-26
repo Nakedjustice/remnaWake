@@ -130,10 +130,42 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 	}
 }
 
+// assertCallbackOwner resolves the remembered profile a callback targets and
+// verifies the presser owns it. Callback data is caller-controlled — a keyboard
+// can be forwarded and the id in it edited — so every handler that acts on a
+// Remnawave id taken from cb.Data must pass through here first.
+//
+// A missing profile, a profile owned by somebody else and a profile with no
+// Telegram link deliberately share one answer: a distinct "not yours" would
+// turn the buttons into an oracle for enumerating valid Remnawave ids. This
+// mirrors CheckPlategaPayment, which makes the same choice on the mini app side.
+func (s *Service) assertCallbackOwner(ctx context.Context, cb *tg.CallbackQuery, remnawaveID int64) (*store.NotifiedUser, bool) {
+	u, err := s.store.GetNotifiedUser(ctx, remnawaveID)
+	if err != nil {
+		s.logger.Error("get notified user failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+		return nil, false
+	}
+	// TelegramID == 0 means the snapshot has no linked account, so ownership
+	// cannot be established and nobody may act on it — checked separately from
+	// the comparison below because an update without a sender would otherwise
+	// match such a profile.
+	if u == nil || u.TelegramID == 0 || u.TelegramID != cb.From.ID {
+		s.logger.Warn("callback owner mismatch", "from_id", cb.From.ID, "remnawave_id", remnawaveID, "data", cb.Data)
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось найти данные. Дождитесь следующего уведомления."))
+		return nil, false
+	}
+	return u, true
+}
+
 func (s *Service) handlePay(ctx context.Context, cb *tg.CallbackQuery) bool {
 	userID, err := strconv.ParseInt(strings.TrimPrefix(cb.Data, "pay:"), 10, 64)
 	if err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать заявку."))
+		return true
+	}
+	u, ok := s.assertCallbackOwner(ctx, cb, userID)
+	if !ok {
 		return true
 	}
 
@@ -167,7 +199,7 @@ func (s *Service) handlePay(ctx context.Context, cb *tg.CallbackQuery) bool {
 
 	if len(tariffs) == 0 {
 		// Fallback: behave like the old single-button flow (1 month).
-		s.createRequestAndNotify(ctx, cb, userID, 1, 0, store.PlanStandard, false)
+		s.createRequestAndNotify(ctx, cb, u, 1, 0, store.PlanStandard, false)
 		return true
 	}
 
@@ -190,6 +222,9 @@ func (s *Service) handlePlanPick(ctx context.Context, cb *tg.CallbackQuery) bool
 	userID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
+		return true
+	}
+	if _, ok := s.assertCallbackOwner(ctx, cb, userID); !ok {
 		return true
 	}
 	plan, err := s.getPlan(ctx, parts[1])
@@ -253,6 +288,10 @@ func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
 	if len(parts) == 3 {
 		plan = parts[2]
 	}
+	u, ok := s.assertCallbackOwner(ctx, cb, userID)
+	if !ok {
+		return true
+	}
 
 	tariff, err := s.store.GetTariff(ctx, plan, months)
 	if err != nil {
@@ -265,7 +304,7 @@ func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
 		return true
 	}
 
-	s.createRequestAndNotify(ctx, cb, userID, months, tariff.Price, plan, false)
+	s.createRequestAndNotify(ctx, cb, u, months, tariff.Price, plan, false)
 	return true
 }
 
@@ -282,28 +321,18 @@ func (s *Service) handleBack(ctx context.Context, cb *tg.CallbackQuery) bool {
 	return true
 }
 
-// createRequestAndNotify looks up the remembered user, writes a pending request,
-// clears the user's keyboard, and DMs all admins a confirm button.
-func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQuery, userID int64, months, price int, plan string, planChangeConfirmed bool) {
-	u, err := s.store.GetNotifiedUser(ctx, userID)
-	if err != nil {
-		s.logger.Error("get notified user failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
-		return
-	}
-	if u == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось найти данные. Дождитесь следующего уведомления."))
-		return
-	}
-
+// createRequestAndNotify writes a pending request for the profile the caller
+// already resolved through assertCallbackOwner, clears the user's keyboard, and
+// DMs all admins a confirm button.
+func (s *Service) createRequestAndNotify(ctx context.Context, cb *tg.CallbackQuery, u *store.NotifiedUser, months, price int, plan string, planChangeConfirmed bool) {
 	// When more than one provider is enabled, let the user choose; otherwise
 	// route straight to the only enabled provider.
 	providers := s.enabledProviders()
 	if len(providers) > 1 {
-		s.routeProviderWithPlanChangeGate(ctx, cb, u, userID, months, price, plan, "", planChangeConfirmed)
+		s.routeProviderWithPlanChangeGate(ctx, cb, u, u.RemnawaveID, months, price, plan, "", planChangeConfirmed)
 		return
 	}
-	s.routeProviderWithPlanChangeGate(ctx, cb, u, userID, months, price, plan, providers[0], planChangeConfirmed)
+	s.routeProviderWithPlanChangeGate(ctx, cb, u, u.RemnawaveID, months, price, plan, providers[0], planChangeConfirmed)
 }
 
 // routeProvider dispatches a renewal to the given payment provider. Platega and
@@ -479,6 +508,10 @@ func (s *Service) handlePayVia(ctx context.Context, cb *tg.CallbackQuery) bool {
 		plan = parts[3]
 		planChangeConfirmed = true
 	}
+	u, ok := s.assertCallbackOwner(ctx, cb, userID)
+	if !ok {
+		return true
+	}
 	// Reject a provider that is no longer enabled (stale keyboard).
 	if !s.providerAvailable(provider) || !s.isProviderEnabled(provider) {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот способ оплаты больше недоступен."))
@@ -493,11 +526,6 @@ func (s *Service) handlePayVia(ctx context.Context, cb *tg.CallbackQuery) bool {
 	}
 	if tariff == nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
-		return true
-	}
-	u, err := s.store.GetNotifiedUser(ctx, userID)
-	if err != nil || u == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось найти данные. Дождитесь следующего уведомления."))
 		return true
 	}
 	s.routeProviderWithPlanChangeGate(ctx, cb, u, userID, months, tariff.Price, plan, provider, planChangeConfirmed)
@@ -518,6 +546,10 @@ func (s *Service) handlePlanChangeConfirm(ctx context.Context, cb *tg.CallbackQu
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
+	u, ok := s.assertCallbackOwner(ctx, cb, userID)
+	if !ok {
+		return true
+	}
 
 	tariff, err := s.store.GetTariff(ctx, plan, months)
 	if err != nil {
@@ -529,7 +561,7 @@ func (s *Service) handlePlanChangeConfirm(ctx context.Context, cb *tg.CallbackQu
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
 		return true
 	}
-	s.createRequestAndNotify(ctx, cb, userID, months, tariff.Price, plan, true)
+	s.createRequestAndNotify(ctx, cb, u, months, tariff.Price, plan, true)
 	return true
 }
 
@@ -548,6 +580,10 @@ func (s *Service) handlePlanChangeProviderConfirm(ctx context.Context, cb *tg.Ca
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось распознать выбор."))
 		return true
 	}
+	u, ok := s.assertCallbackOwner(ctx, cb, userID)
+	if !ok {
+		return true
+	}
 	if !s.providerAvailable(provider) || !s.isProviderEnabled(provider) {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот способ оплаты больше недоступен."))
 		return true
@@ -560,11 +596,6 @@ func (s *Service) handlePlanChangeProviderConfirm(ctx context.Context, cb *tg.Ca
 	}
 	if tariff == nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
-		return true
-	}
-	u, err := s.store.GetNotifiedUser(ctx, userID)
-	if err != nil || u == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось найти данные. Дождитесь следующего уведомления."))
 		return true
 	}
 	s.routeProvider(ctx, cb, u, userID, months, tariff.Price, plan, provider)
