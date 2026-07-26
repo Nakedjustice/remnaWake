@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -348,6 +349,87 @@ func (c *Client) GetUserByTelegramID(ctx context.Context, telegramID int64) ([]U
 		return nil, fmt.Errorf("decode users: %w (body=%s)", err, textutil.Truncate(string(body), 300))
 	}
 	return payload.Response, nil
+}
+
+// ErrHwidDeviceNotFound reports a 404 from POST /api/hwid/devices/delete: the
+// user or the device is already gone. Callers map it to their own "the slot is
+// no longer there" answer instead of a generic panel failure.
+var ErrHwidDeviceNotFound = errors.New("hwid device not found")
+
+// GetHwidDevices lists the devices registered against a user's HWID slots.
+// A 404 (unknown user) yields an empty list rather than an error, mirroring the
+// single-user lookups: the caller has already resolved the profile, so the only
+// useful reading of "no such user record here" is "no devices".
+func (c *Client) GetHwidDevices(ctx context.Context, userUUID string) ([]HwidDevice, error) {
+	endpoint := fmt.Sprintf("%s/api/hwid/devices/%s", c.baseURL, url.PathEscape(userUUID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setRequestHeaders(req)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get hwid devices: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	return decodeHwidDevices(resp, "get hwid devices")
+}
+
+// DeleteHwidDevice frees one HWID slot and returns the devices still registered
+// (the panel answers the delete with the refreshed listing). A 404 comes back as
+// ErrHwidDeviceNotFound so a slot revoked twice is distinguishable from a panel
+// outage.
+func (c *Client) DeleteHwidDevice(ctx context.Context, userUUID, hwid string) ([]HwidDevice, error) {
+	endpoint := fmt.Sprintf("%s/api/hwid/devices/delete", c.baseURL)
+	body, err := json.Marshal(map[string]string{"userUuid": userUUID, "hwid": hwid})
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	c.setRequestHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("delete hwid device: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrHwidDeviceNotFound
+	}
+	return decodeHwidDevices(resp, "delete hwid device")
+}
+
+// decodeHwidDevices checks the status of an HWID response and unwraps its
+// shared {response:{total, devices}} envelope. op names the operation for
+// error messages.
+func decodeHwidDevices(resp *http.Response, op string) ([]HwidDevice, error) {
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("%s: unauthorized (status=%d)", op, resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var payload hwidDevicesResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("decode hwid devices: %w (body=%s)", err, textutil.Truncate(string(body), 300))
+	}
+	return payload.Response.Devices, nil
 }
 
 func (c *Client) setRequestHeaders(req *http.Request) {

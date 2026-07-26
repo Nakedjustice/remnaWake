@@ -40,6 +40,8 @@ type Cabinet interface {
 	SupportHistoryUser(ctx context.Context, telegramID int64) (*payments.WebSupport, error)
 	SupportSendUser(ctx context.Context, telegramID int64, text string) error
 	SupportCloseUser(ctx context.Context, telegramID int64) error
+	DeviceOverview(ctx context.Context, telegramID int64) (*payments.WebDevices, error)
+	RevokeDevice(ctx context.Context, telegramID, remnawaveID int64, hwid string) (*payments.WebDevices, error)
 }
 
 // Admin is the subset of *payments.Service the mini app admin API needs.
@@ -145,6 +147,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/platega/check", s.handlePlategaCheck)
 	mux.HandleFunc("POST /api/notifications", s.handleNotifications)
 	mux.HandleFunc("POST /api/trial", s.handleTrial)
+	mux.HandleFunc("GET /api/devices", s.handleDevices)
+	mux.HandleFunc("POST /api/devices/revoke", s.handleDeviceRevoke)
 	mux.HandleFunc("GET /api/support", s.handleSupport)
 	mux.HandleFunc("POST /api/support/send", s.handleSupportSend)
 	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
@@ -435,6 +439,45 @@ func (s *Server) handleTrafficExtension(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// handleDevices returns the caller's HWID slot usage, one section per linked
+// profile.
+func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	data, err := s.cabinet.DeviceOverview(r.Context(), userID)
+	if err != nil {
+		s.writeCabinetError(w, "devices", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, data)
+}
+
+// handleDeviceRevoke frees one slot. The hwid travels in the body because it is
+// long and arbitrary; the profile is named by id and re-checked against the
+// caller's own profiles by the service.
+func (s *Server) handleDeviceRevoke(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		RemnawaveID int64  `json:"remnawave_id"`
+		HWID        string `json:"hwid"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	data, err := s.cabinet.RevokeDevice(r.Context(), userID, req.RemnawaveID, req.HWID)
+	if err != nil {
+		s.writeCabinetError(w, "revoke device", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "devices": data})
+}
+
 // writeCabinetError maps user-facing cabinet service errors to HTTP statuses.
 func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegramID int64, err error) {
 	switch {
@@ -460,6 +503,10 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 		writeJSONError(w, http.StatusForbidden, "profile is linked to another account")
 	case errors.Is(err, payments.ErrPaymentRequestInaccessible):
 		writeJSONError(w, http.StatusNotFound, "payment request not found")
+	case errors.Is(err, payments.ErrDeviceNotFound):
+		writeJSONError(w, http.StatusNotFound, "device not found")
+	case errors.Is(err, payments.ErrDevicesUnavailable):
+		writeJSONError(w, http.StatusServiceUnavailable, "device management is unavailable")
 	case errors.Is(err, payments.ErrGiftUsed):
 		writeJSONError(w, http.StatusConflict, "gift code already used")
 	case errors.Is(err, payments.ErrReceiptSessionExpired):

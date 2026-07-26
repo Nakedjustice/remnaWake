@@ -367,6 +367,14 @@ type Service struct {
 	// xray-checker sidecar is configured; nil = proxy monitoring unavailable.
 	xrayChecker XrayChecker // protected by mu
 
+	// devices reads and frees the panel's HWID slots; wired once at startup via
+	// SetDeviceManager. nil = the device screen is unavailable.
+	devices DeviceManager // protected by mu
+	// deviceSlots maps the short index in a dev:rev: payload back to the real
+	// (profile, hwid) pair, per user. hwids are long and arbitrary, so they can
+	// never travel in Telegram's 64-byte callback data.
+	deviceSlots map[int64]*deviceSlotState // protected by mu
+
 	// resolvedSquadUUID caches a successful by-name fallback lookup of the
 	// default squad, so user creation doesn't hit the panel's squad listing
 	// every time while no squad is explicitly selected. Protected by mu;
@@ -479,6 +487,7 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater 
 		redeems:            make(map[int64]*redeemState),
 		payPhotos:          make(map[int64]*payPhotoState),
 		userCtl:            make(map[int64]*userCtlState),
+		deviceSlots:        make(map[int64]*deviceSlotState),
 		supportSessions:    make(map[int64]bool),
 		adminInput:         make(map[int64]adminInputState),
 		payMsgs:            make(map[int64]adminMsgEntry),

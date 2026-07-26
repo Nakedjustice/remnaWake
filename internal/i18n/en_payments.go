@@ -632,4 +632,23 @@ var enPayments = map[string]string{
 	"• серверов: %d\n":                 "• servers: %d\n",
 	"• расходы в месяц: %s":            "• monthly cost: %s",
 	"\n• без курса: %d":                "\n• without a rate: %d",
+
+	// Device slots (self-service HWID management)
+	"📱 Мои устройства":                   "📱 My devices",
+	"📱 Мои устройства\n":                 "📱 My devices\n",
+	"Занято слотов: %d из %d":            "Slots in use: %d of %d",
+	"Устройств: %d (лимит не задан)":     "Devices: %d (no limit set)",
+	"Пока нет подключённых устройств.\n": "No devices connected yet.\n",
+	" — подключено %s":                   " — connected %s",
+	"⚠️ Свободных слотов нет. Отвяжите ненужное устройство, чтобы подключить новое.\n": "⚠️ No free slots. Unlink a device you no longer use to connect a new one.\n",
+	"❌ Отвязать %s": "❌ Unlink %s",
+	"❌ %s · %s":     "❌ %s · %s",
+	"Отвязать устройство «%s»?\n\nСлот освободится сразу. Чтобы снова пользоваться подпиской с этого устройства, придётся подключить его заново.": "Unlink “%s”?\n\nThe slot is freed right away. To use the subscription from that device again you will have to connect it anew.",
+	"✅ Да, отвязать":                                    "✅ Yes, unlink",
+	"✅ Устройство отвязано.":                            "✅ Device unlinked.",
+	"Не удалось распознать устройство.":                 "Could not identify the device.",
+	"Список устройств устарел. Откройте его заново.":    "This device list is out of date. Open it again.",
+	"Устройство не найдено. Обновите список.":           "Device not found. Refresh the list.",
+	"Управление устройствами сейчас недоступно.":        "Device management is unavailable right now.",
+	"Ваш Telegram пока не привязан к профилю подписки.": "Your Telegram is not linked to a subscription profile yet.",
 }

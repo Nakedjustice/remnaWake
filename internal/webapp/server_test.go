@@ -40,6 +40,9 @@ type fakeCabinet struct {
 	supportHistory      []int64
 	supportSent         []int64
 	supportClosed       []int64
+	devices             *payments.WebDevices
+	deviceErr           error
+	revoked             []string // "<remnawave_id>:<hwid>" per revoke call
 }
 
 func TestWebParityJSONRoutes(t *testing.T) {
@@ -237,6 +240,85 @@ func (f *fakeCabinet) SupportSendUser(_ context.Context, telegramID int64, _ str
 func (f *fakeCabinet) SupportCloseUser(_ context.Context, telegramID int64) error {
 	f.supportClosed = append(f.supportClosed, telegramID)
 	return nil
+}
+
+func (f *fakeCabinet) DeviceOverview(_ context.Context, _ int64) (*payments.WebDevices, error) {
+	if f.deviceErr != nil {
+		return nil, f.deviceErr
+	}
+	return f.devices, nil
+}
+
+func (f *fakeCabinet) RevokeDevice(_ context.Context, _, remnawaveID int64, hwid string) (*payments.WebDevices, error) {
+	f.revoked = append(f.revoked, fmt.Sprintf("%d:%s", remnawaveID, hwid))
+	if f.deviceErr != nil {
+		return nil, f.deviceErr
+	}
+	return f.devices, nil
+}
+
+func TestDeviceRoutes(t *testing.T) {
+	cab := &fakeCabinet{devices: &payments.WebDevices{Profiles: []payments.WebDeviceProfile{{
+		RemnawaveID: 42, Username: "alice", Limit: 2, Used: 1,
+		Devices: []payments.WebDevice{{HWID: "hw-phone", DeviceModel: "iPhone 15", Platform: "iOS"}},
+	}}}}
+	srv := newTestServer(cab)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/devices", nil)
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"hwid":"hw-phone"`) {
+		t.Fatalf("list: code=%d body=%s", w.Code, w.Body.String())
+	}
+
+	// The hwid travels in the JSON body (it never fits in callback data), and
+	// the profile is named by id so the service can re-derive ownership.
+	req = httptest.NewRequest(http.MethodPost, "/api/devices/revoke", strings.NewReader(`{"remnawave_id":42,"hwid":"hw-phone"}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"ok":true`) {
+		t.Fatalf("revoke: code=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(cab.revoked) != 1 || cab.revoked[0] != "42:hw-phone" {
+		t.Fatalf("revoked = %v", cab.revoked)
+	}
+}
+
+func TestDeviceErrorMappings(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want int
+	}{
+		{payments.ErrDevicesUnavailable, http.StatusServiceUnavailable},
+		{payments.ErrDeviceNotFound, http.StatusNotFound},
+		{payments.ErrProfileUnknown, http.StatusForbidden},
+		{payments.ErrNotLinked, http.StatusForbidden},
+		{payments.ErrPanelUnavailable, http.StatusBadGateway},
+	} {
+		srv := newTestServer(&fakeCabinet{deviceErr: tc.err})
+		req := httptest.NewRequest(http.MethodPost, "/api/devices/revoke", strings.NewReader(`{"remnawave_id":42,"hwid":"hw-phone"}`))
+		req.Header.Set("Authorization", validAuth(t))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Fatalf("err=%v code=%d want=%d body=%s", tc.err, w.Code, tc.want, w.Body.String())
+		}
+	}
+}
+
+func TestEmbeddedFrontendHasDeviceScreen(t *testing.T) {
+	srv := newTestServer(&fakeCabinet{})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{"/api/devices", "/api/devices/revoke", "showDevices", "renderDevices"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("frontend missing %q", want)
+		}
+	}
 }
 
 type adminCall struct {

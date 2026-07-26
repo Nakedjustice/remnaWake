@@ -102,6 +102,7 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 			}
 		}
 		rows = append(rows,
+			[]tg.InlineKeyboardButton{{Text: i18n.T("📱 Мои устройства"), CallbackData: "dev:list"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("🎁 Подарить подписку"), CallbackData: "menu:gift"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("📦 Мои подарки"), CallbackData: "menu:mygifts"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("👥 Пригласить пользователя"), CallbackData: "menu:invite"}},

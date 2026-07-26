@@ -1149,6 +1149,16 @@ const EN = {
   ' · вручную: {rate}': ' · manual: {rate}',
   'Курс': 'Rate',
   'Введите положительный курс.': 'Enter a positive rate.',
+  // Device slots
+  '📱 Мои устройства': '📱 My devices',
+  'Посмотрите, какие устройства занимают слоты, и освободите нужный.': 'See which devices occupy your slots and free the one you need.',
+  'Занято слотов': 'Slots in use',
+  '⚠️ Свободных слотов нет. Отвяжите ненужное устройство, чтобы подключить новое.': '⚠️ No free slots. Unlink a device you no longer use to connect a new one.',
+  'Пока нет подключённых устройств.': 'No devices connected yet.',
+  'подключено {date}': 'connected {date}',
+  '❌ Отвязать': '❌ Unlink',
+  'Отвязываем…': 'Unlinking…',
+  'Отвязать устройство «{name}»? Слот освободится сразу, а устройству придётся подключиться заново.': 'Unlink “{name}”? The slot is freed right away, and that device will have to connect anew.',
 };
 
 function resolveLang(serverLang) {
@@ -2252,6 +2262,93 @@ function renderSubscriptionInfo(p) {
   return card;
 }
 
+// ---- Device slots (twin of the bot's dev:* flow) ----
+
+// deviceTitle joins the panel's self-reported model and platform. That metadata
+// comes from the client app, so it is shown as-is and never translated; an app
+// that reported nothing falls back to a shortened hwid.
+function deviceTitle(d) {
+  const parts = [];
+  if (d.device_model) parts.push(d.device_model);
+  const platform = [d.platform, d.os_version].filter(Boolean).join(' ');
+  if (platform) parts.push(platform);
+  return parts.length ? parts.join(' · ') : shortUUID(d.hwid);
+}
+
+// renderDevices builds one section per linked profile — a Telegram account may
+// own several panel profiles, and each carries its own device limit — with the
+// slot counter and a per-device unlink button.
+function renderDevices(devices) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, t('📱 Мои устройства')));
+  const profiles = (devices && devices.profiles) || [];
+  if (!profiles.length) {
+    card.appendChild(el('div', 'hint', t('Подписки не найдены.')));
+    return card;
+  }
+  profiles.forEach(p => {
+    if (profiles.length > 1) card.appendChild(el('h2', null, p.username));
+    // A zero device limit is the panel's "unlimited": slots exist but never fill.
+    row(card, t('Занято слотов'), p.unlimited ? `${p.used} / ∞` : `${p.used} / ${p.limit}`);
+    if (p.full) {
+      card.appendChild(el('div', 'hint', t('⚠️ Свободных слотов нет. Отвяжите ненужное устройство, чтобы подключить новое.')));
+    }
+    const list = p.devices || [];
+    if (!list.length) {
+      card.appendChild(el('div', 'hint', t('Пока нет подключённых устройств.')));
+      return;
+    }
+    list.forEach(d => {
+      const title = deviceTitle(d);
+      const item = el('div', 'item');
+      const info = el('div', 'info');
+      info.appendChild(el('div', null, title));
+      if (d.created_at) info.appendChild(el('div', 'st', t('подключено {date}', { date: d.created_at })));
+      item.appendChild(info);
+      const unlink = el('button', 'secondary', t('❌ Отвязать'));
+      unlink.onclick = async () => {
+        if (!(await confirmDialog(t('Отвязать устройство «{name}»? Слот освободится сразу, а устройству придётся подключиться заново.', { name: title })))) return;
+        try {
+          await withButtonLoading(unlink, t('Отвязываем…'), () => api('/api/devices/revoke', {
+            method: 'POST',
+            body: JSON.stringify({ remnawave_id: p.remnawave_id, hwid: d.hwid }),
+          }));
+          showDevices();
+        } catch (e) { tg.showAlert(e.message); }
+      };
+      item.appendChild(unlink);
+      card.appendChild(item);
+    });
+  });
+  return card;
+}
+
+// showDevices opens the device screen. Slots are read live from /api/devices
+// rather than the cached /api/me payload, so a revoke shows up immediately.
+async function showDevices() {
+  currentRender = showDevices;
+  mountDock('settings');
+  showLoadingView('cabinet', t('📱 Мои устройства'));
+  let devices = null;
+  let failure = '';
+  try {
+    devices = await api('/api/devices');
+  } catch (e) {
+    failure = e.message;
+  }
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('📱 Мои устройства')));
+  if (failure) {
+    const card = el('div', 'card');
+    card.appendChild(el('div', 'hint', failure));
+    appEl.appendChild(card);
+  } else {
+    appEl.appendChild(renderDevices(devices));
+  }
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
 // renderTrialClaim builds the free-trial claim card shown to new (unlinked)
 // users when the trial is enabled.
 function renderTrialClaim(terms) {
@@ -2380,6 +2477,11 @@ function showSettings() {
   if (data.notifications) appEl.appendChild(renderNotifPrefs(data));
   const profile = selectedProfile(data);
   if (profile) appEl.appendChild(renderSubscriptionInfo(profile));
+  if (data.linked) {
+    appEl.appendChild(menuCard(t('📱 Мои устройства'),
+      t('Посмотрите, какие устройства занимают слоты, и освободите нужный.'),
+      [[t('Открыть'), showDevices]]));
+  }
   appEl.appendChild(renderRegistration());
   appEl.appendChild(renderGiftRedemption());
   statusEl.hidden = true;

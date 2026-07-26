@@ -44,6 +44,8 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleTrafficExtensionPay(ctx, cb)
 	case strings.HasPrefix(cb.Data, "tex:pick:"):
 		return s.handleTrafficExtensionPick(ctx, cb)
+	case strings.HasPrefix(cb.Data, "dev:"):
+		return s.handleDeviceCallback(ctx, cb)
 	case strings.HasPrefix(cb.Data, "plcheck:"):
 		return s.handlePlategaCheck(ctx, cb)
 	case strings.HasPrefix(cb.Data, "chg:"):
