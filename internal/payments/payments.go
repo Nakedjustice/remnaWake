@@ -210,6 +210,7 @@ const (
 	adminInputUpdateInterval
 	adminInputRegistrationGuardPattern
 	adminInputBackupInterval
+	adminInputSupportTicketReply
 )
 
 type adminInputState struct {
@@ -224,6 +225,11 @@ type adminInputState struct {
 	// is adminInputSupportReply (set when the admin taps the reply button on a
 	// support notification).
 	supportTarget int64
+	// supportTicket is the ticket an admin is replying to while step is
+	// adminInputSupportTicketReply (set from the inbox thread's reply button).
+	// The id stays here rather than in the callback payload, which is capped at
+	// 64 bytes.
+	supportTicket int64
 }
 
 type adminMsgRef struct {
@@ -325,6 +331,12 @@ type Service struct {
 	// flag is cleared by /cancel or by closing the chat. Persisting the
 	// conversation lives in the store; this is only the bot-chat input mode.
 	supportSessions map[int64]bool // protected by mu
+
+	// supportCompose remembers which ticket the user's next chat message goes
+	// to after they tapped "reply"/"new ticket" in the bot ticket list. It takes
+	// precedence over supportSessions (which always rides the newest open
+	// ticket) and is one-shot: the message that consumes it clears it.
+	supportCompose map[int64]*supportComposeState // protected by mu
 
 	botUsername string // protected by mu; empty = unknown, fall back to raw code
 	webAppURL   string // protected by mu; empty = mini app disabled
@@ -480,6 +492,7 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater 
 		payPhotos:          make(map[int64]*payPhotoState),
 		userCtl:            make(map[int64]*userCtlState),
 		supportSessions:    make(map[int64]bool),
+		supportCompose:     make(map[int64]*supportComposeState),
 		adminInput:         make(map[int64]adminInputState),
 		payMsgs:            make(map[int64]adminMsgEntry),
 		inviteMsgs:         make(map[int64]adminMsgEntry),

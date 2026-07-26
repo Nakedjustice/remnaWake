@@ -1091,6 +1091,25 @@ const EN = {
   'Завершить': 'Close',
   'Завершить обращение? История будет удалена.': 'Close this conversation? The history will be deleted.',
   'Без имени': 'No name',
+  // Support tickets
+  '🗂 Мои обращения': '🗂 My tickets',
+  'Мои обращения': 'My tickets',
+  'История ваших обращений в поддержку.': 'The history of your support tickets.',
+  'У вас пока нет обращений.': 'You have no tickets yet.',
+  'Обращений пока нет.': 'There are no tickets yet.',
+  'Обращение': 'Ticket',
+  'Без темы': 'No subject',
+  'Есть ответ': 'Answered',
+  'Ждёт ответа': 'Awaiting reply',
+  '✍️ Новое обращение': '✍️ New ticket',
+  'Тема (необязательно)': 'Subject (optional)',
+  'Опишите проблему…': 'Describe the problem…',
+  '✖️ Закрыть обращение': '✖️ Close ticket',
+  'Закрыть обращение? История останется доступной.': 'Close this ticket? The history stays available.',
+  'Это обращение закрыто. Создайте новое, чтобы продолжить.': 'This ticket is closed. Open a new one to continue.',
+  '🛟 Обращения': '🛟 Tickets',
+  'Обращения': 'Tickets',
+  'Открытые обращения сверху, затем недавно закрытые.': 'Open tickets first, then the recently closed ones.',
   // Registration guard
   '🛡 Антискам-регистрации': '🛡 Registration protection',
   'Встроенные паттерны защищают от имитации поддержки и администрации. Добавьте свои слова для проверки имени и ника.': 'Built-in patterns protect against impersonating support and administrators. Add your own words to check names and usernames.',
@@ -2156,6 +2175,12 @@ function buildSupportDrawer() {
   compose.appendChild(send);
   sheet.appendChild(compose);
 
+  // The drawer is the quick chat; the ticket list is the way to every other
+  // conversation (same operations the bot's 🗂 button opens).
+  const tickets = el('button', 'secondary drawer-end', t('🗂 Мои обращения'));
+  tickets.onclick = showSupportTickets;
+  sheet.appendChild(tickets);
+
   const end = el('button', 'secondary drawer-end', t('Завершить чат'));
   end.onclick = async () => {
     if (!(await confirmDialog(t('Завершить чат с поддержкой? История будет удалена.')))) return;
@@ -2326,7 +2351,7 @@ function showHome() {
     appEl.appendChild(menuCard(
       t('💬 Поддержка'),
       t('Связаться с администратором по любым вопросам.'),
-      [[t('Открыть чат'), showSupport]]));
+      [[t('Открыть чат'), showSupport], [t('Мои обращения'), showSupportTickets]]));
     appEl.appendChild(renderGiftRedemption());
   } else {
     const profiles = data.profiles || [];
@@ -2721,6 +2746,233 @@ async function showAdminSupportThread(userId, username) {
 async function refreshAdminThread(box, userId) {
   const data = await api('/api/admin/support/thread', { method: 'POST', body: JSON.stringify({ user_id: userId }) });
   renderChatMessages(box, data.messages);
+}
+
+// ---- Support tickets (multi-ticket surface) ----
+//
+// These screens are the mini app half of the same service operations the bot
+// exposes through its sup:* / adm:sup:* buttons: a real list of tickets with
+// subjects and history, per-thread replies and per-thread closing. The single
+// drawer chat above stays as the quick way to reach the newest open ticket.
+
+// ticketStateLabel renders the derived state the API sends with every ticket.
+function ticketStateLabel(state) {
+  if (state === 'closed') return t('Закрыто');
+  if (state === 'answered') return t('Есть ответ');
+  return t('Ждёт ответа');
+}
+
+// renderTicketRows fills a container with one tappable row per ticket, shared
+// by the user list and the admin inbox.
+function renderTicketRows(list, tickets, onOpen, admin) {
+  list.textContent = '';
+  if (!tickets.length) {
+    list.appendChild(el('div', 'hint', admin ? t('Обращений пока нет.') : t('У вас пока нет обращений.')));
+    return;
+  }
+  tickets.forEach(tk => {
+    const btn = el('button', 'admin-list-row');
+    btn.style.width = '100%';
+    btn.style.margin = '0';
+    btn.style.background = 'transparent';
+    const copy = el('div', 'admin-list-copy');
+    copy.appendChild(el('div', 'admin-list-title', '№' + tk.id + ' · ' + (tk.subject || t('Без темы'))));
+    // A closed ticket's state label repeats its status label — show one.
+    const meta = [tk.status_label];
+    if (tk.status !== 'closed') meta.push(ticketStateLabel(tk.state));
+    if (admin) meta.push(tk.username || (tk.user_id ? 'TG ' + tk.user_id : t('Без имени')));
+    if (tk.last_at) meta.push(tk.last_at);
+    copy.appendChild(el('div', 'admin-list-meta', meta.filter(Boolean).join(' · ')));
+    if (tk.last_text) copy.appendChild(el('div', 'admin-list-meta', tk.last_text));
+    btn.appendChild(copy);
+    if (tk.unread) btn.appendChild(el('span', 'admin-count', String(tk.unread)));
+    btn.appendChild(el('span', 'admin-chevron', '›'));
+    btn.onclick = () => onOpen(tk);
+    list.appendChild(btn);
+  });
+}
+
+// buildTicketThreadCard is the shared thread body: header line, bubbles, a
+// compose box and a close button. actions lets the refresh disable writing once
+// the ticket is closed.
+function buildTicketThreadCard(cardClass, actions, onSend, onClose) {
+  const card = el('div', cardClass);
+  actions.head = el('div', 'hint');
+  card.appendChild(actions.head);
+  actions.box = el('div', 'chat');
+  card.appendChild(actions.box);
+  actions.text = Object.assign(el('textarea'), { placeholder: t('Введите сообщение…') });
+  card.appendChild(actions.text);
+  actions.send = el('button', null, t('Отправить'));
+  actions.send.onclick = async () => {
+    const v = actions.text.value.trim();
+    if (!v) { tg.showAlert(t('Сообщение не может быть пустым.')); return; }
+    actions.send.disabled = true;
+    try {
+      await onSend(v);
+      actions.text.value = '';
+    } catch (e) { tg.showAlert(e.message); }
+    actions.send.disabled = false;
+  };
+  card.appendChild(actions.send);
+  actions.close = el('button', 'secondary', t('✖️ Закрыть обращение'));
+  actions.close.onclick = onClose;
+  card.appendChild(actions.close);
+  return card;
+}
+
+// applyTicketThread paints one thread payload into a card built above.
+function applyTicketThread(actions, data) {
+  const tk = (data && data.ticket) || {};
+  const closed = tk.status === 'closed';
+  const head = [tk.subject, tk.status_label];
+  if (!closed) head.push(ticketStateLabel(tk.state));
+  actions.head.textContent = head.filter(Boolean).join(' · ');
+  renderChatMessages(actions.box, data && data.messages);
+  actions.send.hidden = closed;
+  actions.text.hidden = closed;
+  actions.close.hidden = closed;
+  if (closed && !actions.closedNote) {
+    actions.closedNote = el('div', 'hint', t('Это обращение закрыто. Создайте новое, чтобы продолжить.'));
+    actions.head.parentNode.appendChild(actions.closedNote);
+  }
+}
+
+// showSupportTickets lists the user's own tickets.
+async function showSupportTickets() {
+  currentRender = showSupportTickets;
+  stopSupportPoll();
+  closeSupportDrawer();
+  appEl.textContent = '';
+  appEl.appendChild(subPageTop(t('🗂 Мои обращения')));
+  const card = el('div', 'card');
+  card.appendChild(el('div', 'hint', t('История ваших обращений в поддержку.')));
+  const list = el('div');
+  card.appendChild(list);
+  const add = el('button', null, t('✍️ Новое обращение'));
+  add.onclick = showSupportTicketNew;
+  card.appendChild(add);
+  appEl.appendChild(card);
+  statusEl.hidden = true;
+  appEl.hidden = false;
+  await refreshSupportTicketList(list);
+  startSupportPoll(() => refreshSupportTicketList(list), 8000);
+}
+
+async function refreshSupportTicketList(list) {
+  const data = await api('/api/support/tickets');
+  renderTicketRows(list, data.tickets || [], tk => showSupportTicket(tk.id), false);
+}
+
+// showSupportTicketNew composes a brand-new ticket (subject optional, exactly
+// like SupportCreateTicket's derivation rule in the bot).
+function showSupportTicketNew() {
+  currentRender = showSupportTicketNew;
+  stopSupportPoll();
+  appEl.textContent = '';
+  appEl.appendChild(backBar(t('✍️ Новое обращение'), showSupportTickets));
+  const card = el('div', 'card');
+  const subject = Object.assign(el('input'), { type: 'text', placeholder: t('Тема (необязательно)') });
+  card.appendChild(subject);
+  const text = Object.assign(el('textarea'), { placeholder: t('Опишите проблему…') });
+  card.appendChild(text);
+  const send = el('button', null, t('Отправить'));
+  send.onclick = async () => {
+    const v = text.value.trim();
+    if (!v) { tg.showAlert(t('Сообщение не может быть пустым.')); return; }
+    try {
+      const res = await withButtonLoading(send, t('Отправка…'), () => api('/api/support/ticket/new', {
+        method: 'POST', body: JSON.stringify({ subject: subject.value.trim(), text: v }),
+      }));
+      showSupportTicket(res.ticket_id);
+    } catch (e) { tg.showAlert(e.message); }
+  };
+  card.appendChild(send);
+  appEl.appendChild(card);
+  statusEl.hidden = true;
+  appEl.hidden = false;
+}
+
+// showSupportTicket is one of the user's tickets with its history.
+async function showSupportTicket(ticketId) {
+  currentRender = () => showSupportTicket(ticketId);
+  stopSupportPoll();
+  appEl.textContent = '';
+  appEl.appendChild(backBar(t('Обращение') + ' №' + ticketId, showSupportTickets));
+  const actions = {};
+  appEl.appendChild(buildTicketThreadCard('card', actions,
+    async v => {
+      await api('/api/support/ticket/send', { method: 'POST', body: JSON.stringify({ ticket_id: ticketId, text: v }) });
+      await refreshSupportTicket(ticketId, actions);
+    },
+    async () => {
+      if (!(await confirmDialog(t('Закрыть обращение? История останется доступной.')))) return;
+      try {
+        await api('/api/support/ticket/close', { method: 'POST', body: JSON.stringify({ ticket_id: ticketId }) });
+        showSupportTickets();
+      } catch (e) { tg.showAlert(e.message); }
+    }));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+  await refreshSupportTicket(ticketId, actions);
+  startSupportPoll(() => refreshSupportTicket(ticketId, actions), 4000);
+}
+
+async function refreshSupportTicket(ticketId, actions) {
+  const data = await api('/api/support/ticket', { method: 'POST', body: JSON.stringify({ ticket_id: ticketId }) });
+  applyTicketThread(actions, data);
+}
+
+// showAdminTickets is the admin ticket inbox: every open ticket first.
+async function showAdminTickets() {
+  currentRender = showAdminTickets;
+  stopSupportPoll();
+  appEl.textContent = '';
+  appEl.appendChild(adminPageTop(t('🛟 Обращения')));
+  const card = el('div', 'admin-card');
+  card.appendChild(el('div', 'hint', t('Открытые обращения сверху, затем недавно закрытые.')));
+  const list = el('div');
+  card.appendChild(list);
+  appEl.appendChild(card);
+  statusEl.hidden = true;
+  appEl.hidden = false;
+  await refreshAdminTicketList(list);
+  startSupportPoll(() => refreshAdminTicketList(list), 8000);
+}
+
+async function refreshAdminTicketList(list) {
+  const data = await api('/api/admin/support/tickets');
+  renderTicketRows(list, data.tickets || [], tk => showAdminTicket(tk.id), true);
+}
+
+// showAdminTicket is one ticket with a reply box and a close button.
+async function showAdminTicket(ticketId) {
+  currentRender = () => showAdminTicket(ticketId);
+  stopSupportPoll();
+  appEl.textContent = '';
+  appEl.appendChild(adminPageTop(t('Обращение') + ' №' + ticketId, showAdminTickets));
+  const actions = {};
+  appEl.appendChild(buildTicketThreadCard('admin-card', actions,
+    async v => {
+      await api('/api/admin/support/ticket/reply', { method: 'POST', body: JSON.stringify({ ticket_id: ticketId, text: v }) });
+      await refreshAdminTicket(ticketId, actions);
+    },
+    async () => {
+      if (!(await confirmDialog(t('Закрыть обращение? История останется доступной.')))) return;
+      try {
+        await api('/api/admin/support/ticket/close', { method: 'POST', body: JSON.stringify({ ticket_id: ticketId }) });
+        showAdminTickets();
+      } catch (e) { tg.showAlert(e.message); }
+    }));
+  statusEl.hidden = true;
+  appEl.hidden = false;
+  await refreshAdminTicket(ticketId, actions);
+  startSupportPoll(() => refreshAdminTicket(ticketId, actions), 4000);
+}
+
+async function refreshAdminTicket(ticketId, actions) {
+  const data = await api('/api/admin/support/ticket', { method: 'POST', body: JSON.stringify({ ticket_id: ticketId }) });
+  applyTicketThread(actions, data);
 }
 
 // adminAction posts a mutation (optionally after a confirm dialog), refreshes
@@ -4000,6 +4252,7 @@ function renderAdminHome() {
     { icon: ADMIN_ICONS.ticket, label: t('Активные подарочные коды'), action: showAdminGiftCodes },
     { icon: ADMIN_ICONS.megaphone, label: t('Рассылка'), action: showAdminBroadcast },
     { icon: ADMIN_ICONS.chat, label: t('Чат поддержки'), action: showAdminSupport },
+    { icon: ADMIN_ICONS.chat, label: t('Обращения'), action: showAdminTickets },
   ];
   if (data.proxy_monitoring) {
     manageItems.push({ icon: ADMIN_ICONS.activity, label: t('Состояние прокси'), action: showAdminProxyHealth });

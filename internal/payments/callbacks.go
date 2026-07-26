@@ -17,7 +17,9 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 	if cb == nil {
 		return false
 	}
-	if s.registrationBlocked(ctx, cb.From.ID) && cb.Data != "menu:support" && cb.Data != "sup:close" {
+	// A blocked identity keeps the whole support surface (chat and tickets) as
+	// its escape hatch, mirroring the mini app's authenticateSupport exemption.
+	if s.registrationBlocked(ctx, cb.From.ID) && cb.Data != "menu:support" && !strings.HasPrefix(cb.Data, "sup:") {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Доступ к боту ограничен. Обратитесь в поддержку."))
 		return true
 	}
@@ -119,6 +121,16 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		return s.handleSupportClose(ctx, cb)
 	case strings.HasPrefix(cb.Data, "sup:reply:"):
 		return s.handleSupportReplyStart(ctx, cb)
+	case cb.Data == "sup:list":
+		return s.handleSupportTicketList(ctx, cb)
+	case cb.Data == "sup:new":
+		return s.handleSupportTicketNew(ctx, cb)
+	case strings.HasPrefix(cb.Data, "sup:t:"):
+		return s.handleSupportTicketOpen(ctx, cb)
+	case strings.HasPrefix(cb.Data, "sup:re:"):
+		return s.handleSupportTicketReplyStart(ctx, cb)
+	case strings.HasPrefix(cb.Data, "sup:cl:"):
+		return s.handleSupportTicketClose(ctx, cb)
 	case strings.HasPrefix(cb.Data, guardUnblockCallbackPrefix):
 		return s.handleRegistrationUnblock(ctx, cb)
 	case strings.HasPrefix(cb.Data, "adm:infrapaid:"):
@@ -907,6 +919,14 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		s.startBackupIntervalInput(ctx, chatID)
 	case cb.Data == "adm:checker":
 		s.sendProxyHealth(ctx, chatID)
+	case cb.Data == "adm:sup":
+		s.sendAdminTicketInbox(ctx, chatID)
+	case strings.HasPrefix(cb.Data, "adm:sup:t:"):
+		s.sendAdminTicketThread(ctx, chatID, cb.Data)
+	case strings.HasPrefix(cb.Data, "adm:sup:re:"):
+		s.startAdminTicketReply(ctx, chatID, cb.Data)
+	case strings.HasPrefix(cb.Data, "adm:sup:cl:"):
+		s.handleAdminTicketClose(ctx, chatID, cb.Data)
 	case cb.Data == "adm:bcast":
 		s.startBroadcastFlow(ctx, chatID)
 	case cb.Data == "adm:bc_send":
