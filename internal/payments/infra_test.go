@@ -109,11 +109,100 @@ func TestInfraServerLifecycleAndConversion(t *testing.T) {
 	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{Name: "", Currency: "USD", PeriodMonths: 1}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("empty name: %v", err)
 	}
+	// A price typed into the period box, or a mistyped year, is rejected rather
+	// than stored and walked decades out by the next "paid" click.
+	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+		Name: "x", Currency: "USD", PeriodMonths: infraMaxPeriodMonths + 1,
+	}); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("oversized period: %v", err)
+	}
+	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+		Name: "x", Currency: "USD", PeriodMonths: 1, NextDue: "2054-08-29",
+	}); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("far-future due date: %v", err)
+	}
 	if err := svc.AdminDeleteInfraServer(ctx, adminTG, srv.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if err := svc.AdminDeleteInfraServer(ctx, adminTG, srv.ID); !errors.Is(err, ErrInfraServerUnknown) {
 		t.Fatalf("delete missing: %v", err)
+	}
+}
+
+func TestInfraMarkPaidIsIdempotent(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 7, 26, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	id, _ := st.CreateInfraServer(ctx, store.InfraServer{
+		Name: "edge", Price: 5, Currency: "USD", PeriodMonths: 1,
+		NextDueAt: time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC),
+	})
+
+	// The first click advances one period; the next ten (a button that did not
+	// visibly react, tapped again) must not stack another period each.
+	for i := 0; i < 11; i++ {
+		if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, id); err != nil {
+			t.Fatalf("paid %d: %v", i, err)
+		}
+	}
+	srv, _ := st.GetInfraServer(ctx, id)
+	if want := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC); !srv.NextDueAt.Equal(want) {
+		t.Fatalf("due = %v, want %v", srv.NextDueAt, want)
+	}
+
+	// Same for a server due exactly today: the second click lands on the same
+	// date as the first, not a period past it.
+	today, _ := st.CreateInfraServer(ctx, store.InfraServer{
+		Name: "today", Price: 5, Currency: "USD", PeriodMonths: 1, NextDueAt: now,
+	})
+	for i := 0; i < 2; i++ {
+		if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, today); err != nil {
+			t.Fatalf("paid today %d: %v", i, err)
+		}
+	}
+	srv, _ = st.GetInfraServer(ctx, today)
+	if want := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC); !srv.NextDueAt.Equal(want) {
+		t.Fatalf("today due = %v, want %v", srv.NextDueAt, want)
+	}
+
+	// Several periods missed: one click catches up to the next future date.
+	overdue, _ := st.CreateInfraServer(ctx, store.InfraServer{
+		Name: "old", Price: 5, Currency: "USD", PeriodMonths: 1,
+		NextDueAt: time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC),
+	})
+	if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, overdue); err != nil {
+		t.Fatalf("paid overdue: %v", err)
+	}
+	srv, _ = st.GetInfraServer(ctx, overdue)
+	if want := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC); !srv.NextDueAt.Equal(want) {
+		t.Fatalf("overdue due = %v, want %v", srv.NextDueAt, want)
+	}
+
+	// No due date yet: one period from today.
+	fresh, _ := st.CreateInfraServer(ctx, store.InfraServer{
+		Name: "new", Price: 5, Currency: "USD", PeriodMonths: 3,
+	})
+	if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, fresh); err != nil {
+		t.Fatalf("paid fresh: %v", err)
+	}
+	srv, _ = st.GetInfraServer(ctx, fresh)
+	if want := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC); !srv.NextDueAt.Equal(want) {
+		t.Fatalf("fresh due = %v, want %v", srv.NextDueAt, want)
+	}
+
+	// A period stored before the bound existed is clamped instead of trusted.
+	legacy, _ := st.CreateInfraServer(ctx, store.InfraServer{
+		Name: "legacy", Price: 5, Currency: "USD", PeriodMonths: 336,
+		NextDueAt: time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC),
+	})
+	if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, legacy); err != nil {
+		t.Fatalf("paid legacy: %v", err)
+	}
+	srv, _ = st.GetInfraServer(ctx, legacy)
+	if want := time.Date(2031, 7, 29, 0, 0, 0, 0, time.UTC); !srv.NextDueAt.Equal(want) {
+		t.Fatalf("legacy due = %v, want %v", srv.NextDueAt, want)
 	}
 }
 

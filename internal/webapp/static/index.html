@@ -387,6 +387,9 @@
     color: var(--hint); text-align: center; font-size: 14px; }
   .admin-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .admin-form-grid input { min-width: 0; }
+  .admin-field { display: block; min-width: 0; }
+  .admin-field-label { display: block; color: var(--hint); font-size: 12px; font-weight: 700; }
+  .admin-field input, .admin-field select { margin-top: 4px; }
   .admin-list-row { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid var(--border); }
   .admin-list-row:first-of-type { border-top: 0; }
   .admin-list-copy { flex: 1; min-width: 0; }
@@ -1119,10 +1122,12 @@ const EN = {
   'Название': 'Name',
   'CPU, ядра': 'CPU cores',
   'RAM, МБ': 'RAM, MB',
+  'Валюта': 'Currency',
   'Период, мес.': 'Period, months',
   '💾 Сохранить сервер': '💾 Save server',
   'Введите название сервера.': 'Enter the server name.',
-  'Период должен быть не меньше 1 месяца.': 'Period must be at least 1 month.',
+  'Период — от 1 до {n} месяцев.': 'Period must be between 1 and {n} months.',
+  'Дата оплаты — не дальше {n} лет вперёд.': 'The payment date must be at most {n} years ahead.',
   'Отмена': 'Cancel',
   '💱 Валюты и курсы': '💱 Currencies & rates',
   'Базовая валюта — в неё пересчитываются расходы. Курсы обновляются автоматически; вручную задайте резервный курс.': 'The base currency is what costs are converted into. Rates refresh automatically; you can set a manual fallback rate.',
@@ -3971,10 +3976,36 @@ let infraDraft = null;
 
 function infraInput(props) { return Object.assign(el('input'), props); }
 
+// infraField pairs a control with a visible label. The form is a grid of
+// numeric boxes whose placeholders disappear once an existing server fills
+// them, so a value typed into the wrong box (a price into "Период, мес.")
+// used to be invisible.
+function infraField(labelText, control) {
+  const wrap = el('label', 'admin-field');
+  wrap.appendChild(el('span', 'admin-field-label', labelText));
+  wrap.appendChild(control);
+  return wrap;
+}
+
+// INFRA_MAX_PERIOD_MONTHS / INFRA_MAX_DUE_YEARS mirror the server-side bounds
+// (infraMaxPeriodMonths, infraMaxDueYears) so a slip is caught with a readable
+// message instead of a generic rejection.
+const INFRA_MAX_PERIOD_MONTHS = 60;
+const INFRA_MAX_DUE_YEARS = 5;
+
 // toISODate converts a "DD.MM.YYYY" label to the "YYYY-MM-DD" an <input type=date> wants.
 function toISODate(s) {
   const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s || '');
   return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+// isDueWithinLimit rejects a "YYYY-MM-DD" due date further ahead than the
+// server accepts, so a mistyped year is caught in the form.
+function isDueWithinLimit(iso) {
+  const due = new Date(iso + 'T00:00:00Z');
+  if (isNaN(due.getTime())) return false;
+  const limit = new Date();
+  limit.setFullYear(limit.getFullYear() + INFRA_MAX_DUE_YEARS);
+  return due <= limit;
 }
 function round2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
 
@@ -4045,13 +4076,13 @@ function renderInfraServer(srv) {
   const actions = el('div');
   actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:6px';
   const paid = el('button', 'secondary', t('✅ Оплачен'));
-  paid.onclick = () => infraPost('/api/admin/server/paid', { id: srv.id });
+  paid.onclick = () => infraPost('/api/admin/server/paid', { id: srv.id }, paid);
   const edit = el('button', 'secondary', t('✏️ Изменить'));
   edit.onclick = () => { infraDraft = srv; showAdminServers(); window.scrollTo(0, document.body.scrollHeight); };
   const del = el('button', 'secondary', t('🗑 Удалить'));
   del.onclick = async () => {
     if (!(await confirmDialog(t('Удалить сервер «{name}»?', { name: srv.name })))) return;
-    infraPost('/api/admin/server/delete', { id: srv.id });
+    infraPost('/api/admin/server/delete', { id: srv.id }, del);
   };
   actions.appendChild(paid);
   actions.appendChild(edit);
@@ -4061,8 +4092,12 @@ function renderInfraServer(srv) {
 }
 
 // infraPost mutates server/FX state then re-renders the infra screen in place.
-async function infraPost(path, payload) {
-  const button = activeButton();
+// Callers pass their own button: a tap does not focus a button in the Telegram
+// WebView, so activeButton() is null there and the control would never show the
+// loading state or disable — inviting a second tap on a request in flight.
+async function infraPost(path, payload, button) {
+  button = button || activeButton();
+  if (button && button.dataset.loading === '1') return;
   setButtonLoading(button, true, t('Сохранение…'));
   try {
     await api(path, { method: 'POST', body: JSON.stringify(payload) });
@@ -4092,9 +4127,16 @@ function renderInfraForm() {
     if ((d.currency || 'USD') === c) o.selected = true;
     currency.appendChild(o);
   });
-  const period = infraInput({ type: 'number', min: '1', placeholder: t('Период, мес.'), value: d.period_months || 1 });
+  const period = infraInput({
+    type: 'number', min: '1', max: String(INFRA_MAX_PERIOD_MONTHS),
+    placeholder: t('Период, мес.'), value: d.period_months || 1,
+  });
   const due = infraInput({ type: 'date', value: toISODate(d.next_due) });
-  [name, hoster, country, cpu, ram, price, currency, period, due].forEach((x) => grid.appendChild(x));
+  [
+    [t('Название'), name], [t('Хостер'), hoster], [t('Страна'), country],
+    [t('CPU, ядра'), cpu], [t('RAM, МБ'), ram], [t('Цена'), price],
+    [t('Валюта'), currency], [t('Период, мес.'), period], [t('Следующая оплата'), due],
+  ].forEach(([label, control]) => grid.appendChild(infraField(label, control)));
   card.appendChild(grid);
 
   const save = el('button', null, t('💾 Сохранить сервер'));
@@ -4113,7 +4155,14 @@ function renderInfraForm() {
       notes: d.notes || '',
     };
     if (!payload.name) { tg.showAlert(t('Введите название сервера.')); return; }
-    if (!(payload.period_months >= 1)) { tg.showAlert(t('Период должен быть не меньше 1 месяца.')); return; }
+    if (!(payload.period_months >= 1 && payload.period_months <= INFRA_MAX_PERIOD_MONTHS)) {
+      tg.showAlert(t('Период — от 1 до {n} месяцев.', { n: INFRA_MAX_PERIOD_MONTHS }));
+      return;
+    }
+    if (payload.next_due && !isDueWithinLimit(payload.next_due)) {
+      tg.showAlert(t('Дата оплаты — не дальше {n} лет вперёд.', { n: INFRA_MAX_DUE_YEARS }));
+      return;
+    }
     try {
       await withButtonLoading(save, t('Сохранение…'), async () => {
         await api('/api/admin/server', { method: 'POST', body: JSON.stringify(payload) });
@@ -4143,13 +4192,13 @@ function renderInfraFx(fx) {
   saveBase.onclick = () => {
     const v = (base.value || '').trim().toUpperCase();
     if (v.length !== 3) { tg.showAlert(t('Код валюты — 3 буквы, напр. USD.')); return; }
-    infraPost('/api/admin/fx/base', { currency: v });
+    infraPost('/api/admin/fx/base', { currency: v }, saveBase);
   };
   baseRow.appendChild(saveBase);
   card.appendChild(baseRow);
 
   const refresh = el('button', 'secondary', t('🔄 Обновить курсы'));
-  refresh.onclick = () => infraPost('/api/admin/fx/refresh', {});
+  refresh.onclick = () => infraPost('/api/admin/fx/refresh', {}, refresh);
   card.appendChild(refresh);
   if (!fx.auto_available) {
     card.appendChild(el('div', 'hint', t('Автообновление недоступно — используйте ручные курсы.')));
@@ -4173,7 +4222,7 @@ function renderInfraFx(fx) {
     set.onclick = () => {
       const v = parseFloat(rate.value);
       if (!(v > 0)) { tg.showAlert(t('Введите положительный курс.')); return; }
-      infraPost('/api/admin/fx/manual', { currency: r.currency, rate: v });
+      infraPost('/api/admin/fx/manual', { currency: r.currency, rate: v }, set);
     };
     row.appendChild(set);
     card.appendChild(row);
