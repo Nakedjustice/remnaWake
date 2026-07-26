@@ -16,12 +16,19 @@ import (
 // cannot silently ship untranslated.
 func TestEveryTCallHasEnglishEntry(t *testing.T) {
 	fset := token.NewFileSet()
-	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
+	const root = "../.."
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if d.Name() == ".git" {
+			// Skip dotted directories the way the Go tool itself does. Besides
+			// .git this keeps nested git worktrees (.claude/worktrees/…) from
+			// being walked, which otherwise reports another checkout's
+			// in-progress literals as failures of this one. The root is
+			// exempt: WalkDir reports it as "..", which is dot-prefixed, and
+			// skipping it would walk nothing and pass vacuously.
+			if path != root && strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
 			}
 			return nil
