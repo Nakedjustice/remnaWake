@@ -164,19 +164,104 @@ func TestScheduledBackupRespectsInterval(t *testing.T) {
 	}
 }
 
-func TestScheduledBackupVeryLargeIntervalDoesNotOverflow(t *testing.T) {
-	svc, bot, st := newBackupTestService(t, []int64{1000}, false)
-	maxInt := int(^uint(0) >> 1)
-	svc.InitBackupConfig(true, maxInt)
-	ctx := context.Background()
-	old := time.Now().AddDate(-400, 0, 0).UTC().Format(time.RFC3339)
-	if err := st.UpsertSetting(ctx, settingBackupLastAt, old); err != nil {
-		t.Fatalf("seed stamp: %v", err)
-	}
+// The daily job fires at a fixed RUN_AT while the stamp is written minutes later,
+// once the sweep, the reminders and every admin upload have finished. The elapsed
+// time on the due day is therefore always a little short of a whole number of
+// days, and a strict comparison would silently push a 1-day schedule out to every
+// other day.
+func TestScheduledBackupIsDueOnTheNextDailyRun(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		intervalDays int
+		sinceLast    time.Duration
+	}{
+		{name: "daily", intervalDays: 1, sinceLast: 24*time.Hour - 5*time.Minute},
+		{name: "weekly", intervalDays: 7, sinceLast: 7*24*time.Hour - 5*time.Minute},
+		{name: "monthly", intervalDays: 30, sinceLast: 30*24*time.Hour - 5*time.Minute},
+		// RUN_AT is a local time, so two consecutive firings are only 23 hours
+		// apart in absolute time on a DST spring-forward day.
+		{name: "daily across a DST spring forward", intervalDays: 1, sinceLast: 23*time.Hour - 5*time.Minute},
+		{name: "weekly across a DST spring forward", intervalDays: 7, sinceLast: 7*24*time.Hour - time.Hour - 5*time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, bot, st := newBackupTestService(t, []int64{1000}, false)
+			svc.InitBackupConfig(true, tc.intervalDays)
+			ctx := context.Background()
+			last := time.Now().Add(-tc.sinceLast).UTC().Format(time.RFC3339)
+			if err := st.UpsertSetting(ctx, settingBackupLastAt, last); err != nil {
+				t.Fatalf("seed stamp: %v", err)
+			}
 
-	svc.RunScheduledBackup(ctx)
-	if bot.documentUploads != 0 {
-		t.Fatalf("documentUploads = %d for interval %s, want 0", bot.documentUploads, strconv.Itoa(maxInt))
+			svc.RunScheduledBackup(ctx)
+			if bot.documentUploads != 1 {
+				t.Fatalf("documentUploads = %d after %s of a %d-day interval, want 1",
+					bot.documentUploads, tc.sinceLast, tc.intervalDays)
+			}
+		})
+	}
+}
+
+// The slack that makes the runs above due must stay far below one day, so a
+// second run on the same day is still suppressed.
+func TestScheduledBackupSkipsASecondRunTheSameDay(t *testing.T) {
+	for _, sinceLast := range []time.Duration{time.Minute, 3 * time.Hour, 12 * time.Hour, 21 * time.Hour} {
+		t.Run(sinceLast.String(), func(t *testing.T) {
+			svc, bot, st := newBackupTestService(t, []int64{1000}, false)
+			svc.InitBackupConfig(true, 1)
+			ctx := context.Background()
+			last := time.Now().Add(-sinceLast).UTC().Format(time.RFC3339)
+			if err := st.UpsertSetting(ctx, settingBackupLastAt, last); err != nil {
+				t.Fatalf("seed stamp: %v", err)
+			}
+
+			svc.RunScheduledBackup(ctx)
+			if bot.documentUploads != 0 {
+				t.Fatalf("documentUploads = %d %s after the last backup, want 0", bot.documentUploads, sinceLast)
+			}
+		})
+	}
+}
+
+func TestBackupIntervalIsClampedToTheSupportedRange(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  int
+		want int
+	}{
+		{name: "max int is clamped to the ceiling", env: int(^uint(0) >> 1), want: maxBackupIntervalDays},
+		{name: "above the ceiling is clamped", env: maxBackupIntervalDays + 1, want: maxBackupIntervalDays},
+		{name: "zero becomes one", env: 0, want: 1},
+		{name: "negative becomes one", env: -7, want: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, _, _ := newBackupTestService(t, []int64{1000}, false)
+			svc.InitBackupConfig(true, tc.env)
+			if _, interval := svc.backupConfig(); interval != tc.want {
+				t.Fatalf("interval = %d, want %d", interval, tc.want)
+			}
+		})
+	}
+}
+
+func TestBackupIntervalRejectsValuesOutsideTheRange(t *testing.T) {
+	svc, bot, st := newBackupTestService(t, []int64{1000}, false)
+	svc.InitBackupConfig(true, 3)
+	ctx := context.Background()
+
+	for _, raw := range []string{"0", "-1", strconv.Itoa(maxBackupIntervalDays + 1), "30000", "abc"} {
+		bot.sent = nil
+		if svc.applyBackupInterval(ctx, 1000, raw) {
+			t.Fatalf("interval %q was accepted", raw)
+		}
+		if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, strconv.Itoa(maxBackupIntervalDays)) {
+			t.Fatalf("interval %q: expected a range hint, got %+v", raw, bot.sent)
+		}
+	}
+	if _, found, err := st.GetSetting(ctx, settingBackupIntervalDays); err != nil || found {
+		t.Fatalf("rejected input persisted an interval: found=%v err=%v", found, err)
+	}
+	if _, interval := svc.backupConfig(); interval != 3 {
+		t.Fatalf("runtime interval = %d, want the untouched 3", interval)
 	}
 }
 
@@ -188,7 +273,7 @@ func TestBackupConfigChangeForcesNextScheduledRun(t *testing.T) {
 		t.Fatalf("seed stamp: %v", err)
 	}
 
-	svc.handleBackupIntervalPick(ctx, 1000, "30")
+	svc.applyBackupInterval(ctx, 1000, "30")
 	if bot.documentUploads != 0 {
 		t.Fatalf("changing interval uploaded %d documents, want none", bot.documentUploads)
 	}

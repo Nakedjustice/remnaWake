@@ -116,7 +116,8 @@ func (s *Service) handleInviteUsernameInput(ctx context.Context, m *tg.Message) 
 		return true
 	}
 
-	if !isValidNewProfileUsername(text) {
+	username, err := normalizeProfileUsername(text)
+	if err != nil {
 		_ = s.bot.SendPlain(ctx, chatID,
 			i18n.T("Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов."))
 		return true
@@ -133,7 +134,7 @@ func (s *Service) handleInviteUsernameInput(ctx context.Context, m *tg.Message) 
 		tariff = &store.Tariff{Months: 1, Price: 0}
 	}
 
-	inv.newUsername = text
+	inv.newUsername = username
 	inv.price = tariff.Price
 	s.setInvite(chatID, inv)
 	s.showInviteConfirm(ctx, chatID, inv)
@@ -170,14 +171,8 @@ func (s *Service) handleInviteSubmit(ctx context.Context, cb *tg.CallbackQuery) 
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Сессия истекла. Запустите /invite заново."))
 		return true
 	}
-	username, err := normalizeProfileUsername(inv.newUsername)
-	if err != nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID,
-			i18n.T("Некорректное имя: используйте латинские буквы, цифры, «_» или «-», от 3 до 36 символов, без пробелов."))
-		return true
-	}
-	inv.newUsername = username
-
+	// inv.newUsername was normalized by handleInviteUsernameInput before the
+	// confirmation card was shown, so it is already panel-safe here.
 	reqID, err := s.store.CreateInviteRequest(ctx, store.InviteRequest{
 		InviterTelegramID: inv.inviterTGID,
 		InviterUsername:   inv.inviterName,

@@ -902,7 +902,7 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 	case cb.Data == "adm:backup:toggle":
 		s.handleBackupToggle(ctx, chatID)
 	case strings.HasPrefix(cb.Data, "adm:backup:days:"):
-		s.handleBackupIntervalPick(ctx, chatID, strings.TrimPrefix(cb.Data, "adm:backup:days:"))
+		s.applyBackupInterval(ctx, chatID, strings.TrimPrefix(cb.Data, "adm:backup:days:"))
 	case cb.Data == "adm:backup:custom":
 		s.startBackupIntervalInput(ctx, chatID)
 	case cb.Data == "adm:checker":

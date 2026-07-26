@@ -28,3 +28,25 @@ func TestTrialFrontendContract(t *testing.T) {
 		}
 	}
 }
+
+// The scheduled-backup settings must stay reachable from the mini app admin
+// panel, not only from the bot admin menu.
+func TestBackupScheduleFrontendContract(t *testing.T) {
+	body, err := os.ReadFile("static/index.html")
+	if err != nil {
+		t.Fatalf("read mini app: %v", err)
+	}
+	html := string(body)
+	for _, want := range []string{
+		"renderAdminBackups",
+		"appEl.appendChild(renderAdminBackups(data))",
+		"'/api/admin/backup/schedule'",
+		"backup_enabled",
+		"backup_interval_days",
+		"backup_max_interval_days",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("mini app is missing %q", want)
+		}
+	}
+}

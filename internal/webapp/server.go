@@ -47,6 +47,7 @@ type Cabinet interface {
 // payments.ErrNotAdmin otherwise.
 type Admin interface {
 	AdminSendBackup(ctx context.Context, telegramID int64) error
+	AdminSetBackupSchedule(ctx context.Context, telegramID int64, enabled bool, intervalDays int) error
 	AdminPanelData(ctx context.Context, telegramID int64) (*payments.WebAdminPanel, error)
 	AdminActionCenter(ctx context.Context, telegramID int64) (*payments.WebAdminActionCenter, error)
 	AdminStatsData(ctx context.Context, telegramID int64) (*payments.WebAdminStats, error)
@@ -164,6 +165,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/invite/delete", s.adminIDAction("delete invite", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminDeleteInviteRequest(ctx, tgID, id)
 	}))
+	mux.HandleFunc("POST /api/admin/backup/schedule", s.handleAdminSetBackupSchedule)
 	mux.HandleFunc("POST /api/admin/updates/check", s.handleAdminCheckUpdates)
 	mux.HandleFunc("POST /api/admin/updates/interval", s.handleAdminSetUpdateInterval)
 	mux.HandleFunc("GET /api/admin/support", s.handleAdminSupport)
@@ -673,6 +675,12 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 	switch {
 	case errors.Is(err, payments.ErrNotAdmin), errors.Is(err, payments.ErrPaymentsDisabled):
 		writeJSONError(w, http.StatusForbidden, "доступ запрещён")
+	// An approval that trips the username contract has already rejected the
+	// request and notified the user, so this reports a resolved request rather
+	// than bad admin input. The code lets the panel refresh its request list.
+	case errors.Is(err, payments.ErrInvalidUsername):
+		writeJSONErrorCode(w, http.StatusConflict,
+			"заявка отклонена: некорректное имя профиля", "invalid_username")
 	case errors.Is(err, payments.ErrBadInput):
 		writeJSONError(w, http.StatusBadRequest, "некорректные данные")
 	case errors.Is(err, payments.ErrTariffUnknown), errors.Is(err, payments.ErrPlanUnknown), errors.Is(err, payments.ErrTrafficExtensionUnknown),
@@ -712,6 +720,26 @@ func (s *Server) handleAdminBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.admin.AdminSendBackup(r.Context(), userID); err != nil {
 		s.writeAdminError(w, "send backup", userID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminSetBackupSchedule(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.authenticate(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Enabled      bool `json:"enabled"`
+		IntervalDays int  `json:"interval_days"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return
+	}
+	if err := s.admin.AdminSetBackupSchedule(r.Context(), userID, req.Enabled, req.IntervalDays); err != nil {
+		s.writeAdminError(w, "set backup schedule", userID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

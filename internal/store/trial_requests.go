@@ -121,7 +121,12 @@ func (s *Store) ResolveTrialRequest(ctx context.Context, id int64, status string
 // RejectInvalidTrialRequest rejects a legacy pending request and releases its
 // one-time trial claim in the same transaction. It is intentionally separate
 // from ordinary rejection, which keeps the claim and is final.
-func (s *Store) RejectInvalidTrialRequest(ctx context.Context, id, telegramID int64, resolvedAt time.Time) (bool, error) {
+//
+// The claim is matched on username as well as telegram_id: the row released must
+// be the one this request reserved. A claim recorded under a different name
+// belongs to a trial the user has already been granted, and dropping it would
+// hand out a second free trial.
+func (s *Store) RejectInvalidTrialRequest(ctx context.Context, id, telegramID int64, username string, resolvedAt time.Time) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -139,7 +144,8 @@ func (s *Store) RejectInvalidTrialRequest(ctx context.Context, id, telegramID in
 	if err != nil || n == 0 {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM trial_claims WHERE telegram_id = ?`, telegramID); err != nil {
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM trial_claims WHERE telegram_id = ? AND username = ?`, telegramID, username); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
