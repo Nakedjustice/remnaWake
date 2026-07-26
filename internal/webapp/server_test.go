@@ -261,6 +261,13 @@ func (f *fakeAdmin) AdminSendBackup(_ context.Context, tgID int64) error {
 	return f.err
 }
 
+func (f *fakeAdmin) AdminSetBackupSchedule(_ context.Context, tgID int64, enabled bool, intervalDays int) error {
+	f.calls = append(f.calls, adminCall{
+		Name: "backup schedule", A: tgID, B: int64(intervalDays), Text: fmt.Sprintf("%t", enabled),
+	})
+	return f.err
+}
+
 func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.WebAdminPanel, error) {
 	f.calls = append(f.calls, adminCall{Name: "panel", A: tgID})
 	return f.panel, f.err
@@ -750,6 +757,62 @@ func TestHandleAdminBackup(t *testing.T) {
 		if w.Code != tc.want {
 			t.Fatalf("err=%v: status=%d want=%d body=%s", tc.err, w.Code, tc.want, w.Body.String())
 		}
+	}
+}
+
+func TestHandleAdminSetBackupSchedule(t *testing.T) {
+	adm := &fakeAdmin{}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/backup/schedule",
+		strings.NewReader(`{"enabled":true,"interval_days":7}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if len(adm.calls) != 1 || adm.calls[0].Name != "backup schedule" ||
+		adm.calls[0].A != 42 || adm.calls[0].B != 7 || adm.calls[0].Text != "true" {
+		t.Fatalf("unexpected admin calls: %+v", adm.calls)
+	}
+
+	unauthenticated := httptest.NewRequest(http.MethodPost, "/api/admin/backup/schedule",
+		strings.NewReader(`{"enabled":true,"interval_days":7}`))
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, unauthenticated)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("missing initData: status=%d want=%d body=%s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+
+	rejecting := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: payments.ErrBadInput})
+	bad := httptest.NewRequest(http.MethodPost, "/api/admin/backup/schedule",
+		strings.NewReader(`{"enabled":true,"interval_days":0}`))
+	bad.Header.Set("Authorization", validAuth(t))
+	w = httptest.NewRecorder()
+	rejecting.Handler().ServeHTTP(w, bad)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("out-of-range interval: status=%d want=%d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+// An approval that trips the profile-name contract has already rejected the
+// request and notified the user, so the admin surface must report a resolved
+// request — not the generic "invalid input" the wrapped ErrBadInput would give.
+func TestAdminApprovalInvalidUsernameReportsResolved(t *testing.T) {
+	srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{err: payments.ErrInvalidUsername})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/trial-request/confirm", strings.NewReader(`{"id":1}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusConflict, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["code"] != "invalid_username" {
+		t.Fatalf("response code = %v, want invalid_username; body=%v", body["code"], body)
 	}
 }
 

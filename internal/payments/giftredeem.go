@@ -186,13 +186,14 @@ func (s *Service) handleRedeemUsernameInput(ctx context.Context, m *tg.Message) 
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите имя профиля: латинские буквы A–Z/a–z, цифры 0–9, «_» или «-», от 3 до 36 символов, без пробелов. /cancel — отмена."))
 		return true
 	}
-	if !isValidNewProfileUsername(text) {
+	username, err := normalizeProfileUsername(text)
+	if err != nil {
 		_ = s.bot.SendPlain(ctx, chatID,
 			i18n.T("Некорректное имя профиля. Используйте латинские буквы A–Z/a–z, цифры 0–9, «_» или «-»; от 3 до 36 символов, без пробелов."))
 		return true
 	}
 
-	existing, err := s.finder.FindByUsername(ctx, text)
+	existing, err := s.finder.FindByUsername(ctx, username)
 	if err != nil {
 		s.logger.Error("redeem: check username failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка, попробуйте позже."))
@@ -203,7 +204,7 @@ func (s *Service) handleRedeemUsernameInput(ctx context.Context, m *tg.Message) 
 		return true
 	}
 
-	s.redeemCreate(ctx, chatID, st, text)
+	s.redeemCreate(ctx, chatID, st, username)
 	return true
 }
 
@@ -343,13 +344,12 @@ func (s *Service) redeemGiftExtend(ctx context.Context, telegramID int64, st *re
 	return &WebGiftRedemptionResult{Username: sub.Username, SubscriptionURL: sub.SubscriptionURL, ExpireAt: newExpireAt.Format("02.01.2006")}, nil
 }
 
+// redeemGiftCreate claims the code and creates the profile. username must
+// already have passed normalizeProfileUsername — both callers normalize before
+// checking the name against the panel.
 func (s *Service) redeemGiftCreate(ctx context.Context, telegramID int64, st *redeemState, username string) (*WebGiftRedemptionResult, error) {
 	if s.creator == nil {
 		return nil, ErrPanelCreateFailed
-	}
-	username, err := normalizeProfileUsername(username)
-	if err != nil {
-		return nil, err
 	}
 	ok, err := s.store.RedeemGiftCode(ctx, st.code, telegramID, username, s.now())
 	if err != nil {

@@ -78,8 +78,48 @@ func TestProfileLookupUsernameKeepsLegacyUnicodeCompatibility(t *testing.T) {
 	if !isValidProfileLookupUsername("профиль") {
 		t.Fatal("existing Unicode profile username should remain valid for registration lookup")
 	}
-	if isValidNewProfileUsername("профиль") {
+	if _, err := normalizeProfileUsername("профиль"); err == nil {
 		t.Fatal("Unicode username must remain invalid for new profile creation")
+	}
+}
+
+// /register links an existing profile by name. Any name this bot is willing to
+// create must therefore stay linkable, or a user who activates a trial as
+// "my-vpn-01" could never register that profile from another Telegram account.
+func TestProfileLookupAcceptsEveryCreatableUsername(t *testing.T) {
+	t.Parallel()
+
+	for _, username := range []string{
+		"abc",
+		"User_01-test",
+		"my-vpn-01",
+		"-leading-hyphen",
+		strings.Repeat("a", profileUsernameMaxLength),
+		strings.Repeat("z", profileUsernameMinLength),
+	} {
+		if _, err := normalizeProfileUsername(username); err != nil {
+			t.Fatalf("test fixture %q is not creatable: %v", username, err)
+		}
+		if !isValidProfileLookupUsername(username) {
+			t.Fatalf("creatable username %q cannot be looked up by /register", username)
+		}
+	}
+}
+
+func TestProfileLookupUsernameRejectsUnsupportedInput(t *testing.T) {
+	t.Parallel()
+
+	for _, username := range []string{
+		"",
+		"ab",
+		strings.Repeat("a", profileUsernameMaxLength+1),
+		"with space",
+		"user.name",
+		"user🙂",
+	} {
+		if isValidProfileLookupUsername(username) {
+			t.Fatalf("lookup accepted unsupported username %q", username)
+		}
 	}
 }
 

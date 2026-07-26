@@ -150,6 +150,11 @@ type WebAdminPanel struct {
 	ProxyMonitoring      bool   `json:"proxy_monitoring"`
 	AutoUpdateConfigured bool   `json:"autoupdate_configured"`
 	AutoUpdateInterval   string `json:"autoupdate_interval,omitempty"`
+	// Scheduled database backup, editable from the admin panel exactly as from
+	// the bot admin menu.
+	BackupEnabled         bool `json:"backup_enabled"`
+	BackupIntervalDays    int  `json:"backup_interval_days"`
+	BackupMaxIntervalDays int  `json:"backup_max_interval_days"`
 	// RegistrationGuardPatterns are operator-defined additions; built-in
 	// impersonation patterns are intentionally fixed in code.
 	RegistrationGuardPatterns []string               `json:"registration_guard_patterns,omitempty"`
@@ -243,6 +248,8 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 		out.AutoUpdateConfigured = true
 		out.AutoUpdateInterval = checker.Interval().String()
 	}
+	out.BackupEnabled, out.BackupIntervalDays = s.backupConfig()
+	out.BackupMaxIntervalDays = maxBackupIntervalDays
 	out.RegistrationGuardPatterns = s.customRegistrationGuardPatterns()
 	blockedRegistrations, err := s.store.ListBlockedRegistrationGuards(ctx)
 	if err != nil {
@@ -413,6 +420,24 @@ func (s *Service) AdminSetUpdateInterval(ctx context.Context, telegramID int64, 
 		return ErrBadInput
 	}
 	return checker.SetInterval(ctx, interval)
+}
+
+// AdminSetBackupSchedule is the mini app twin of the adm:backup:* callbacks: it
+// persists the scheduled-backup state and cadence through the same core, so both
+// surfaces share the reset-on-change rule and the interval ceiling.
+func (s *Service) AdminSetBackupSchedule(ctx context.Context, telegramID int64, enabled bool, intervalDays int) error {
+	if err := s.adminGuard(telegramID); err != nil {
+		return err
+	}
+	if intervalDays < 1 || intervalDays > maxBackupIntervalDays {
+		return ErrBadInput
+	}
+	wasEnabled, current := s.backupConfig()
+	resetCadence := enabled && (!wasEnabled || intervalDays != current)
+	if err := s.setBackupConfig(ctx, enabled, intervalDays, resetCadence); err != nil {
+		return fmt.Errorf("save backup schedule: %w", err)
+	}
+	return nil
 }
 
 // AdminSetTariff adds or updates a tariff from the mini app admin panel. An
