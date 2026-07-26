@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -227,6 +228,47 @@ func TestCheckPlategaPaymentStatusesAndRepeat(t *testing.T) {
 	}
 	if ext.calls != 1 {
 		t.Fatalf("extension calls=%d", ext.calls)
+	}
+}
+
+// Device self-management has to work identically with WEBAPP_URL unset: the
+// dev:* callbacks and the Mini App methods must observe the same slots and
+// mutate the panel the same way, so a user is never told to "open the app".
+func TestDeviceParityBetweenBotAndMiniApp(t *testing.T) {
+	ctx := context.Background()
+
+	fromMiniApp, _, miniDevices := deviceService(t)
+	if _, err := fromMiniApp.RevokeDevice(ctx, 777, 42, "hw-phone"); err != nil {
+		t.Fatalf("mini app revoke: %v", err)
+	}
+
+	fromBot, _, botDevices := deviceService(t)
+	if !fromBot.HandleCallback(ctx, cbq(777, "dev:list")) {
+		t.Fatal("dev:list should be handled")
+	}
+	if !fromBot.HandleCallback(ctx, cbq(777, "dev:rev:0:ok")) {
+		t.Fatal("dev:rev:ok should be handled")
+	}
+
+	if len(miniDevices.deleted) != 1 || len(botDevices.deleted) != 1 ||
+		miniDevices.deleted[0] != botDevices.deleted[0] {
+		t.Fatalf("panel calls differ: mini app=%v bot=%v", miniDevices.deleted, botDevices.deleted)
+	}
+
+	// Both surfaces then read the same overview back.
+	miniView, err := fromMiniApp.DeviceOverview(ctx, 777)
+	if err != nil {
+		t.Fatalf("mini app overview: %v", err)
+	}
+	botView, err := fromBot.DeviceOverview(ctx, 777)
+	if err != nil {
+		t.Fatalf("bot overview: %v", err)
+	}
+	if !reflect.DeepEqual(miniView, botView) {
+		t.Fatalf("overview differs:\nmini app=%+v\nbot=%+v", miniView, botView)
+	}
+	if miniView.Profiles[0].Used != 1 || miniView.Profiles[0].Full {
+		t.Fatalf("freed slot not reflected: %+v", miniView.Profiles[0])
 	}
 }
 
