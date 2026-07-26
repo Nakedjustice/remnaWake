@@ -40,6 +40,11 @@ type Cabinet interface {
 	SupportHistoryUser(ctx context.Context, telegramID int64) (*payments.WebSupport, error)
 	SupportSendUser(ctx context.Context, telegramID int64, text string) error
 	SupportCloseUser(ctx context.Context, telegramID int64) error
+	SupportTicketsUser(ctx context.Context, telegramID int64) (*payments.WebSupportTickets, error)
+	SupportTicketThreadUser(ctx context.Context, telegramID, ticketID int64) (*payments.WebSupportThread, error)
+	SupportCreateTicket(ctx context.Context, telegramID int64, subject, text string) (int64, error)
+	SupportSendUserToTicket(ctx context.Context, telegramID, ticketID int64, text string) error
+	SupportCloseTicketUser(ctx context.Context, telegramID, ticketID int64) error
 }
 
 // Admin is the subset of *payments.Service the mini app admin API needs.
@@ -103,6 +108,10 @@ type Admin interface {
 	SupportThreadAdmin(ctx context.Context, telegramID, targetUserID int64) (*payments.WebSupport, error)
 	SupportSendAdmin(ctx context.Context, telegramID, targetUserID int64, text string) error
 	SupportCloseAdmin(ctx context.Context, telegramID, targetUserID int64) error
+	SupportTicketsAdmin(ctx context.Context, telegramID int64) ([]payments.WebSupportTicket, error)
+	SupportTicketThreadAdmin(ctx context.Context, telegramID, ticketID int64) (*payments.WebSupportThread, error)
+	SupportReplyTicketAdmin(ctx context.Context, telegramID, ticketID int64, text string) error
+	SupportCloseTicketAdmin(ctx context.Context, telegramID, ticketID int64) error
 }
 
 // Webhooks is the subset of *payments.Service the public (non-initData)
@@ -148,6 +157,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/support", s.handleSupport)
 	mux.HandleFunc("POST /api/support/send", s.handleSupportSend)
 	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
+	mux.HandleFunc("GET /api/support/tickets", s.handleSupportTickets)
+	mux.HandleFunc("POST /api/support/ticket", s.handleSupportTicketThread)
+	mux.HandleFunc("POST /api/support/ticket/new", s.handleSupportTicketCreate)
+	mux.HandleFunc("POST /api/support/ticket/send", s.handleSupportTicketSend)
+	mux.HandleFunc("POST /api/support/ticket/close", s.handleSupportTicketClose)
 	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
 	mux.HandleFunc("POST /api/admin/backup", s.handleAdminBackup)
 	mux.HandleFunc("GET /api/admin/action-center", s.handleAdminActionCenter)
@@ -174,6 +188,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/support/close", s.adminIDAction("close support", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.SupportCloseAdmin(ctx, tgID, id)
 	}))
+	mux.HandleFunc("GET /api/admin/support/tickets", s.handleAdminSupportTickets)
+	mux.HandleFunc("POST /api/admin/support/ticket", s.handleAdminSupportTicketThread)
+	mux.HandleFunc("POST /api/admin/support/ticket/reply", s.handleAdminSupportTicketReply)
+	mux.HandleFunc("POST /api/admin/support/ticket/close", s.handleAdminSupportTicketClose)
 	mux.HandleFunc("POST /api/admin/tariff", s.handleAdminSetTariff)
 	mux.HandleFunc("POST /api/admin/tariff/delete", s.handleAdminDeleteTariff)
 	mux.HandleFunc("POST /api/admin/traffic-extension", s.handleAdminSetTrafficExtension)
@@ -460,6 +478,11 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 		writeJSONError(w, http.StatusForbidden, "profile is linked to another account")
 	case errors.Is(err, payments.ErrPaymentRequestInaccessible):
 		writeJSONError(w, http.StatusNotFound, "payment request not found")
+	// A foreign ticket is reported exactly like a missing one (see userTicket).
+	case errors.Is(err, payments.ErrTicketNotFound):
+		writeJSONError(w, http.StatusNotFound, "support ticket not found")
+	case errors.Is(err, payments.ErrTicketClosed):
+		writeJSONError(w, http.StatusConflict, "support ticket is closed")
 	case errors.Is(err, payments.ErrGiftUsed):
 		writeJSONError(w, http.StatusConflict, "gift code already used")
 	case errors.Is(err, payments.ErrReceiptSessionExpired):
@@ -687,6 +710,10 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 		errors.Is(err, payments.ErrRequestNotFound), errors.Is(err, payments.ErrInfraServerUnknown),
 		errors.Is(err, payments.ErrRegistrationGuardPatternNotFound), errors.Is(err, payments.ErrRegistrationGuardNotFound):
 		writeJSONError(w, http.StatusNotFound, "не найдено")
+	case errors.Is(err, payments.ErrTicketNotFound):
+		writeJSONError(w, http.StatusNotFound, "обращение не найдено")
+	case errors.Is(err, payments.ErrTicketClosed):
+		writeJSONError(w, http.StatusConflict, "обращение уже закрыто")
 	case errors.Is(err, payments.ErrRequestResolved):
 		writeJSONError(w, http.StatusConflict, "уже обработано")
 	case errors.Is(err, payments.ErrRegistrationGuardPatternExists):

@@ -40,6 +40,10 @@ type fakeCabinet struct {
 	supportHistory      []int64
 	supportSent         []int64
 	supportClosed       []int64
+	// ticketCalls records the multi-ticket service calls as "<op>:<args>" and
+	// ticketErr is the error every one of them returns.
+	ticketCalls []string
+	ticketErr   error
 }
 
 func TestWebParityJSONRoutes(t *testing.T) {
