@@ -73,12 +73,15 @@ func (s *Service) setSupportSession(chatID int64, on bool) {
 	}
 }
 
-// supportCloseKeyboard is the inline "close chat" button shown to the user.
+// supportCloseKeyboard is the inline keyboard under the quick-chat prompt: the
+// original "close chat" button plus the way into the multi-ticket list, so the
+// single-thread chat is never a dead end.
 func supportCloseKeyboard() *tg.InlineKeyboardMarkup {
 	return &tg.InlineKeyboardMarkup{
-		InlineKeyboard: [][]tg.InlineKeyboardButton{{
-			{Text: i18n.T("✖️ Завершить чат"), CallbackData: "sup:close"},
-		}},
+		InlineKeyboard: [][]tg.InlineKeyboardButton{
+			{{Text: i18n.T("🗂 Мои обращения"), CallbackData: "sup:list"}},
+			{{Text: i18n.T("✖️ Завершить чат"), CallbackData: "sup:close"}},
+		},
 	}
 }
 

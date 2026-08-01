@@ -101,6 +101,7 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 			}
 		}
 		rows = append(rows,
+			[]tg.InlineKeyboardButton{{Text: i18n.T("📱 Мои устройства"), CallbackData: "dev:list"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("🎁 Подарить подписку"), CallbackData: "menu:gift"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("📦 Мои подарки"), CallbackData: "menu:mygifts"}},
 			[]tg.InlineKeyboardButton{{Text: i18n.T("👥 Пригласить пользователя"), CallbackData: "menu:invite"}},
@@ -207,6 +208,12 @@ func (s *Service) handleCabinetPay(ctx context.Context, cb *tg.CallbackQuery) bo
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка."))
 		return true
 	}
+	// Gate before anything is disclosed or sent: a forwarded cabinet keyboard
+	// must not show a stranger's renewal options.
+	u, ok := s.assertCallbackOwner(ctx, cb, userID)
+	if !ok {
+		return true
+	}
 	chatID := cb.Message.Chat.ID
 
 	s.mu.Lock()
@@ -244,7 +251,7 @@ func (s *Service) handleCabinetPay(ctx context.Context, cb *tg.CallbackQuery) bo
 	}
 	if len(tariffs) == 0 {
 		// No tariffs configured: behave like the legacy single-option flow.
-		s.createRequestAndNotify(ctx, cb, userID, 1, 0, store.PlanStandard, false)
+		s.createRequestAndNotify(ctx, cb, u, 1, 0, store.PlanStandard, false)
 		return true
 	}
 

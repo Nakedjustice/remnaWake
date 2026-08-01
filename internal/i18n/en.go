@@ -16,6 +16,7 @@ var en = map[string]string{
 	"Кнопка «%s» теперь всегда под полем ввода 👇": "The “%s” button is now always under the input field 👇",
 	"Личный кабинет":                    "My account",
 	"Открыть меню":                      "Open the menu",
+	"Мои устройства":                    "My devices",
 	"Посмотреть тарифы":                 "Show plans",
 	"Подарить подписку":                 "Gift a subscription",
 	"Мои подарочные подписки":           "My gift subscriptions",

@@ -243,7 +243,16 @@ func (s *Service) handlePlategaCheck(ctx context.Context, cb *tg.CallbackQuery) 
 		return true
 	}
 	req, err := s.store.GetPaymentRequest(ctx, reqID)
-	if err != nil || req == nil {
+	if err != nil {
+		s.logger.Error("platega: load request failed", "req_id", reqID, "err", err.Error())
+	}
+	// Same reachability rule as CheckPlategaPayment on the mini app side, and
+	// the same single answer for every reason: missing, owned by somebody else,
+	// unlinked, or simply not a Platega request with a transaction to verify.
+	// Splitting these apart would let anyone probe request ids with a forwarded
+	// keyboard.
+	if err != nil || req == nil || req.TelegramID == 0 || req.TelegramID != cb.From.ID ||
+		req.Provider != ProviderPlatega || req.ProviderTxnID == "" {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Заявка не найдена."))
 		return true
 	}

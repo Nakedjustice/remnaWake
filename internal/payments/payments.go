@@ -210,6 +210,7 @@ const (
 	adminInputUpdateInterval
 	adminInputRegistrationGuardPattern
 	adminInputBackupInterval
+	adminInputSupportTicketReply
 )
 
 type adminInputState struct {
@@ -224,6 +225,11 @@ type adminInputState struct {
 	// is adminInputSupportReply (set when the admin taps the reply button on a
 	// support notification).
 	supportTarget int64
+	// supportTicket is the ticket an admin is replying to while step is
+	// adminInputSupportTicketReply (set from the inbox thread's reply button).
+	// The id stays here rather than in the callback payload, which is capped at
+	// 64 bytes.
+	supportTicket int64
 }
 
 type adminMsgRef struct {
@@ -326,6 +332,12 @@ type Service struct {
 	// conversation lives in the store; this is only the bot-chat input mode.
 	supportSessions map[int64]bool // protected by mu
 
+	// supportCompose remembers which ticket the user's next chat message goes
+	// to after they tapped "reply"/"new ticket" in the bot ticket list. It takes
+	// precedence over supportSessions (which always rides the newest open
+	// ticket) and is one-shot: the message that consumes it clears it.
+	supportCompose map[int64]*supportComposeState // protected by mu
+
 	botUsername string // protected by mu; empty = unknown, fall back to raw code
 	webAppURL   string // protected by mu; empty = mini app disabled
 	checkerURL  string // protected by mu; public xray-checker dashboard URL, empty = no link
@@ -366,6 +378,14 @@ type Service struct {
 	// xrayChecker is wired once at startup via SetXrayChecker when an
 	// xray-checker sidecar is configured; nil = proxy monitoring unavailable.
 	xrayChecker XrayChecker // protected by mu
+
+	// devices reads and frees the panel's HWID slots; wired once at startup via
+	// SetDeviceManager. nil = the device screen is unavailable.
+	devices DeviceManager // protected by mu
+	// deviceSlots maps the short index in a dev:rev: payload back to the real
+	// (profile, hwid) pair, per user. hwids are long and arbitrary, so they can
+	// never travel in Telegram's 64-byte callback data.
+	deviceSlots map[int64]*deviceSlotState // protected by mu
 
 	// resolvedSquadUUID caches a successful by-name fallback lookup of the
 	// default squad, so user creation doesn't hit the panel's squad listing
@@ -479,7 +499,9 @@ func New(st *store.Store, bot BotSender, ext Extender, creator Creator, updater 
 		redeems:            make(map[int64]*redeemState),
 		payPhotos:          make(map[int64]*payPhotoState),
 		userCtl:            make(map[int64]*userCtlState),
+		deviceSlots:        make(map[int64]*deviceSlotState),
 		supportSessions:    make(map[int64]bool),
+		supportCompose:     make(map[int64]*supportComposeState),
 		adminInput:         make(map[int64]adminInputState),
 		payMsgs:            make(map[int64]adminMsgEntry),
 		inviteMsgs:         make(map[int64]adminMsgEntry),

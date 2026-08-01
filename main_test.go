@@ -11,3 +11,14 @@ func TestUserBotCommandsIncludeTrial(t *testing.T) {
 	}
 	t.Fatal("user bot commands must include /trial")
 }
+
+// Device self-management must be reachable without the Mini App, so it needs a
+// chat command of its own alongside the cabinet button.
+func TestUserBotCommandsIncludeDevices(t *testing.T) {
+	for _, cmd := range userBotCommands() {
+		if cmd.Command == "devices" {
+			return
+		}
+	}
+	t.Fatal("user bot commands must include /devices")
+}

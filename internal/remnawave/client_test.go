@@ -3,6 +3,7 @@ package remnawave
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -574,5 +575,120 @@ func TestUpdateUserSendsOnlySetFields(t *testing.T) {
 	}
 	if v, present := gotBody["tag"]; !present || v != nil {
 		t.Fatalf("tag = %v (present=%v), want explicit null", v, present)
+	}
+}
+
+func TestGetHwidDevices(t *testing.T) {
+	const (
+		token  = "tok"
+		userID = int64(7)
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.EscapedPath() != "/api/hwid/devices/7" {
+			t.Fatalf("path = %s", r.URL.EscapedPath())
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Fatalf("auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"total":2,"devices":[` +
+			`{"hwid":"hw-1","userId":7,"platform":"iOS","osVersion":"17.4","deviceModel":"iPhone 15","userAgent":"Streisand","requestIp":"1.2.3.4","createdAt":"2026-06-01T10:00:00Z","updatedAt":"2026-06-02T10:00:00Z"},` +
+			`{"hwid":"hw-2","userId":7,"platform":"Android","osVersion":"14","deviceModel":"Pixel 8","userAgent":"v2rayNG","requestIp":"5.6.7.8","createdAt":"2026-06-03T10:00:00Z","updatedAt":"2026-06-04T10:00:00Z"}]}}`))
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, token, time.Second)
+	devices, err := c.GetHwidDevices(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(devices) != 2 {
+		t.Fatalf("devices = %+v", devices)
+	}
+	if devices[0].HWID != "hw-1" || devices[0].Platform != "iOS" || devices[0].DeviceModel != "iPhone 15" || devices[0].OSVersion != "17.4" {
+		t.Fatalf("first device wrong: %+v", devices[0])
+	}
+	if devices[0].UserID != 7 || devices[0].UserAgent != "Streisand" || devices[0].RequestIP != "1.2.3.4" {
+		t.Fatalf("first device metadata wrong: %+v", devices[0])
+	}
+	if !devices[0].CreatedAt.Equal(time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)) {
+		t.Fatalf("createdAt = %s", devices[0].CreatedAt)
+	}
+	if devices[1].HWID != "hw-2" || devices[1].Platform != "Android" {
+		t.Fatalf("second device wrong: %+v", devices[1])
+	}
+}
+
+// A 404 from the listing means the panel has no such user; it is reported as an
+// empty list (mirroring getUser's nil), because "no devices" is the only useful
+// answer for a profile the caller already resolved.
+func TestGetHwidDevicesNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	devices, err := c.GetHwidDevices(context.Background(), 999)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(devices) != 0 {
+		t.Fatalf("want empty, got %+v", devices)
+	}
+}
+
+func TestDeleteHwidDeviceSendsIDAndHwid(t *testing.T) {
+	const (
+		token  = "tok"
+		userID = int64(7)
+		hwid   = "8f14e45f-ceea-167a-5a36-dedd4bea2543"
+	)
+	var gotBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/hwid/devices/delete" {
+			t.Fatalf("got %s %s, want POST /api/hwid/devices/delete", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Fatalf("auth = %q", got)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(body, &gotBody); err != nil {
+			t.Fatalf("decode body: %v (body=%s)", err, body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"total":1,"devices":[{"hwid":"hw-2","userId":7,"platform":"Android"}]}}`))
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, token, time.Second)
+	left, err := c.DeleteHwidDevice(context.Background(), userID, hwid)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// v3 keys the delete body by the numeric user id; JSON numbers decode to float64.
+	if gotBody["userId"] != float64(userID) || gotBody["hwid"] != hwid {
+		t.Fatalf("body = %v", gotBody)
+	}
+	if len(left) != 1 || left[0].HWID != "hw-2" {
+		t.Fatalf("remaining devices = %+v", left)
+	}
+}
+
+func TestDeleteHwidDeviceNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	if _, err := c.DeleteHwidDevice(context.Background(), 1, "gone"); !errors.Is(err, ErrHwidDeviceNotFound) {
+		t.Fatalf("err = %v, want ErrHwidDeviceNotFound", err)
 	}
 }

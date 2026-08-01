@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -70,6 +71,9 @@ func main() {
 	// Live FX rates power infrastructure-cost conversion; best-effort, with
 	// admin-entered manual rates as the fallback when the source is unreachable.
 	pay.SetForex(forex.NewClient())
+	// Self-service device slots: the panel's HWID endpoints are always there, so
+	// this is wired unconditionally; a nil manager would simply hide the screen.
+	pay.SetDeviceManager(rwDeviceManager{rwClient})
 	if cfg.Platega.Enabled() {
 		method, _ := cfg.Platega.MethodCode() // already validated in config.Load
 		plClient := platega.New(cfg.Platega.MerchantID, cfg.Platega.Secret, cfg.HTTP.Timeout)
@@ -332,6 +336,10 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 				case "/menu", "/help":
 					pay.SendMenu(ctx, u.Message.Chat.ID)
 					continue
+				case "/devices":
+					if pay.SendDevices(ctx, u.Message.Chat.ID) {
+						continue
+					}
 				case "/tariff":
 					pay.SendTariffs(ctx, u.Message.Chat.ID)
 					continue
@@ -387,6 +395,7 @@ func userBotCommands() []tgbot.BotCommand {
 	return []tgbot.BotCommand{
 		{Command: "me", Description: i18n.T("Личный кабинет")},
 		{Command: "menu", Description: i18n.T("Открыть меню")},
+		{Command: "devices", Description: i18n.T("Мои устройства")},
 		{Command: "trial", Description: i18n.T("Активировать пробный период")},
 		{Command: "tariff", Description: i18n.T("Посмотреть тарифы")},
 		{Command: "gift", Description: i18n.T("Подарить подписку")},
@@ -481,6 +490,38 @@ func (f rwCreator) GetInternalSquads(ctx context.Context) ([]payments.InternalSq
 		out = append(out, payments.InternalSquad{UUID: sq.UUID, Name: sq.Name})
 	}
 	return out, nil
+}
+
+// rwDeviceManager adapts *remnawave.Client to payments.DeviceManager,
+// converting remnawave.HwidDevice to the payments-local Device and translating
+// the panel's 404 into payments.ErrDeviceNotFound, so the payments package never
+// needs to know the remnawave package exists.
+type rwDeviceManager struct{ c *remnawave.Client }
+
+func (d rwDeviceManager) ListDevices(ctx context.Context, userID int64) ([]payments.Device, error) {
+	devices, err := d.c.GetHwidDevices(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]payments.Device, 0, len(devices))
+	for _, dev := range devices {
+		out = append(out, payments.Device{
+			HWID:        dev.HWID,
+			Platform:    dev.Platform,
+			OSVersion:   dev.OSVersion,
+			DeviceModel: dev.DeviceModel,
+			CreatedAt:   dev.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
+func (d rwDeviceManager) DeleteDevice(ctx context.Context, userID int64, hwid string) error {
+	_, err := d.c.DeleteHwidDevice(ctx, userID, hwid)
+	if errors.Is(err, remnawave.ErrHwidDeviceNotFound) {
+		return payments.ErrDeviceNotFound
+	}
+	return err
 }
 
 // rwRegistrar adapts *remnawave.Client to payments.Registrar.

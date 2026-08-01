@@ -113,7 +113,8 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		hasPayPhoto := s.getPayPhoto(chatID) != nil
 		hasTrial := s.getTrial(chatID) != nil
 		hasSupport := s.inSupportSession(chatID)
-		if !hasInvite && !hasRegister && !hasGiftCode && !hasRedeem && !hasPayPhoto && !hasTrial && !hasSupport {
+		hasTicketCompose := s.hasSupportCompose(chatID)
+		if !hasInvite && !hasRegister && !hasGiftCode && !hasRedeem && !hasPayPhoto && !hasTrial && !hasSupport && !hasTicketCompose {
 			return false
 		}
 		s.clearInvite(chatID)
@@ -123,7 +124,14 @@ func (s *Service) HandleText(ctx context.Context, m *tg.Message) bool {
 		s.clearPayPhoto(chatID)
 		s.clearTrial(chatID)
 		s.setSupportSession(chatID, false)
+		s.clearSupportCompose(chatID)
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отменено."))
+		return true
+	}
+
+	// An explicit ticket target (chosen in the ticket list) wins over the live
+	// session, which always rides the newest open ticket.
+	if s.handleSupportComposeInput(ctx, m) {
 		return true
 	}
 

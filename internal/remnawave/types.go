@@ -95,3 +95,27 @@ type usersStreamResponse struct {
 		HasMore    bool    `json:"hasMore"`
 	} `json:"response"`
 }
+
+// HwidDevice is one device occupying a slot of a user's HwidDeviceLimit, as
+// reported by GET /api/hwid/devices/{userId}. Every descriptive field is
+// self-reported by the client app, so any of them may be empty.
+type HwidDevice struct {
+	HWID        string    `json:"hwid"`
+	UserID      int64     `json:"userId"`
+	Platform    string    `json:"platform"`
+	OSVersion   string    `json:"osVersion"`
+	DeviceModel string    `json:"deviceModel"`
+	UserAgent   string    `json:"userAgent"`
+	RequestIP   string    `json:"requestIp"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// hwidDevicesResponse wraps both HWID endpoints: the listing and the delete
+// call return the identical {total, devices} envelope.
+type hwidDevicesResponse struct {
+	Response struct {
+		Total   int          `json:"total"`
+		Devices []HwidDevice `json:"devices"`
+	} `json:"response"`
+}
