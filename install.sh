@@ -1032,6 +1032,9 @@ print_proxy_checklist() {
 
 section_panel() {
   info "-- Remnawave panel -----------------------------------------"
+  warn "  Requires Remnawave panel v3.0.0 or newer."
+  warn "  Panel v3 identifies users by a numeric id instead of a uuid, and"
+  warn "  remnaWake has no v2 compatibility mode. Upgrade the panel first."
   ask REMNAWAVE_BASE_URL  "Remnawave panel URL (e.g. https://panel.example.com)" "$REMNAWAVE_BASE_URL" v_url
   REMNAWAVE_BASE_URL="${REMNAWAVE_BASE_URL%/}"
   ask REMNAWAVE_API_TOKEN "Remnawave API token (panel -> API tokens)" "$REMNAWAVE_API_TOKEN" "" secret
@@ -1514,7 +1517,7 @@ port_in_use() {
 }
 
 doctor_mode() {
-  local failures=0 warnings=0 compose value base_image autoupdate_image effective_image override_bot_image web_port mode
+  local failures=0 warnings=0 compose value expected base_image autoupdate_image effective_image override_bot_image web_port mode
   local web_url platega_id topology xray_url xray_sub xray_base xray_host_port xray_public caddyfile
   local backup_count latest backup_name
 
@@ -1563,10 +1566,14 @@ doctor_mode() {
   [ -f "$OVERRIDE_FILE" ] && check_ok "docker-compose.override.yml file" "$OVERRIDE_FILE" "present when installer-managed settings are used" "no action needed" || check_warn "docker-compose.override.yml file" "missing" "installer-managed override present" "./install.sh configure"
 
   for key in REMNAWAVE_BASE_URL REMNAWAVE_API_TOKEN TELEGRAM_BOT_TOKEN; do
+    # The panel version cannot be probed offline, so it is stated as an
+    # expectation rather than checked: remnaWake has no v2 compatibility mode.
+    expected="non-empty"
+    [ "$key" = "REMNAWAVE_BASE_URL" ] && expected="non-empty; panel must be Remnawave v3.0.0 or newer"
     if value="$(env_get "$key")" && [ -n "$value" ]; then
-      check_ok "$key" "set" "non-empty" "no action needed"
+      check_ok "$key" "set" "$expected" "no action needed"
     else
-      check_fail "$key" "missing or empty" "non-empty" "./install.sh configure"
+      check_fail "$key" "missing or empty" "$expected" "./install.sh configure"
     fi
   done
 
