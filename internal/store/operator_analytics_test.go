@@ -24,10 +24,10 @@ func TestReadOperatorAnalyticsAggregatesLocalWorkflowHistory(t *testing.T) {
 	since := now.Add(-30 * 24 * time.Hour)
 	exp := now.AddDate(0, 1, 0)
 
-	createPayment := func(remnawaveID int64, uuid, username, provider, kind string, months, price, trafficGB int, createdAt time.Time) int64 {
+	createPayment := func(remnawaveID int64, username, provider, kind string, months, price, trafficGB int, createdAt time.Time) int64 {
 		t.Helper()
 		id, err := st.CreatePaymentRequest(ctx, PaymentRequest{
-			RemnawaveID: remnawaveID, UUID: uuid, Username: username, TelegramID: 1000 + remnawaveID,
+			RemnawaveID: remnawaveID, Username: username, TelegramID: 1000 + remnawaveID,
 			Months: months, Price: price, ExpireAt: exp, Provider: provider, Kind: kind, TrafficGB: trafficGB,
 		})
 		if err != nil {
@@ -39,21 +39,21 @@ func TestReadOperatorAnalyticsAggregatesLocalWorkflowHistory(t *testing.T) {
 		return id
 	}
 
-	old := createPayment(7, "uuid-7", "alice", "p2p", PaymentKindSubscription, 1, 100, 0, since.Add(-10*24*time.Hour))
+	old := createPayment(7, "alice", "p2p", PaymentKindSubscription, 1, 100, 0, since.Add(-10*24*time.Hour))
 	if _, err := st.ConfirmPaymentRequest(ctx, old, since.Add(-9*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	sub := createPayment(7, "uuid-7", "alice", "p2p", PaymentKindSubscription, 3, 450, 0, now.Add(-4*24*time.Hour))
+	sub := createPayment(7, "alice", "p2p", PaymentKindSubscription, 3, 450, 0, now.Add(-4*24*time.Hour))
 	if _, err := st.ConfirmPaymentRequest(ctx, sub, now.Add(-3*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	traffic := createPayment(8, "uuid-8", "bob", "platega", PaymentKindTrafficExtension, 0, 200, 25, now.Add(-2*24*time.Hour))
+	traffic := createPayment(8, "bob", "platega", PaymentKindTrafficExtension, 0, 200, 25, now.Add(-2*24*time.Hour))
 	if _, err := st.ConfirmTrafficExtensionRequest(ctx, traffic, now.Add(-2*24*time.Hour), now.AddDate(0, 0, 30)); err != nil {
 		t.Fatal(err)
 	}
-	pendingTraffic := createPayment(9, "uuid-9", "carol", "telegram_stars", PaymentKindTrafficExtension, 0, 300, 50, now.Add(-time.Hour))
+	pendingTraffic := createPayment(9, "carol", "telegram_stars", PaymentKindTrafficExtension, 0, 300, 50, now.Add(-time.Hour))
 	_ = pendingTraffic
-	rejected := createPayment(10, "uuid-10", "dave", "telegram_stars", PaymentKindSubscription, 1, 150, 0, now.Add(-time.Hour))
+	rejected := createPayment(10, "dave", "telegram_stars", PaymentKindSubscription, 1, 150, 0, now.Add(-time.Hour))
 	if _, err := st.RejectPaymentRequest(ctx, rejected, now.Add(-30*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -101,10 +101,10 @@ func TestReadOperatorAnalyticsAggregatesLocalWorkflowHistory(t *testing.T) {
 		t.Fatalf("create pending referral: %v %v", ok, err)
 	}
 
-	if err := st.UpsertNotifiedUser(ctx, NotifiedUser{RemnawaveID: 7, UUID: "uuid-7", Username: "alice", ExpireAt: now.Add(-10 * 24 * time.Hour)}); err != nil {
+	if err := st.UpsertNotifiedUser(ctx, NotifiedUser{RemnawaveID: 7, Username: "alice", ExpireAt: now.Add(-10 * 24 * time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpsertNotifiedUser(ctx, NotifiedUser{RemnawaveID: 11, UUID: "uuid-11", Username: "lapsed", ExpireAt: now.Add(-5 * 24 * time.Hour)}); err != nil {
+	if err := st.UpsertNotifiedUser(ctx, NotifiedUser{RemnawaveID: 11, Username: "lapsed", ExpireAt: now.Add(-5 * 24 * time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.db.ExecContext(ctx, `

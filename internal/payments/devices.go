@@ -39,11 +39,11 @@ type Device struct {
 // DeviceManager lists and frees the HWID slots of a panel profile. Wired once
 // at startup via SetDeviceManager; nil = device management unavailable.
 type DeviceManager interface {
-	ListDevices(ctx context.Context, userUUID string) ([]Device, error)
+	ListDevices(ctx context.Context, userID int64) ([]Device, error)
 	// DeleteDevice frees one slot. It reports ErrDeviceNotFound when the panel
 	// no longer knows the device, so a racing second revoke is distinguishable
 	// from an outage.
-	DeleteDevice(ctx context.Context, userUUID, hwid string) error
+	DeleteDevice(ctx context.Context, userID int64, hwid string) error
 }
 
 // WebDevice is one registered device as rendered by the bot and the Mini App.
@@ -62,7 +62,6 @@ type WebDevice struct {
 // ∞ instead of a nonsensical "n of 0"; Full then never becomes true.
 type WebDeviceProfile struct {
 	RemnawaveID int64       `json:"remnawave_id"`
-	UUID        string      `json:"uuid,omitempty"`
 	Username    string      `json:"username"`
 	Limit       int         `json:"limit"`
 	Used        int         `json:"used"`
@@ -81,9 +80,9 @@ type WebDevices struct {
 // deviceSlot pairs a listed device with the profile that holds it, so a short
 // index in the callback payload can be resolved back to both.
 type deviceSlot struct {
-	uuid  string
-	hwid  string
-	label string
+	remnawaveID int64
+	hwid        string
+	label       string
 }
 
 // deviceSlotState is one user's most recent listing. hwids are long, arbitrary
@@ -174,17 +173,16 @@ func (s *Service) deviceOverview(ctx context.Context, telegramID int64) (*WebDev
 	out := &WebDevices{Profiles: make([]WebDeviceProfile, 0, len(subs))}
 	for i := range subs {
 		sub := &subs[i]
-		devices, err := dm.ListDevices(ctx, sub.UUID)
+		devices, err := dm.ListDevices(ctx, sub.RemnawaveID)
 		if err != nil {
 			// One unreadable profile poisons the whole screen: a partial listing
 			// understates the occupied slots and would invite the user to revoke
 			// a device that was not the problem.
-			s.logger.Error("list devices failed", "uuid", sub.UUID, "err", err.Error())
+			s.logger.Error("list devices failed", "user_id", sub.RemnawaveID, "err", err.Error())
 			return nil, fmt.Errorf("%w: list devices: %v", ErrPanelUnavailable, err)
 		}
 		p := WebDeviceProfile{
 			RemnawaveID: sub.RemnawaveID,
-			UUID:        sub.UUID,
 			Username:    sub.Username,
 			Used:        len(devices),
 		}
@@ -237,9 +235,9 @@ func (s *Service) revokeDevice(ctx context.Context, telegramID int64, match func
 		return nil, ErrProfileUnknown
 	}
 
-	devices, err := dm.ListDevices(ctx, sub.UUID)
+	devices, err := dm.ListDevices(ctx, sub.RemnawaveID)
 	if err != nil {
-		s.logger.Error("list devices failed", "uuid", sub.UUID, "err", err.Error())
+		s.logger.Error("list devices failed", "user_id", sub.RemnawaveID, "err", err.Error())
 		return nil, fmt.Errorf("%w: list devices: %v", ErrPanelUnavailable, err)
 	}
 	held := false
@@ -254,11 +252,11 @@ func (s *Service) revokeDevice(ctx context.Context, telegramID int64, match func
 	}
 
 	if s.dryRun {
-		s.logger.Info("dry-run: would revoke hwid device", "uuid", sub.UUID, "hwid", hwid)
-	} else if err := dm.DeleteDevice(ctx, sub.UUID, hwid); errors.Is(err, ErrDeviceNotFound) {
+		s.logger.Info("dry-run: would revoke hwid device", "user_id", sub.RemnawaveID, "hwid", hwid)
+	} else if err := dm.DeleteDevice(ctx, sub.RemnawaveID, hwid); errors.Is(err, ErrDeviceNotFound) {
 		return nil, ErrDeviceNotFound
 	} else if err != nil {
-		s.logger.Error("revoke device failed", "uuid", sub.UUID, "err", err.Error())
+		s.logger.Error("revoke device failed", "user_id", sub.RemnawaveID, "err", err.Error())
 		return nil, fmt.Errorf("%w: delete device: %v", ErrPanelUnavailable, err)
 	}
 	return s.deviceOverview(ctx, telegramID)
@@ -315,7 +313,7 @@ func (s *Service) handleDeviceRevoke(ctx context.Context, cb *tg.CallbackQuery) 
 		s.promptDeviceRevokeConfirm(ctx, cb, idx, slot)
 		return
 	}
-	if _, err := s.revokeDevice(ctx, cb.From.ID, func(sub *Subscriber) bool { return sub.UUID == slot.uuid }, slot.hwid); err != nil {
+	if _, err := s.revokeDevice(ctx, cb.From.ID, func(sub *Subscriber) bool { return sub.RemnawaveID == slot.remnawaveID }, slot.hwid); err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, deviceErrorText(err))
 		return
 	}
@@ -375,7 +373,7 @@ func (s *Service) sendDeviceList(ctx context.Context, chatID int64) string {
 			d := &p.Devices[j]
 			label := deviceLabel(d)
 			idx := len(slots)
-			slots = append(slots, deviceSlot{uuid: p.UUID, hwid: d.HWID, label: label})
+			slots = append(slots, deviceSlot{remnawaveID: p.RemnawaveID, hwid: d.HWID, label: label})
 			line := fmt.Sprintf("%d. %s", idx+1, label)
 			if d.CreatedAt != "" {
 				line += fmt.Sprintf(i18n.T(" — подключено %s"), d.CreatedAt)

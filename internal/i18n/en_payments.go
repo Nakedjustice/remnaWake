@@ -448,7 +448,7 @@ var enPayments = map[string]string{
 	"✅ Подписка для %s продлена на %d мес. до %s":                     "✅ Subscription for %s extended by %d mo. until %s",
 	"✅ Подписка продлена!":                                            "✅ Subscription extended!",
 	"✅ Подтвердить оплату":                                            "✅ Confirm payment",
-	"✅ Пользователь «%s» создан (UUID: %s), подписка до %s.":          "✅ User “%s” created (UUID: %s), subscription until %s.",
+	"✅ Пользователь «%s» создан (ID: %d), подписка до %s.":            "✅ User “%s” created (ID: %d), subscription until %s.",
 	"✅ Пользователь создан!":                                          "✅ User created!",
 	"✅ Привязано!":                 "✅ Linked!",
 	"✏️ Изменить реквизиты":        "✏️ Edit payment details",

@@ -790,7 +790,6 @@ const EN = {
   'Активированы': 'Redeemed',
   'Ожидают одобрения': 'Awaiting approval',
   '📡 Моя подписка': '📡 My subscription',
-  'UUID, срок действия, лимит устройств и трафик.': 'UUID, expiry, device limit and traffic.',
   '📡 Открыть подписку': '📡 Open subscription',
   '🎟 Приглашения': '🎟 Invitation',
   'Подарите подписку или пригласите пользователя.': 'Gift a subscription or invite a user.',
@@ -801,7 +800,7 @@ const EN = {
   '🎁 Подарить': '🎁 Gift sub',
   '👥 Пригласить': '👥 Invite user',
   '👥 Мои приглашения': '👥 My invites',
-  'UUID': 'UUID',
+  'ID': 'ID',
   'Лимит устройств': 'Device limit',
   'Использовано трафика': 'Used traffic',
   'Лимит трафика': 'Traffic limit',
@@ -1448,13 +1447,6 @@ function initialsOf(name) {
   return ((words[0] || '?').slice(0, 2)).toUpperCase();
 }
 
-// shortUUID trims a UUID to the design's `a8f3…e21b` form.
-function shortUUID(u) {
-  if (!u) return '—';
-  const c = u.replace(/-/g, '');
-  return c.length > 12 ? c.slice(0, 4) + '…' + c.slice(-4) : u;
-}
-
 // renderProfile builds the selected subscription dashboard from the supplied
 // card/grid design. It intentionally uses only fields already present in /api/me.
 function renderProfile(p, data) {
@@ -2038,7 +2030,7 @@ let cabinetData = null;
 let selectedProfileKey = '';
 
 function profileKey(p) {
-  return p.uuid || String(p.remnawave_id || p.username || '');
+  return String(p.remnawave_id || p.username || '');
 }
 
 function selectedProfile(data) {
@@ -2278,11 +2270,11 @@ function renderNotifPrefs(data) {
 }
 
 // renderSubscriptionInfo shows the technical details that used to sit in the
-// dashboard's stat grid (UUID, device limit), now grouped under Settings.
+// dashboard's stat grid (panel ID, device limit), now grouped under Settings.
 function renderSubscriptionInfo(p) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, t('Подписка')));
-  row(card, t('UUID'), shortUUID(p.uuid));
+  row(card, t('ID'), p.remnawave_id ? String(p.remnawave_id) : '—');
   row(card, t('Лимит устройств'), p.hwid_limit > 0 ? String(p.hwid_limit) : '∞');
   return card;
 }
@@ -3973,7 +3965,7 @@ function renderUserCard(container, user) {
     const button = activeButton();
     setButtonLoading(button, true, t('Сохранение…'));
     try {
-      await api('/api/admin/user/update', { method: 'POST', body: JSON.stringify({ uuid: user.uuid, username: user.username, ...payload }) });
+      await api('/api/admin/user/update', { method: 'POST', body: JSON.stringify({ remnawave_id: user.remnawave_id, username: user.username, ...payload }) });
       const res = await api('/api/admin/user/find', { method: 'POST', body: JSON.stringify({ query: user.username }) });
       renderUserCard(container, res.user);
     } catch (e) {

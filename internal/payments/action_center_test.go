@@ -60,7 +60,6 @@ func rejectPaymentForActionCenter(t *testing.T, st *store.Store, now time.Time, 
 	t.Helper()
 	id, err := st.CreatePaymentRequest(context.Background(), store.PaymentRequest{
 		RemnawaveID:     10,
-		UUID:            "uuid-" + provider,
 		Username:        "user-" + provider,
 		TelegramID:      500,
 		Months:          1,
@@ -93,7 +92,7 @@ func TestAdminActionCenterAggregatesAttentionItems(t *testing.T) {
 	svc.now = func() time.Time { return now }
 
 	if _, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 1, UUID: "uuid-pay", Username: "alice", TelegramID: 101,
+		RemnawaveID: 1, Username: "alice", TelegramID: 101,
 		Months: 1, Price: 100, ExpireAt: now.AddDate(0, 1, 0), Provider: ProviderP2P,
 	}); err != nil {
 		t.Fatalf("create payment request: %v", err)
@@ -127,10 +126,10 @@ func TestAdminActionCenterAggregatesAttentionItems(t *testing.T) {
 	rejectPaymentForActionCenter(t, st, now, ProviderTelegramStars, now.Add(-8*24*time.Hour))
 
 	svc.finder = &fakeFinder{all: []Subscriber{
-		{UUID: "expiring", Username: "expiring", Status: "ACTIVE", ExpireAt: now.Add(6 * 24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 100},
-		{UUID: "low", Username: "low", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 900},
-		{UUID: "unlimited", Username: "unlimited", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 0, UsedTrafficBytes: 999},
-		{UUID: "disabled", Username: "disabled", Status: "DISABLED", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 950},
+		{Username: "expiring", Status: "ACTIVE", ExpireAt: now.Add(6 * 24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 100},
+		{Username: "low", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 900},
+		{Username: "unlimited", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 0, UsedTrafficBytes: 999},
+		{Username: "disabled", Status: "DISABLED", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 950},
 	}}
 	svc.SetXrayChecker(&fakeChecker{statuses: []ProxyStatus{
 		{Name: "Alpha", Up: false},
@@ -278,7 +277,7 @@ func TestAdminActionCenterDegradesExternalSources(t *testing.T) {
 	now := time.Now().UTC()
 	svc.now = func() time.Time { return now }
 	if _, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 1, UUID: "uuid-pay", Username: "alice", TelegramID: 101,
+		RemnawaveID: 1, Username: "alice", TelegramID: 101,
 		Months: 1, Price: 100, ExpireAt: now.AddDate(0, 1, 0), Provider: ProviderP2P,
 	}); err != nil {
 		t.Fatalf("create local payment request: %v", err)
@@ -316,10 +315,10 @@ func TestAdminListUsersByCohortLowTraffic(t *testing.T) {
 	now := time.Now().UTC()
 	svc.now = func() time.Time { return now }
 	svc.finder = &fakeFinder{all: []Subscriber{
-		{UUID: "low", Username: "low", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 900},
-		{UUID: "eleven", Username: "eleven", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 899},
-		{UUID: "unlimited", Username: "unlimited", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 0, UsedTrafficBytes: 999},
-		{UUID: "expired", Username: "expired", Status: "EXPIRED", ExpireAt: now.Add(-24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 950},
+		{Username: "low", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 900},
+		{Username: "eleven", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 899},
+		{Username: "unlimited", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TrafficLimitBytes: 0, UsedTrafficBytes: 999},
+		{Username: "expired", Status: "EXPIRED", ExpireAt: now.Add(-24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 950},
 	}}
 
 	users, err := svc.AdminListUsersByCohort(context.Background(), adminTG, "low_traffic")

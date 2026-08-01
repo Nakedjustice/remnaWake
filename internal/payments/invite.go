@@ -264,8 +264,8 @@ func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery)
 
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("✅ Пользователь создан!"))
 	_ = s.bot.SendPlain(ctx, cb.From.ID,
-		fmt.Sprintf(i18n.T("✅ Пользователь «%s» создан (UUID: %s), подписка до %s."),
-			created.Username, created.UUID, expireAt.Format("02.01.2006")))
+		fmt.Sprintf(i18n.T("✅ Пользователь «%s» создан (ID: %d), подписка до %s."),
+			created.Username, created.ID, expireAt.Format("02.01.2006")))
 	return true
 }
 
@@ -400,11 +400,11 @@ func (s *Service) extendUserByDays(ctx context.Context, tgID int64, days int) in
 	}
 	newExpireAt := base.AddDate(0, 0, days)
 	if s.dryRun {
-		s.logger.Info("dry-run: would award referral bonus", "uuid", sub.UUID, "days", days)
+		s.logger.Info("dry-run: would award referral bonus", "user_id", sub.RemnawaveID, "days", days)
 		return days
 	}
-	if err := s.extender.ExtendSubscriptionByUUID(ctx, sub.UUID, newExpireAt); err != nil {
-		s.logger.Error("referral: extend user failed", "uuid", sub.UUID, "err", err.Error())
+	if err := s.extender.ExtendSubscription(ctx, sub.RemnawaveID, newExpireAt); err != nil {
+		s.logger.Error("referral: extend user failed", "user_id", sub.RemnawaveID, "err", err.Error())
 		return 0
 	}
 	return days

@@ -620,7 +620,7 @@ func TestWebRenewWithScreenshotRequired(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	bot := &fakeBot{}
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		777: {{RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		777: {{RemnawaveID: 42, Username: "alice", TelegramID: 777,
 			ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

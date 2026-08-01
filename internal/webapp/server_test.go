@@ -483,7 +483,7 @@ func (f *fakeAdmin) AdminListUsers(_ context.Context, tgID int64) ([]payments.We
 		return nil, f.err
 	}
 	return []payments.WebUserRow{
-		{UUID: "u-1", Username: "alice", Status: "ACTIVE", ExpireAt: "01.07.2026"},
+		{Username: "alice", Status: "ACTIVE", ExpireAt: "01.07.2026"},
 	}, nil
 }
 func (f *fakeAdmin) AdminListUsersByCohort(_ context.Context, tgID int64, cohort string) ([]payments.WebUserRow, error) {
@@ -492,7 +492,7 @@ func (f *fakeAdmin) AdminListUsersByCohort(_ context.Context, tgID int64, cohort
 		return nil, f.err
 	}
 	return []payments.WebUserRow{
-		{UUID: "u-2", Username: "bob", Status: "EXPIRED", ExpireAt: "01.06.2026"},
+		{Username: "bob", Status: "EXPIRED", ExpireAt: "01.06.2026"},
 	}, nil
 }
 func (f *fakeAdmin) AdminSetDefaultTrafficReset(_ context.Context, tgID int64, strategy string) error {
@@ -504,10 +504,10 @@ func (f *fakeAdmin) AdminFindUser(_ context.Context, tgID int64, query string) (
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &payments.WebManagedUser{UUID: "u-1", Username: query, Status: "ACTIVE"}, nil
+	return &payments.WebManagedUser{Username: query, Status: "ACTIVE"}, nil
 }
 func (f *fakeAdmin) AdminUpdateUser(_ context.Context, tgID int64, req payments.WebUserUpdate) error {
-	f.calls = append(f.calls, adminCall{Name: "updateuser", A: tgID, Text: req.UUID})
+	f.calls = append(f.calls, adminCall{Name: "updateuser", A: tgID, B: req.RemnawaveID})
 	return f.err
 }
 func (f *fakeAdmin) AdminRevokeGiftCode(_ context.Context, tgID, giftID int64) error {
@@ -1366,7 +1366,7 @@ func TestHandleAdminFindUserPayload(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.User.UUID != "u-1" || got.User.Username != "alice" {
+	if got.User.Username != "alice" {
 		t.Fatalf("unexpected user: %+v", got.User)
 	}
 }
@@ -1405,7 +1405,7 @@ func TestHandleAdminMutations(t *testing.T) {
 		{"/api/admin/squad", `{"uuid":"sq-2"}`, "setsquad", 42, 0, "sq-2"},
 		{"/api/admin/traffic-reset", `{"strategy":"WEEK"}`, "settreset", 42, 0, "WEEK"},
 		{"/api/admin/user/find", `{"query":"alice"}`, "finduser", 42, 0, "alice"},
-		{"/api/admin/user/update", `{"uuid":"u-1"}`, "updateuser", 42, 0, "u-1"},
+		{"/api/admin/user/update", `{"remnawave_id":1}`, "updateuser", 42, 1, ""},
 	}
 	for i, tc := range cases {
 		if code := post(tc.path, tc.body); code != 200 {

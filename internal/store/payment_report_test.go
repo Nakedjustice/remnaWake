@@ -16,7 +16,7 @@ func TestReadPaymentReportAnalyticsAndFilters(t *testing.T) {
 	create := func(username, payer, provider, txn string, price int, created time.Time) int64 {
 		t.Helper()
 		id, err := st.CreatePaymentRequest(ctx, PaymentRequest{
-			RemnawaveID: idForTest(username), UUID: "uuid-" + username, Username: username,
+			RemnawaveID: idForTest(username), Username: username,
 			TelegramID: 1000 + idForTest(username), Months: 1, Price: price, ExpireAt: exp,
 			PayerTelegramID: 2000 + idForTest(username), PayerUsername: payer,
 			Provider: provider, ProviderTxnID: txn,
@@ -122,7 +122,7 @@ func TestReadPaymentReportKindFilter(t *testing.T) {
 	since := now.Add(-30 * 24 * time.Hour)
 
 	if _, err := st.CreatePaymentRequest(ctx, PaymentRequest{
-		RemnawaveID: 1, UUID: "u1", Username: "payer-user", TelegramID: 11,
+		RemnawaveID: 1, Username: "payer-user", TelegramID: 11,
 		Months: 1, Price: 100, ExpireAt: now.AddDate(0, 1, 0), Provider: "p2p",
 	}); err != nil {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestReadPaymentReportPaginationAndIDSearch(t *testing.T) {
 	var lastID int64
 	for i := 0; i < 27; i++ {
 		id, err := st.CreatePaymentRequest(ctx, PaymentRequest{
-			RemnawaveID: int64(i + 1), UUID: fmt.Sprintf("uuid-%d", i), Username: fmt.Sprintf("user-%02d", i),
+			RemnawaveID: int64(i + 1), Username: fmt.Sprintf("user-%02d", i),
 			TelegramID: int64(5000 + i), Months: 1, Price: 100, ExpireAt: now.AddDate(0, 1, 0), Provider: "p2p",
 		})
 		if err != nil {

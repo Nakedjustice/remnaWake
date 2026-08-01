@@ -157,18 +157,18 @@ func (f *fakeBot) AnswerPreCheckoutQuery(_ context.Context, _ string, ok bool, _
 }
 
 type fakeExtender struct {
-	uuid   string
+	userID int64
 	expire time.Time
 	calls  int
 	err    error
 }
 
-func (f *fakeExtender) ExtendSubscriptionByUUID(_ context.Context, uuid string, newExpireAt time.Time) error {
+func (f *fakeExtender) ExtendSubscription(_ context.Context, userID int64, newExpireAt time.Time) error {
 	f.calls++
 	if f.err != nil {
 		return f.err
 	}
-	f.uuid = uuid
+	f.userID = userID
 	f.expire = newExpireAt
 	return nil
 }
@@ -194,6 +194,9 @@ func (f *fakeFinder) ListAll(_ context.Context) ([]Subscriber, error) {
 	return f.all, f.listErr
 }
 
+// fakeCreatedUserID is the panel id every fakeCreator-created user gets.
+const fakeCreatedUserID int64 = 9001
+
 type fakeCreator struct {
 	created    []string
 	squads     [][]string // squad UUIDs passed with each CreateUser call
@@ -206,7 +209,7 @@ func (f *fakeCreator) CreateUser(_ context.Context, spec CreateUserSpec) (*Creat
 	f.squads = append(f.squads, spec.SquadUUIDs)
 	f.strategies = append(f.strategies, spec.TrafficLimitStrategy)
 	f.specs = append(f.specs, spec)
-	return &CreatedUser{UUID: "fake-uuid", Username: spec.Username}, nil
+	return &CreatedUser{ID: fakeCreatedUserID, Username: spec.Username}, nil
 }
 
 // fakeUpdater records UpdateUser calls for the "Manage user" flow and the
@@ -215,22 +218,22 @@ func (f *fakeCreator) CreateUser(_ context.Context, spec CreateUserSpec) (*Creat
 // so extension assertions and panel-failure simulation keep working against
 // the extender fake regardless of which panel call carried the expiry.
 type fakeUpdater struct {
-	calls []UserPatch
-	uuids []string
-	err   error
-	ext   Extender
+	calls   []UserPatch
+	userIDs []int64
+	err     error
+	ext     Extender
 }
 
-func (f *fakeUpdater) UpdateUser(ctx context.Context, uuid string, patch UserPatch) error {
+func (f *fakeUpdater) UpdateUser(ctx context.Context, userID int64, patch UserPatch) error {
 	if f.err != nil {
 		return f.err
 	}
 	if f.ext != nil && patch.ExpireAt != nil {
-		if err := f.ext.ExtendSubscriptionByUUID(ctx, uuid, *patch.ExpireAt); err != nil {
+		if err := f.ext.ExtendSubscription(ctx, userID, *patch.ExpireAt); err != nil {
 			return err
 		}
 	}
-	f.uuids = append(f.uuids, uuid)
+	f.userIDs = append(f.userIDs, userID)
 	f.calls = append(f.calls, patch)
 	return nil
 }
@@ -253,18 +256,18 @@ func (f *fakeSquadLister) GetInternalSquads(_ context.Context) ([]InternalSquad,
 }
 
 type fakeRegistrar struct {
-	uuid       string
+	userID     int64
 	telegramID int64
 	calls      int
 	err        error
 }
 
-func (f *fakeRegistrar) SetTelegramID(_ context.Context, uuid string, telegramID int64) error {
+func (f *fakeRegistrar) SetTelegramID(_ context.Context, userID, telegramID int64) error {
 	f.calls++
 	if f.err != nil {
 		return f.err
 	}
-	f.uuid = uuid
+	f.userID = userID
 	f.telegramID = telegramID
 	return nil
 }
@@ -362,7 +365,7 @@ func cbq(fromID int64, data string) *tg.CallbackQuery {
 func rememberAlice(t *testing.T, st *store.Store) {
 	t.Helper()
 	err := st.UpsertNotifiedUser(context.Background(), store.NotifiedUser{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
@@ -429,7 +432,7 @@ func TestPickCreatesRequestAndNotifiesAdmin(t *testing.T) {
 		t.Fatal("pick should be handled")
 	}
 	req, _ := st.GetPaymentRequest(ctx, 1)
-	if req == nil || req.Months != 3 || req.Price != 450 || req.UUID != "uuid-42" {
+	if req == nil || req.Months != 3 || req.Price != 450 || req.RemnawaveID != 42 {
 		t.Fatalf("request wrong: %+v", req)
 	}
 	if len(bot.edits) != 1 || bot.edits[0].Keyboard != nil {
@@ -452,7 +455,7 @@ func TestConfirmRejectsNonAdmin(t *testing.T) {
 	ctx := context.Background()
 	rememberAlice(t, st)
 	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 3, Price: 450, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), Status: "pending",
 	})
 	if !svc.HandleCallback(ctx, cbq(2222 /*not admin*/, fmt.Sprintf("ok:%d", id))) {
@@ -469,15 +472,15 @@ func TestConfirmExtendsByChosenMonths(t *testing.T) {
 	svc.now = func() time.Time { return time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC) }
 	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC) // future -> base is expiry
 	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 3, Price: 450, ExpireAt: exp, Status: "pending",
 	})
 
 	if !svc.HandleCallback(ctx, cbq(1000 /*admin*/, fmt.Sprintf("ok:%d", id))) {
 		t.Fatal("confirm should be handled")
 	}
-	if ext.calls != 1 || ext.uuid != "uuid-42" {
-		t.Fatalf("extend not called correctly: calls=%d uuid=%s", ext.calls, ext.uuid)
+	if ext.calls != 1 || ext.userID != 42 {
+		t.Fatalf("extend not called correctly: calls=%d user_id=%d", ext.calls, ext.userID)
 	}
 	want := exp.AddDate(0, 3, 0)
 	if !ext.expire.Equal(want) {
@@ -505,7 +508,7 @@ func TestRejectViaCallbackNotifiesUserAndClearsButtons(t *testing.T) {
 	svc, bot, ext, st := newTestService(t)
 	ctx := context.Background()
 	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 3, Price: 450, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), Status: "pending",
 	})
 	svc.putAdminMsgs(svc.payMsgs, id, []adminMsgRef{{chatID: 1000, messageID: 5}})
@@ -555,7 +558,7 @@ func TestConfirmExtendFailureNotifiesAdminAndStaysRetryable(t *testing.T) {
 	ctx := context.Background()
 	ext.err = errors.New("panel down")
 	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 3, Price: 450, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), Status: "pending",
 	})
 	svc.putAdminMsgs(svc.payMsgs, id, []adminMsgRef{{chatID: 1000, messageID: 5}})
@@ -608,7 +611,7 @@ func TestAdminStatsCommand(t *testing.T) {
 		{RemnawaveID: 3, Username: "c", Status: "EXPIRED", ExpireAt: now.Add(-24 * time.Hour), TelegramID: 33},
 	}}
 	_, _ = st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 1, UUID: "u", Username: "a", TelegramID: 11,
+		RemnawaveID: 1, Username: "a", TelegramID: 11,
 		Months: 1, Price: 150, ExpireAt: now, Status: "pending",
 	})
 
@@ -676,7 +679,7 @@ func TestConfirmExtendsFromNowWhenExpired(t *testing.T) {
 	svc.now = func() time.Time { return now }
 	past := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) // already expired
 	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 150, ExpireAt: past, Status: "pending",
 	})
 	svc.HandleCallback(ctx, cbq(1000, fmt.Sprintf("ok:%d", id)))
@@ -765,7 +768,7 @@ func TestMenuFlowsInertWhenDisabled(t *testing.T) {
 	bot := &fakeBot{}
 	// Finder would return a subscriber, so the flow would proceed if not gated.
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		555: {{RemnawaveID: 1, UUID: "u-1", Username: "sub", TelegramID: 555}},
+		555: {{RemnawaveID: 1, Username: "sub", TelegramID: 555}},
 	}}
 	svc := New(st, bot, &fakeExtender{}, &fakeCreator{}, &fakeUpdater{}, finder, &fakeRegistrar{}, newFakeSquadLister(), []int64{}, "₽", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx := context.Background()

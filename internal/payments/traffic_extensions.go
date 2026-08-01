@@ -50,7 +50,7 @@ func (s *Service) createTrafficExtensionPaymentRequest(ctx context.Context, u *s
 		fileID, isDoc = att.fileID, att.asDocument
 	}
 	reqID, err := s.store.CreateTrafficExtensionPaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
+		RemnawaveID: u.RemnawaveID, Username: u.Username,
 		TelegramID: u.TelegramID, Months: 0, Price: price, ExpireAt: u.ExpireAt,
 		Provider: provider, Kind: store.PaymentKindTrafficExtension, TrafficGB: trafficGB,
 		BaseTrafficLimitBytes: baseBytes, ExtraTrafficBytes: int64(trafficGB) * bytesPerGB,
@@ -111,11 +111,10 @@ func (s *Service) createTrafficExtensionPaymentRequest(ctx context.Context, u *s
 }
 
 func (s *Service) formatAdminTrafficExtensionRequest(u *store.NotifiedUser, trafficGB, price int) string {
-	return fmt.Sprintf("%s\n\n%s%s\nRemnawave ID: %d\nUUID: %s\nTelegram ID: %d\n%s%s\n%s",
+	return fmt.Sprintf("%s\n\n%s%s\nRemnawave ID: %d\nTelegram ID: %d\n%s%s\n%s",
 		i18n.T("📊 Заявка на докупку трафика"),
 		i18n.T("Клиент: "), u.Username,
 		u.RemnawaveID,
-		u.UUID,
 		u.TelegramID,
 		i18n.T("Подписка до: "), u.ExpireAt.Format("02.01.2006"),
 		fmt.Sprintf(i18n.T("Выбрано: +%d ГБ — %s"), trafficGB, s.priceLabel(price)))
@@ -125,9 +124,9 @@ func (s *Service) confirmTrafficExtensionRequest(ctx context.Context, req *store
 	expiresAt := s.now().AddDate(0, 0, trafficExtensionDays)
 	newLimit := req.BaseTrafficLimitBytes + req.ExtraTrafficBytes
 	if s.dryRun {
-		s.logger.Info("dry-run: would apply traffic extension", "uuid", req.UUID, "traffic_gb", req.TrafficGB, "new_limit", newLimit)
-	} else if err := s.userUpdater.UpdateUser(ctx, req.UUID, UserPatch{TrafficLimitBytes: &newLimit}); err != nil {
-		s.logger.Error("apply traffic extension failed", "uuid", req.UUID, "err", err.Error())
+		s.logger.Info("dry-run: would apply traffic extension", "user_id", req.RemnawaveID, "traffic_gb", req.TrafficGB, "new_limit", newLimit)
+	} else if err := s.userUpdater.UpdateUser(ctx, req.RemnawaveID, UserPatch{TrafficLimitBytes: &newLimit}); err != nil {
+		s.logger.Error("apply traffic extension failed", "user_id", req.RemnawaveID, "err", err.Error())
 		return time.Time{}, fmt.Errorf("apply traffic extension: %w", err)
 	}
 	if _, err := s.store.ConfirmTrafficExtensionRequest(ctx, req.ID, s.now(), expiresAt); err != nil {
@@ -150,12 +149,12 @@ func (s *Service) RunTrafficExtensionResets(ctx context.Context) {
 	}
 	for _, req := range expired {
 		base := req.BaseTrafficLimitBytes
-		if err := s.userUpdater.UpdateUser(ctx, req.UUID, UserPatch{TrafficLimitBytes: &base}); err != nil {
-			s.logger.Error("traffic extension reset: panel update failed", "uuid", req.UUID, "request_id", req.ID, "err", err.Error())
+		if err := s.userUpdater.UpdateUser(ctx, req.RemnawaveID, UserPatch{TrafficLimitBytes: &base}); err != nil {
+			s.logger.Error("traffic extension reset: panel update failed", "user_id", req.RemnawaveID, "request_id", req.ID, "err", err.Error())
 			continue
 		}
-		if err := s.store.MarkActiveTrafficExtensionsRestored(ctx, req.UUID, s.now()); err != nil {
-			s.logger.Error("traffic extension reset: mark restored failed", "uuid", req.UUID, "request_id", req.ID, "err", err.Error())
+		if err := s.store.MarkActiveTrafficExtensionsRestored(ctx, req.RemnawaveID, s.now()); err != nil {
+			s.logger.Error("traffic extension reset: mark restored failed", "user_id", req.RemnawaveID, "request_id", req.ID, "err", err.Error())
 		}
 	}
 }

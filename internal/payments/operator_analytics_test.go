@@ -16,7 +16,7 @@ func TestAdminOperatorAnalyticsMapsLocalStoreAndGuardsAdmin(t *testing.T) {
 	svc.now = func() time.Time { return now }
 
 	id, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 7, UUID: "uuid-7", Username: "alice", TelegramID: 77,
+		RemnawaveID: 7, Username: "alice", TelegramID: 77,
 		Months: 2, Price: 300, ExpireAt: now.AddDate(0, 1, 0), Provider: ProviderP2P,
 	})
 	if err != nil {

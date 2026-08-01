@@ -36,6 +36,10 @@ func TestInstallScriptV2Contract(t *testing.T) {
 		"pull_policy: always",
 		`DOCKER_API_VERSION: "1.40"`,
 		`service_image "$OVERRIDE_FILE" bot`,
+		// The panel-version requirement must reach the operator both while
+		// entering the panel URL and when diagnosing an existing install.
+		"Requires Remnawave panel v3.0.0 or newer.",
+		"non-empty; panel must be Remnawave v3.0.0 or newer",
 		"Expose the Xray Checker web dashboard at a public URL?",
 		"XRAY_CHECKER_PUBLIC_URL=$XRAY_CHECKER_PUBLIC_URL",
 		`METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"`,
