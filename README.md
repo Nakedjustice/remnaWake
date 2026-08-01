@@ -7,6 +7,13 @@ day and reminds users on Telegram before their subscription expires (7 / 3 / 1
 days out). An admin can confirm a payment straight from the chat and the bot
 extends the subscription by the chosen number of months.
 
+> **Requires Remnawave panel `v3.0.0` or newer.** Panel v3 removed the `uuid`
+> property from user objects and now identifies users by a numeric `id`, so
+> remnaWake addresses the panel by that id throughout. There is no v2
+> compatibility mode — upgrade the panel first, then remnaWake. Existing bot
+> databases carry over untouched: the numeric panel id was already stored
+> alongside every payment request and reminder snapshot.
+
 ## ✨ Features
 
 - ⏰ **Expiry reminders** 7 / 3 / 1 days before expiry, plus **win-back**
@@ -490,7 +497,7 @@ docker compose restart caddy    # in your caddy directory
 | Variable               | Required | Default          | Description                                                  |
 | ---------------------- | -------- | ---------------- | ------------------------------------------------------------ |
 | `REMNAWAKE_CHANNEL`    | no       | `main`           | Installer-selected release channel: `main` stable or `dev` unstable |
-| `REMNAWAVE_BASE_URL`   | yes      | —                | Base URL of the panel                                        |
+| `REMNAWAVE_BASE_URL`   | yes      | —                | Base URL of the panel (must be `v3.0.0`+)                    |
 | `REMNAWAVE_API_TOKEN`  | yes      | —                | Remnawave panel API token                                    |
 | `TELEGRAM_BOT_TOKEN`   | yes      | —                | Telegram bot token (from @BotFather)                         |
 | `TELEGRAM_PARSE_MODE`  | no       | `HTML`           | `HTML` / `MarkdownV2` / empty                                |
@@ -634,6 +641,10 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ## 🧭 Behavior
 
 - If the Remnawave response reports `total > size`, remaining pages are fetched.
+- Looking a subscriber up by Telegram ID uses the cursor-paginated
+  `GET /api/users/stream?telegramId=…`; panel v3 removed the old
+  `by-telegram-id` route. Lookups by profile name and subscription link are
+  unchanged.
 - On `401` from `/api/users`, check `REMNAWAVE_API_TOKEN`; the error is logged
   and the job does not crash.
 - Telegram `429` is logged with `retry_after`; remaining users are still
