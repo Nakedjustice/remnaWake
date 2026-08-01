@@ -14,7 +14,7 @@ func TestReadAdminStats(t *testing.T) {
 
 	mkReq := func() int64 {
 		id, err := st.CreatePaymentRequest(ctx, PaymentRequest{
-			RemnawaveID: 1, UUID: "u", Username: "alice", TelegramID: 1,
+			RemnawaveID: 1, Username: "alice", TelegramID: 1,
 			Months: 1, Price: 150, ExpireAt: exp, Status: "pending",
 		})
 		if err != nil {

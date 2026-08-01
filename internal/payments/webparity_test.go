@@ -21,8 +21,8 @@ func TestRegisterProfileByUsernameAndLink(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			svc, _, _, _ := newTestService(t)
 			finder := &fakeFinder{
-				byName:  map[string]*Subscriber{"alice": {UUID: "uuid-42", Username: "alice"}},
-				byShort: map[string]*Subscriber{"short-42": {UUID: "uuid-42", Username: "alice"}},
+				byName:  map[string]*Subscriber{"alice": {RemnawaveID: 42, Username: "alice"}},
+				byShort: map[string]*Subscriber{"short-42": {RemnawaveID: 42, Username: "alice"}},
 			}
 			registrar := &fakeRegistrar{}
 			svc.finder, svc.registrar = finder, registrar
@@ -31,7 +31,7 @@ func TestRegisterProfileByUsernameAndLink(t *testing.T) {
 			if err != nil {
 				t.Fatalf("RegisterProfile: %v", err)
 			}
-			if got.Username != "alice" || registrar.uuid != "uuid-42" || registrar.telegramID != 777 {
+			if got.Username != "alice" || registrar.userID != 42 || registrar.telegramID != 777 {
 				t.Fatalf("unexpected result=%+v registrar=%+v", got, registrar)
 			}
 		})
@@ -41,8 +41,8 @@ func TestRegisterProfileByUsernameAndLink(t *testing.T) {
 func TestRegisterProfileIsIdempotentAndConcealsForeignLink(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	svc.finder = &fakeFinder{byName: map[string]*Subscriber{
-		"mine":    {UUID: "mine", Username: "mine", TelegramID: 777},
-		"foreign": {UUID: "foreign", Username: "foreign", TelegramID: 888},
+		"mine":    {Username: "mine", TelegramID: 777},
+		"foreign": {Username: "foreign", TelegramID: 888},
 	}}
 	registrar := &fakeRegistrar{}
 	svc.registrar = registrar
@@ -61,7 +61,7 @@ func TestRegisterProfileIsIdempotentAndConcealsForeignLink(t *testing.T) {
 func TestCheckPlategaPaymentConcealsForeignRequest(t *testing.T) {
 	svc, _, _, st := newTestService(t)
 	id, err := st.CreatePaymentRequest(context.Background(), store.PaymentRequest{
-		RemnawaveID: 1, UUID: "u", Username: "alice", TelegramID: 888,
+		RemnawaveID: 1, Username: "alice", TelegramID: 888,
 		Months: 1, Price: 100, ExpireAt: time.Now(), Provider: ProviderPlatega, ProviderTxnID: "tx",
 	})
 	if err != nil {
@@ -79,7 +79,7 @@ func TestRedeemGiftForOwnedProfileAndRollback(t *testing.T) {
 	svc, _, ext, st := newTestService(t)
 	now := time.Date(2026, 6, 21, 0, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return now }
-	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{777: {{RemnawaveID: 42, UUID: "uuid-42", Username: "alice", ExpireAt: now.AddDate(0, 1, 0)}}}}
+	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{777: {{RemnawaveID: 42, Username: "alice", ExpireAt: now.AddDate(0, 1, 0)}}}}
 	g := issueGift(t, st, 999, 3)
 	ext.err = errors.New("panel down")
 	if _, err := svc.RedeemGift(context.Background(), 777, g.Code, 42, ""); err == nil {
@@ -120,7 +120,7 @@ func TestRedeemGiftCreatesFirstProfile(t *testing.T) {
 
 func TestRedeemGiftConcurrentClaim(t *testing.T) {
 	svc, _, ext, st := newTestService(t)
-	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{777: {{RemnawaveID: 42, UUID: "u", Username: "alice", ExpireAt: time.Now()}}}}
+	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{777: {{RemnawaveID: 42, Username: "alice", ExpireAt: time.Now()}}}}
 	g := issueGift(t, st, 999, 1)
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
@@ -210,7 +210,7 @@ func TestCheckPlategaPaymentStatusesAndRepeat(t *testing.T) {
 	ctx := context.Background()
 	gw := &fakePlatega{statuses: map[string]string{"tx": "PENDING"}}
 	svc.SetPlatega(gw, 2, "RUB", "https://return")
-	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{RemnawaveID: 1, UUID: "u", Username: "alice", TelegramID: 777, Months: 1, Price: 100, ExpireAt: time.Now(), Provider: ProviderPlatega, ProviderTxnID: "tx"})
+	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{RemnawaveID: 1, Username: "alice", TelegramID: 777, Months: 1, Price: 100, ExpireAt: time.Now(), Provider: ProviderPlatega, ProviderTxnID: "tx"})
 	got, err := svc.CheckPlategaPayment(ctx, 777, id)
 	if err != nil || got.Status != "pending" {
 		t.Fatalf("pending=%+v err=%v", got, err)

@@ -32,14 +32,15 @@ type BotSender interface {
 	AnswerPreCheckoutQuery(ctx context.Context, queryID string, ok bool, errorMessage string) error
 }
 
-// Extender is the subset of *remnawave.Client that payments needs.
+// Extender is the subset of *remnawave.Client that payments needs. Panel users
+// are addressed by their numeric id — Remnawave v3 removed the uuid identity.
 type Extender interface {
-	ExtendSubscriptionByUUID(ctx context.Context, uuid string, newExpireAt time.Time) error
+	ExtendSubscription(ctx context.Context, userID int64, newExpireAt time.Time) error
 }
 
 // CreatedUser is the minimal result returned after a new user is created.
 type CreatedUser struct {
-	UUID            string
+	ID              int64
 	Username        string
 	SubscriptionURL string
 }
@@ -94,7 +95,7 @@ type UserPatch struct {
 
 // UserUpdater patches the manageable fields of an existing panel user.
 type UserUpdater interface {
-	UpdateUser(ctx context.Context, uuid string, patch UserPatch) error
+	UpdateUser(ctx context.Context, userID int64, patch UserPatch) error
 }
 
 // TrafficResetStrategies is the canonical set of valid traffic-reset strategies.
@@ -124,7 +125,7 @@ type SquadLister interface {
 
 // Registrar links an existing panel user to a Telegram ID.
 type Registrar interface {
-	SetTelegramID(ctx context.Context, uuid string, telegramID int64) error
+	SetTelegramID(ctx context.Context, userID, telegramID int64) error
 }
 
 // PlategaGateway is the subset of *platega.Client the payment flow needs. Kept
@@ -155,7 +156,6 @@ var allProviders = []string{ProviderP2P, ProviderPlatega, ProviderTelegramStars}
 // so this package stays decoupled from the remnawave package.
 type Subscriber struct {
 	RemnawaveID     int64
-	UUID            string
 	Username        string
 	TelegramID      int64
 	ExpireAt        time.Time
@@ -265,10 +265,10 @@ type redeemState struct {
 const giftCodeTTL = 10 * time.Minute
 
 // userCtlState remembers which panel user an admin is editing across the inline
-// "Manage user" buttons, since UUIDs don't fit cleanly in repeated callback
-// data. Evicted after userCtlTTL.
+// "Manage user" buttons, since the target does not fit cleanly in repeated
+// callback data. Only the username is kept — every consumer re-resolves the
+// live profile through findManagedUser. Evicted after userCtlTTL.
 type userCtlState struct {
-	uuid      string
 	username  string
 	createdAt time.Time
 }

@@ -177,7 +177,6 @@ func (s *Service) Run(ctx context.Context) error {
 		chatID := *u.TelegramID
 		logEntry := logger.With(
 			"user_id", u.ID,
-			"uuid", u.UUID,
 			"username", u.Username,
 			"chat_id", chatID,
 			"expire_at", u.ExpireAt.Format(time.RFC3339),
@@ -211,7 +210,6 @@ func (s *Service) Run(ctx context.Context) error {
 		// Persist a snapshot so the «Я оплатил» flow works (even after a restart).
 		if err := s.pay.RememberUser(ctx, store.NotifiedUser{
 			RemnawaveID: u.ID,
-			UUID:        u.UUID,
 			Username:    u.Username,
 			TelegramID:  chatID,
 			ExpireAt:    u.ExpireAt,

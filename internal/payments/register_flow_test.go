@@ -33,7 +33,7 @@ func regConfirmCB(chatID int64, data string) *tg.CallbackQuery {
 func TestRegisterHappyPathBindsFreeAccount(t *testing.T) {
 	svc, bot, f, reg := newRegisterService(t)
 	ctx := context.Background()
-	f.byName["alice"] = &Subscriber{RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 0}
+	f.byName["alice"] = &Subscriber{RemnawaveID: 42, Username: "alice", TelegramID: 0}
 
 	if !svc.StartRegisterFlow(ctx, regMsg(200, "/register")) {
 		t.Fatal("start should be handled")
@@ -56,8 +56,8 @@ func TestRegisterHappyPathBindsFreeAccount(t *testing.T) {
 	if !svc.HandleCallback(ctx, regConfirmCB(200, "reg_confirm")) {
 		t.Fatal("reg_confirm should be handled")
 	}
-	if reg.calls != 1 || reg.uuid != "u-42" || reg.telegramID != 200 {
-		t.Fatalf("registrar not called correctly: calls=%d uuid=%s tgid=%d", reg.calls, reg.uuid, reg.telegramID)
+	if reg.calls != 1 || reg.userID != 42 || reg.telegramID != 200 {
+		t.Fatalf("registrar not called correctly: calls=%d user_id=%d tgid=%d", reg.calls, reg.userID, reg.telegramID)
 	}
 	if svc.getRegister(200) != nil {
 		t.Fatal("state should be cleared after confirm")
@@ -68,7 +68,7 @@ func TestRegisterAcceptsSubscriptionLink(t *testing.T) {
 	svc, bot, f, reg := newRegisterService(t)
 	ctx := context.Background()
 	f.byShort = map[string]*Subscriber{
-		"abc123XY": {RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 0},
+		"abc123XY": {RemnawaveID: 42, Username: "alice", TelegramID: 0},
 	}
 
 	svc.StartRegisterFlow(ctx, regMsg(200, "/register"))
@@ -86,8 +86,8 @@ func TestRegisterAcceptsSubscriptionLink(t *testing.T) {
 	if !svc.HandleCallback(ctx, regConfirmCB(200, "reg_confirm")) {
 		t.Fatal("reg_confirm should be handled")
 	}
-	if reg.calls != 1 || reg.uuid != "u-42" || reg.telegramID != 200 {
-		t.Fatalf("registrar not called correctly: calls=%d uuid=%s tgid=%d", reg.calls, reg.uuid, reg.telegramID)
+	if reg.calls != 1 || reg.userID != 42 || reg.telegramID != 200 {
+		t.Fatalf("registrar not called correctly: calls=%d user_id=%d tgid=%d", reg.calls, reg.userID, reg.telegramID)
 	}
 }
 
@@ -95,7 +95,7 @@ func TestBareSubscriptionLinkStartsLinking(t *testing.T) {
 	svc, bot, f, reg := newRegisterService(t)
 	ctx := context.Background()
 	f.byShort = map[string]*Subscriber{
-		"abc123XY": {RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 0},
+		"abc123XY": {RemnawaveID: 42, Username: "alice", TelegramID: 0},
 	}
 
 	// No /register first: the pasted link alone starts the flow.
@@ -110,8 +110,8 @@ func TestBareSubscriptionLinkStartsLinking(t *testing.T) {
 	if !svc.HandleCallback(ctx, regConfirmCB(200, "reg_confirm")) {
 		t.Fatal("reg_confirm should be handled")
 	}
-	if reg.calls != 1 || reg.uuid != "u-42" || reg.telegramID != 200 {
-		t.Fatalf("registrar not called correctly: calls=%d uuid=%s tgid=%d", reg.calls, reg.uuid, reg.telegramID)
+	if reg.calls != 1 || reg.userID != 42 || reg.telegramID != 200 {
+		t.Fatalf("registrar not called correctly: calls=%d user_id=%d tgid=%d", reg.calls, reg.userID, reg.telegramID)
 	}
 }
 
@@ -188,7 +188,7 @@ func TestRegisterNotFoundStaysInFlow(t *testing.T) {
 func TestRegisterAlreadyLinkedToSelfIsIdempotent(t *testing.T) {
 	svc, bot, f, reg := newRegisterService(t)
 	ctx := context.Background()
-	f.byName["alice"] = &Subscriber{RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 200}
+	f.byName["alice"] = &Subscriber{RemnawaveID: 42, Username: "alice", TelegramID: 200}
 	svc.StartRegisterFlow(ctx, regMsg(200, "/register"))
 	if !svc.HandleText(ctx, regMsg(200, "alice")) {
 		t.Fatal("should be consumed")
@@ -208,7 +208,7 @@ func TestRegisterAlreadyLinkedToSelfIsIdempotent(t *testing.T) {
 func TestRegisterAlreadyLinkedToOtherIsRefused(t *testing.T) {
 	svc, bot, f, reg := newRegisterService(t)
 	ctx := context.Background()
-	f.byName["alice"] = &Subscriber{RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 999}
+	f.byName["alice"] = &Subscriber{RemnawaveID: 42, Username: "alice", TelegramID: 999}
 	svc.StartRegisterFlow(ctx, regMsg(200, "/register"))
 	if !svc.HandleText(ctx, regMsg(200, "alice")) {
 		t.Fatal("should be consumed")
@@ -229,7 +229,7 @@ func TestRegisterDryRunSkipsWrite(t *testing.T) {
 	svc, bot, f, reg := newRegisterService(t)
 	svc.dryRun = true
 	ctx := context.Background()
-	f.byName["alice"] = &Subscriber{RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 0}
+	f.byName["alice"] = &Subscriber{RemnawaveID: 42, Username: "alice", TelegramID: 0}
 	svc.StartRegisterFlow(ctx, regMsg(200, "/register"))
 	svc.HandleText(ctx, regMsg(200, "alice"))
 	if !svc.HandleCallback(ctx, regConfirmCB(200, "reg_confirm")) {
@@ -253,7 +253,7 @@ func TestRegisterWriteErrorReported(t *testing.T) {
 	svc, bot, f, reg := newRegisterService(t)
 	reg.err = errors.New("boom")
 	ctx := context.Background()
-	f.byName["alice"] = &Subscriber{RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 0}
+	f.byName["alice"] = &Subscriber{RemnawaveID: 42, Username: "alice", TelegramID: 0}
 	svc.StartRegisterFlow(ctx, regMsg(200, "/register"))
 	svc.HandleText(ctx, regMsg(200, "alice"))
 	if !svc.HandleCallback(ctx, regConfirmCB(200, "reg_confirm")) {
@@ -271,7 +271,7 @@ func TestRegisterWriteErrorReported(t *testing.T) {
 func TestRegisterCancelButtonClearsState(t *testing.T) {
 	svc, bot, f, _ := newRegisterService(t)
 	ctx := context.Background()
-	f.byName["alice"] = &Subscriber{RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 0}
+	f.byName["alice"] = &Subscriber{RemnawaveID: 42, Username: "alice", TelegramID: 0}
 	svc.StartRegisterFlow(ctx, regMsg(200, "/register"))
 	svc.HandleText(ctx, regMsg(200, "alice"))
 	if !svc.HandleCallback(ctx, regConfirmCB(200, "reg_cancel")) {
@@ -300,7 +300,7 @@ func TestRegisterCancelCommandClearsState(t *testing.T) {
 func TestRegisterTTLExpiry(t *testing.T) {
 	svc, _, f, _ := newRegisterService(t)
 	ctx := context.Background()
-	f.byName["alice"] = &Subscriber{RemnawaveID: 42, UUID: "u-42", Username: "alice", TelegramID: 0}
+	f.byName["alice"] = &Subscriber{RemnawaveID: 42, Username: "alice", TelegramID: 0}
 	base := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return base }
 	svc.StartRegisterFlow(ctx, regMsg(200, "/register"))

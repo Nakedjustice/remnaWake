@@ -29,22 +29,22 @@ func newUserCtlService(t *testing.T, finder Finder, updater UserUpdater) (*Servi
 
 func TestFindManagedUser(t *testing.T) {
 	finder := &fakeFinder{
-		byName:  map[string]*Subscriber{"alice": {UUID: "u-alice", Username: "alice"}},
-		byShort: map[string]*Subscriber{"abc123XY": {UUID: "u-short", Username: "bob"}},
+		byName:  map[string]*Subscriber{"alice": {RemnawaveID: 1, Username: "alice"}},
+		byShort: map[string]*Subscriber{"abc123XY": {RemnawaveID: 2, Username: "bob"}},
 	}
 	svc, _ := newUserCtlService(t, finder, &fakeUpdater{})
 	ctx := context.Background()
 
 	// By username.
-	if sub, err := svc.findManagedUser(ctx, "  alice "); err != nil || sub == nil || sub.UUID != "u-alice" {
+	if sub, err := svc.findManagedUser(ctx, "  alice "); err != nil || sub == nil || sub.RemnawaveID != 1 {
 		t.Fatalf("by username: sub=%+v err=%v", sub, err)
 	}
 	// By full subscription link.
-	if sub, err := svc.findManagedUser(ctx, "https://panel.example.com/sub/abc123XY"); err != nil || sub == nil || sub.UUID != "u-short" {
+	if sub, err := svc.findManagedUser(ctx, "https://panel.example.com/sub/abc123XY"); err != nil || sub == nil || sub.RemnawaveID != 2 {
 		t.Fatalf("by link: sub=%+v err=%v", sub, err)
 	}
 	// By bare short UUID (username miss, short-uuid hit).
-	if sub, err := svc.findManagedUser(ctx, "abc123XY"); err != nil || sub == nil || sub.UUID != "u-short" {
+	if sub, err := svc.findManagedUser(ctx, "abc123XY"); err != nil || sub == nil || sub.RemnawaveID != 2 {
 		t.Fatalf("by short uuid: sub=%+v err=%v", sub, err)
 	}
 	// Not found.
@@ -70,7 +70,7 @@ func TestApplyUserExpiryDelta(t *testing.T) {
 
 	// Extend from a future expiry: base = cur.
 	cur := now.AddDate(0, 0, 10)
-	got, err := svc.applyUserExpiryDelta(ctx, "u-1", cur, 5)
+	got, err := svc.applyUserExpiryDelta(ctx, 1, cur, 5)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestApplyUserExpiryDelta(t *testing.T) {
 	}
 
 	// Extend from a past expiry: base = now.
-	got, err = svc.applyUserExpiryDelta(ctx, "u-1", now.AddDate(0, 0, -10), 5)
+	got, err = svc.applyUserExpiryDelta(ctx, 1, now.AddDate(0, 0, -10), 5)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestApplyUserExpiryDelta(t *testing.T) {
 	}
 
 	// Large decrease floors at now.
-	got, err = svc.applyUserExpiryDelta(ctx, "u-1", cur, -100)
+	got, err = svc.applyUserExpiryDelta(ctx, 1, cur, -100)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -105,30 +105,30 @@ func TestUserSetters(t *testing.T) {
 	svc, _ := newUserCtlService(t, &fakeFinder{}, updater)
 	ctx := context.Background()
 
-	if err := svc.setUserHwidLimit(ctx, "u-1", 3); err != nil {
+	if err := svc.setUserHwidLimit(ctx, 1, 3); err != nil {
 		t.Fatalf("hwid: %v", err)
 	}
 	if p := updater.calls[0]; p.HwidDeviceLimit == nil || *p.HwidDeviceLimit != 3 {
 		t.Fatalf("hwid patch: %+v", p)
 	}
-	if err := svc.setUserHwidLimit(ctx, "u-1", -1); !errors.Is(err, ErrBadInput) {
+	if err := svc.setUserHwidLimit(ctx, 1, -1); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("hwid negative: err = %v, want ErrBadInput", err)
 	}
 
-	if err := svc.setUserTrafficLimitGB(ctx, "u-1", 5); err != nil {
+	if err := svc.setUserTrafficLimitGB(ctx, 1, 5); err != nil {
 		t.Fatalf("traffic: %v", err)
 	}
 	if p := updater.calls[1]; p.TrafficLimitBytes == nil || *p.TrafficLimitBytes != 5*bytesPerGB {
 		t.Fatalf("traffic patch: %+v", p)
 	}
 
-	if err := svc.setUserResetStrategy(ctx, "u-1", "WEEK"); err != nil {
+	if err := svc.setUserResetStrategy(ctx, 1, "WEEK"); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
 	if p := updater.calls[2]; p.TrafficLimitStrategy == nil || *p.TrafficLimitStrategy != "WEEK" {
 		t.Fatalf("reset patch: %+v", p)
 	}
-	if err := svc.setUserResetStrategy(ctx, "u-1", "NOPE"); !errors.Is(err, ErrBadInput) {
+	if err := svc.setUserResetStrategy(ctx, 1, "NOPE"); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("reset bad enum: err = %v, want ErrBadInput", err)
 	}
 }
@@ -138,19 +138,19 @@ func TestToggleUserStatus(t *testing.T) {
 	svc, _ := newUserCtlService(t, &fakeFinder{}, updater)
 	ctx := context.Background()
 
-	next, err := svc.toggleUserStatus(ctx, "u-1", "ACTIVE")
+	next, err := svc.toggleUserStatus(ctx, 1, "ACTIVE")
 	if err != nil || next != "DISABLED" {
 		t.Fatalf("active->disabled: next=%q err=%v", next, err)
 	}
 	if p := updater.calls[0]; p.Status == nil || *p.Status != "DISABLED" {
 		t.Fatalf("status patch: %+v", p)
 	}
-	next, err = svc.toggleUserStatus(ctx, "u-1", "DISABLED")
+	next, err = svc.toggleUserStatus(ctx, 1, "DISABLED")
 	if err != nil || next != "ACTIVE" {
 		t.Fatalf("disabled->active: next=%q err=%v", next, err)
 	}
 	// LIMITED/EXPIRED are enabled to ACTIVE.
-	if next, _ := svc.toggleUserStatus(ctx, "u-1", "LIMITED"); next != "ACTIVE" {
+	if next, _ := svc.toggleUserStatus(ctx, 1, "LIMITED"); next != "ACTIVE" {
 		t.Fatalf("limited->active: next=%q", next)
 	}
 }
@@ -161,14 +161,14 @@ func TestToggleUserSquad(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a new squad.
-	if err := svc.toggleUserSquad(ctx, "u-1", []string{"sq-1"}, "sq-2"); err != nil {
+	if err := svc.toggleUserSquad(ctx, 1, []string{"sq-1"}, "sq-2"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	if p := updater.calls[0]; p.ActiveInternalSquads == nil || len(*p.ActiveInternalSquads) != 2 {
 		t.Fatalf("add patch: %+v", p)
 	}
 	// Remove an existing squad.
-	if err := svc.toggleUserSquad(ctx, "u-1", []string{"sq-1", "sq-2"}, "sq-1"); err != nil {
+	if err := svc.toggleUserSquad(ctx, 1, []string{"sq-1", "sq-2"}, "sq-1"); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 	p := updater.calls[1]
@@ -180,7 +180,7 @@ func TestToggleUserSquad(t *testing.T) {
 func TestUpdateUserNormalisesError(t *testing.T) {
 	updater := &fakeUpdater{err: errors.New("boom")}
 	svc, _ := newUserCtlService(t, &fakeFinder{}, updater)
-	if err := svc.setUserHwidLimit(context.Background(), "u-1", 1); !errors.Is(err, ErrPanelUnavailable) {
+	if err := svc.setUserHwidLimit(context.Background(), 1, 1); !errors.Is(err, ErrPanelUnavailable) {
 		t.Fatalf("err = %v, want ErrPanelUnavailable", err)
 	}
 }

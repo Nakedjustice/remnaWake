@@ -15,7 +15,7 @@ import (
 
 func linkedFinder(tgID int64, username string) *fakeFinder {
 	return &fakeFinder{byTG: map[int64][]Subscriber{
-		tgID: {{RemnawaveID: 7, UUID: "u-7", Username: username, TelegramID: tgID}},
+		tgID: {{RemnawaveID: 7, Username: username, TelegramID: tgID}},
 	}}
 }
 
@@ -169,7 +169,6 @@ func TestCabinetDataExposesSubscriptionDetail(t *testing.T) {
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
 		42: {{
 			RemnawaveID:       7,
-			UUID:              "uuid-detail",
 			Username:          "alice",
 			TelegramID:        42,
 			Status:            "ACTIVE",
@@ -187,8 +186,8 @@ func TestCabinetDataExposesSubscriptionDetail(t *testing.T) {
 		t.Fatalf("profiles = %d, want 1", len(data.Profiles))
 	}
 	p := data.Profiles[0]
-	if p.UUID != "uuid-detail" {
-		t.Errorf("UUID = %q, want uuid-detail", p.UUID)
+	if p.RemnawaveID != 7 {
+		t.Errorf("RemnawaveID = %d, want 7", p.RemnawaveID)
 	}
 	if p.HwidLimit != 3 {
 		t.Errorf("HwidLimit = %d, want 3", p.HwidLimit)

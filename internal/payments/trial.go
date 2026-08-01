@@ -284,8 +284,8 @@ func (s *Service) grantTrial(ctx context.Context, telegramID int64, username str
 	// The profile exists; a failed Telegram binding is recoverable via /register,
 	// so it must not fail the trial activation.
 	if s.registrar != nil {
-		if err := s.registrar.SetTelegramID(ctx, created.UUID, telegramID); err != nil {
-			s.logger.Error("trial: set telegram id failed", "uuid", created.UUID, "err", err.Error())
+		if err := s.registrar.SetTelegramID(ctx, created.ID, telegramID); err != nil {
+			s.logger.Error("trial: set telegram id failed", "user_id", created.ID, "err", err.Error())
 		}
 	}
 	return created, expireAt, nil

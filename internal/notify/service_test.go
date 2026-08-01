@@ -3,7 +3,6 @@ package notify
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -119,7 +118,7 @@ func TestRunSkipsMutedUsers(t *testing.T) {
 
 func rwUser(id int64, username string, status remnawave.Status, expireAt time.Time, tgID int64) remnawave.User {
 	u := remnawave.User{
-		ID: id, UUID: fmt.Sprintf("uuid-%d", id), Username: username,
+		ID: id, Username: username,
 		Status: status, ExpireAt: expireAt,
 	}
 	if tgID != 0 {

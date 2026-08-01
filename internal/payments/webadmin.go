@@ -673,10 +673,10 @@ func (s *Service) AdminSetDefaultSquad(ctx context.Context, telegramID int64, uu
 // detail (limits, squads) is fetched per-user via AdminFindUser when a row is
 // opened.
 type WebUserRow struct {
-	UUID     string `json:"uuid"`
-	Username string `json:"username"`
-	Status   string `json:"status"`
-	ExpireAt string `json:"expire_at"` // DD.MM.YYYY
+	RemnawaveID int64  `json:"remnawave_id"`
+	Username    string `json:"username"`
+	Status      string `json:"status"`
+	ExpireAt    string `json:"expire_at"` // DD.MM.YYYY
 }
 
 // AdminListUsers returns every panel user for the mini app "Manage users" page,
@@ -699,10 +699,10 @@ func (s *Service) AdminListUsers(ctx context.Context, telegramID int64) ([]WebUs
 // toWebUserRow projects a panel user onto the lightweight list row.
 func toWebUserRow(sub *Subscriber) WebUserRow {
 	return WebUserRow{
-		UUID:     sub.UUID,
-		Username: sub.Username,
-		Status:   sub.Status,
-		ExpireAt: sub.ExpireAt.Format("02.01.2006"),
+		RemnawaveID: sub.RemnawaveID,
+		Username:    sub.Username,
+		Status:      sub.Status,
+		ExpireAt:    sub.ExpireAt.Format("02.01.2006"),
 	}
 }
 
@@ -761,7 +761,7 @@ func (s *Service) AdminSetDefaultTrafficReset(ctx context.Context, telegramID in
 // WebManagedUser is the editable user card shown in the mini app "Manage user"
 // flow.
 type WebManagedUser struct {
-	UUID           string     `json:"uuid"`
+	RemnawaveID    int64      `json:"remnawave_id"`
 	Username       string     `json:"username"`
 	Status         string     `json:"status"`
 	ExpireAt       string     `json:"expire_at"` // DD.MM.YYYY
@@ -775,7 +775,7 @@ type WebManagedUser struct {
 // to among all panel squads.
 func (s *Service) toWebManagedUser(ctx context.Context, sub *Subscriber) (*WebManagedUser, error) {
 	out := &WebManagedUser{
-		UUID:           sub.UUID,
+		RemnawaveID:    sub.RemnawaveID,
 		Username:       sub.Username,
 		Status:         sub.Status,
 		ExpireAt:       sub.ExpireAt.Format("02.01.2006"),
@@ -818,7 +818,7 @@ func (s *Service) AdminFindUser(ctx context.Context, telegramID int64, query str
 // the find call so an expiry delta can be applied relative to the user's
 // current expiry.
 type WebUserUpdate struct {
-	UUID          string    `json:"uuid"`
+	RemnawaveID   int64     `json:"remnawave_id"`
 	Username      string    `json:"username"`
 	ExpireDays    *int      `json:"expire_days"`    // +/- days relative to current expiry
 	HwidLimit     *int      `json:"hwid_limit"`     // 0 = unlimited
@@ -834,7 +834,7 @@ func (s *Service) AdminUpdateUser(ctx context.Context, telegramID int64, req Web
 	if err := s.adminGuard(telegramID); err != nil {
 		return err
 	}
-	if req.UUID == "" {
+	if req.RemnawaveID == 0 {
 		return ErrBadInput
 	}
 	patch := UserPatch{}
@@ -850,8 +850,8 @@ func (s *Service) AdminUpdateUser(ctx context.Context, telegramID int64, req Web
 		}
 		bytesLimit := *req.TrafficGB * bytesPerGB
 		patch.TrafficLimitBytes = &bytesLimit
-		if err := s.store.MarkActiveTrafficExtensionsRestored(ctx, req.UUID, s.now()); err != nil {
-			s.logger.Error("mark traffic extension superseded failed", "uuid", req.UUID, "err", err.Error())
+		if err := s.store.MarkActiveTrafficExtensionsRestored(ctx, req.RemnawaveID, s.now()); err != nil {
+			s.logger.Error("mark traffic extension superseded failed", "user_id", req.RemnawaveID, "err", err.Error())
 		}
 	}
 	if req.ResetStrategy != nil {
@@ -879,7 +879,7 @@ func (s *Service) AdminUpdateUser(ctx context.Context, telegramID int64, req Web
 		if err != nil {
 			return err
 		}
-		if _, err := s.applyUserExpiryDelta(ctx, req.UUID, sub.ExpireAt, *req.ExpireDays); err != nil {
+		if _, err := s.applyUserExpiryDelta(ctx, req.RemnawaveID, sub.ExpireAt, *req.ExpireDays); err != nil {
 			return err
 		}
 	}
@@ -889,7 +889,7 @@ func (s *Service) AdminUpdateUser(ctx context.Context, telegramID int64, req Web
 		patch.TrafficLimitStrategy == nil && patch.Status == nil && patch.ActiveInternalSquads == nil {
 		return nil
 	}
-	return s.updateUser(ctx, req.UUID, patch, "webadmin")
+	return s.updateUser(ctx, req.RemnawaveID, patch, "webadmin")
 }
 
 // WebBroadcastResult reports broadcast delivery counts to the mini app.

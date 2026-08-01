@@ -69,7 +69,7 @@ func TestRedeemExtendsExistingProfile(t *testing.T) {
 	svc.now = func() time.Time { return now }
 	exp := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC) // future -> base is expiry
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		700: {{RemnawaveID: 7, UUID: "u-700", Username: "bob", TelegramID: 700, ExpireAt: exp}},
+		700: {{RemnawaveID: 7, Username: "bob", TelegramID: 700, ExpireAt: exp}},
 	}}
 	g := issueGift(t, st, 555, 3)
 
@@ -83,8 +83,8 @@ func TestRedeemExtendsExistingProfile(t *testing.T) {
 	}
 	confirmRedeem(t, svc, 700)
 
-	if ext.calls != 1 || ext.uuid != "u-700" {
-		t.Fatalf("extend not called: calls=%d uuid=%s", ext.calls, ext.uuid)
+	if ext.calls != 1 || ext.userID != 7 {
+		t.Fatalf("extend not called: calls=%d user_id=%d", ext.calls, ext.userID)
 	}
 	if want := exp.AddDate(0, 3, 0); !ext.expire.Equal(want) {
 		t.Fatalf("new expiry = %s, want %s", ext.expire, want)
@@ -125,8 +125,8 @@ func TestRedeemMultiProfilePick(t *testing.T) {
 	expB := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
 		700: {
-			{RemnawaveID: 7, UUID: "u-a", Username: "bob_a", TelegramID: 700, ExpireAt: expA},
-			{RemnawaveID: 8, UUID: "u-b", Username: "bob_b", TelegramID: 700, ExpireAt: expB},
+			{RemnawaveID: 7, Username: "bob_a", TelegramID: 700, ExpireAt: expA},
+			{RemnawaveID: 8, Username: "bob_b", TelegramID: 700, ExpireAt: expB},
 		},
 	}}
 	g := issueGift(t, st, 555, 1)
@@ -145,8 +145,8 @@ func TestRedeemMultiProfilePick(t *testing.T) {
 	if !svc.HandleCallback(ctx, pick) {
 		t.Fatal("gc_use should be handled")
 	}
-	if ext.calls != 1 || ext.uuid != "u-b" {
-		t.Fatalf("expected chosen profile extended: calls=%d uuid=%s", ext.calls, ext.uuid)
+	if ext.calls != 1 || ext.userID != 8 {
+		t.Fatalf("expected chosen profile extended: calls=%d user_id=%d", ext.calls, ext.userID)
 	}
 }
 
@@ -196,7 +196,7 @@ func TestRedeemCreatesNewProfile(t *testing.T) {
 	if len(creator.squads) != 1 || len(creator.squads[0]) != 1 || creator.squads[0][0] != "default-squad-uuid" {
 		t.Fatalf("default squad not passed to create: %+v", creator.squads)
 	}
-	if registrar.calls != 1 || registrar.uuid != "fake-uuid" || registrar.telegramID != 700 {
+	if registrar.calls != 1 || registrar.userID != fakeCreatedUserID || registrar.telegramID != 700 {
 		t.Fatalf("registrar not called correctly: %+v", registrar)
 	}
 	if ext.calls != 0 {
@@ -215,7 +215,7 @@ func TestRedeemSelfSuppressesBuyerNotification(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		555: {{RemnawaveID: 7, UUID: "u-555", Username: "buyer", TelegramID: 555,
+		555: {{RemnawaveID: 7, Username: "buyer", TelegramID: 555,
 			ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	g := issueGift(t, st, 555, 1)
@@ -237,7 +237,7 @@ func TestRedeemDryRunMarksRedeemedWithoutPanelCalls(t *testing.T) {
 	ctx := context.Background()
 	svc.dryRun = true
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		700: {{RemnawaveID: 7, UUID: "u-700", Username: "bob", TelegramID: 700,
+		700: {{RemnawaveID: 7, Username: "bob", TelegramID: 700,
 			ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	g := issueGift(t, st, 555, 1)
@@ -265,7 +265,7 @@ func TestRedeemSingleProfileCancelKeepsCodeIssued(t *testing.T) {
 	svc, bot, ext, st := newTestService(t)
 	ctx := context.Background()
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		700: {{RemnawaveID: 7, UUID: "u-700", Username: "bob", TelegramID: 700,
+		700: {{RemnawaveID: 7, Username: "bob", TelegramID: 700,
 			ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	g := issueGift(t, st, 555, 1)

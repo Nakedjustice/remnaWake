@@ -87,11 +87,11 @@ func (s *Store) CreateTrafficExtensionPaymentRequest(ctx context.Context, r Paym
 	var active int
 	if err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM payment_requests
-		WHERE uuid = ? AND kind = ? AND (
+		WHERE remnawave_user_id = ? AND kind = ? AND (
 			status = 'pending'
 			OR (status = 'confirmed' AND extension_restored_at IS NULL AND extension_expires_at > ?)
 		)
-	`, r.UUID, PaymentKindTrafficExtension, formatTime(now)).Scan(&active); err != nil {
+	`, r.RemnawaveID, PaymentKindTrafficExtension, formatTime(now)).Scan(&active); err != nil {
 		return 0, err
 	}
 	if active > 0 {
@@ -111,8 +111,8 @@ func (s *Store) CreateTrafficExtensionPaymentRequest(ctx context.Context, r Paym
 			 status, created_at, payer_telegram_id, payer_username, screenshot_file_id,
 			 screenshot_is_document, provider, provider_txn_id, plan, kind, traffic_gb,
 			 base_traffic_limit_bytes, extra_traffic_bytes)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, r.RemnawaveID, r.UUID, r.Username, r.TelegramID, r.Months, r.Price,
+		VALUES (?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, r.RemnawaveID, r.Username, r.TelegramID, r.Months, r.Price,
 		formatTime(r.ExpireAt), "pending", formatTime(now), r.PayerTelegramID, r.PayerUsername,
 		r.ScreenshotFileID, r.ScreenshotIsDocument, provider, r.ProviderTxnID, plan,
 		PaymentKindTrafficExtension, r.TrafficGB, r.BaseTrafficLimitBytes, r.ExtraTrafficBytes)
@@ -141,18 +141,18 @@ func (s *Store) ConfirmTrafficExtensionRequest(ctx context.Context, id int64, co
 	return n > 0, err
 }
 
-func (s *Store) ActiveTrafficExtensionForUUID(ctx context.Context, uuid string, now time.Time) (*PaymentRequest, error) {
+func (s *Store) ActiveTrafficExtensionForUser(ctx context.Context, remnawaveID int64, now time.Time) (*PaymentRequest, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
+		SELECT id, remnawave_user_id, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
 			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
 			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
 			extension_expires_at, extension_restored_at
 		FROM payment_requests
-		WHERE uuid = ? AND kind = ? AND status = 'confirmed'
+		WHERE remnawave_user_id = ? AND kind = ? AND status = 'confirmed'
 			AND extension_restored_at IS NULL AND extension_expires_at > ?
 		ORDER BY confirmed_at DESC, id DESC LIMIT 1
-	`, uuid, PaymentKindTrafficExtension, formatTime(now))
+	`, remnawaveID, PaymentKindTrafficExtension, formatTime(now))
 	if err != nil {
 		return nil, err
 	}
@@ -163,28 +163,28 @@ func (s *Store) ActiveTrafficExtensionForUUID(ctx context.Context, uuid string, 
 	return scanPaymentRequestRow(rows)
 }
 
-func (s *Store) UpdateActiveTrafficExtensionBase(ctx context.Context, uuid string, now time.Time, baseBytes int64) error {
+func (s *Store) UpdateActiveTrafficExtensionBase(ctx context.Context, remnawaveID int64, now time.Time, baseBytes int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE payment_requests
 		SET base_traffic_limit_bytes = ?
-		WHERE uuid = ? AND kind = ? AND status = 'confirmed'
+		WHERE remnawave_user_id = ? AND kind = ? AND status = 'confirmed'
 			AND extension_restored_at IS NULL AND extension_expires_at > ?
-	`, baseBytes, uuid, PaymentKindTrafficExtension, formatTime(now))
+	`, baseBytes, remnawaveID, PaymentKindTrafficExtension, formatTime(now))
 	return err
 }
 
-func (s *Store) MarkActiveTrafficExtensionsRestored(ctx context.Context, uuid string, restoredAt time.Time) error {
+func (s *Store) MarkActiveTrafficExtensionsRestored(ctx context.Context, remnawaveID int64, restoredAt time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE payment_requests
 		SET extension_restored_at = ?
-		WHERE uuid = ? AND kind = ? AND status = 'confirmed' AND extension_restored_at IS NULL
-	`, formatTime(restoredAt), uuid, PaymentKindTrafficExtension)
+		WHERE remnawave_user_id = ? AND kind = ? AND status = 'confirmed' AND extension_restored_at IS NULL
+	`, formatTime(restoredAt), remnawaveID, PaymentKindTrafficExtension)
 	return err
 }
 
 func (s *Store) ListExpiredTrafficExtensions(ctx context.Context, now time.Time) ([]PaymentRequest, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
+		SELECT id, remnawave_user_id, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
 			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
 			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
@@ -215,7 +215,7 @@ func scanPaymentRequestRow(rows *sql.Rows) (*PaymentRequest, error) {
 		exp, created string
 		confirmed    sql.NullString
 	)
-	if err := rows.Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID,
+	if err := rows.Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID,
 		&r.Months, &r.Price, &exp, &r.Status, &created, &confirmed,
 		&r.PayerTelegramID, &r.PayerUsername, &r.ScreenshotFileID,
 		&r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,

@@ -35,7 +35,7 @@ func TestGenerateGiftCode(t *testing.T) {
 
 func seedBuyer(svc *Service, tgID int64) {
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		tgID: {{RemnawaveID: 1, UUID: "u-buyer", Username: "buyer", TelegramID: tgID,
+		tgID: {{RemnawaveID: 1, Username: "buyer", TelegramID: tgID,
 			ExpireAt: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 }

@@ -468,7 +468,7 @@ func (f rwCreator) CreateUser(ctx context.Context, spec payments.CreateUserSpec)
 	if err != nil {
 		return nil, err
 	}
-	return &payments.CreatedUser{UUID: u.UUID, Username: u.Username, SubscriptionURL: u.SubscriptionURL}, nil
+	return &payments.CreatedUser{ID: u.ID, Username: u.Username, SubscriptionURL: u.SubscriptionURL}, nil
 }
 
 func (f rwCreator) GetInternalSquads(ctx context.Context) ([]payments.InternalSquad, error) {
@@ -486,16 +486,16 @@ func (f rwCreator) GetInternalSquads(ctx context.Context) ([]payments.InternalSq
 // rwRegistrar adapts *remnawave.Client to payments.Registrar.
 type rwRegistrar struct{ c *remnawave.Client }
 
-func (r rwRegistrar) SetTelegramID(ctx context.Context, uuid string, telegramID int64) error {
-	return r.c.SetTelegramID(ctx, uuid, telegramID)
+func (r rwRegistrar) SetTelegramID(ctx context.Context, userID, telegramID int64) error {
+	return r.c.SetTelegramID(ctx, userID, telegramID)
 }
 
 // rwUpdater adapts *remnawave.Client to payments.UserUpdater, converting the
 // payments-local UserPatch to remnawave.UserPatch.
 type rwUpdater struct{ c *remnawave.Client }
 
-func (u rwUpdater) UpdateUser(ctx context.Context, uuid string, patch payments.UserPatch) error {
-	return u.c.UpdateUser(ctx, uuid, remnawave.UserPatch{
+func (u rwUpdater) UpdateUser(ctx context.Context, userID int64, patch payments.UserPatch) error {
+	return u.c.UpdateUser(ctx, userID, remnawave.UserPatch{
 		ExpireAt:             patch.ExpireAt,
 		HwidDeviceLimit:      patch.HwidDeviceLimit,
 		TrafficLimitBytes:    patch.TrafficLimitBytes,
@@ -559,7 +559,6 @@ func toSubscriber(u remnawave.User) payments.Subscriber {
 	}
 	return payments.Subscriber{
 		RemnawaveID:          u.ID,
-		UUID:                 u.UUID,
 		Username:             u.Username,
 		TelegramID:           tgID,
 		ExpireAt:             u.ExpireAt,

@@ -3,6 +3,7 @@ package remnawave
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -42,10 +43,10 @@ func TestGetUsersUsesBearerAPIToken(t *testing.T) {
 	}
 }
 
-func TestExtendSubscriptionByUUIDSendsUUIDInBody(t *testing.T) {
+func TestExtendSubscriptionSendsIDInBody(t *testing.T) {
 	const (
-		token = "test-api-token"
-		uuid  = "b1a2c3d4-0000-1111-2222-333344445555"
+		token  = "test-api-token"
+		userID = int64(42)
 	)
 	expireAt := time.Date(2026, 6, 6, 9, 0, 0, 0, time.UTC)
 
@@ -68,15 +69,20 @@ func TestExtendSubscriptionByUUIDSendsUUIDInBody(t *testing.T) {
 		if err := json.Unmarshal(body, &payload); err != nil {
 			t.Fatalf("decode body: %v (body=%s)", err, body)
 		}
-		if got, want := payload["uuid"], uuid; got != want {
-			t.Fatalf("body uuid = %v, want %v", got, want)
+		// JSON numbers decode to float64.
+		if got, want := payload["id"], float64(userID); got != want {
+			t.Fatalf("body id = %v, want %v", got, want)
+		}
+		// v3 removed uuid entirely; sending it would be rejected as an unknown key.
+		if _, present := payload["uuid"]; present {
+			t.Fatalf("body must not carry uuid: %v", payload)
 		}
 		if got, want := payload["expireAt"], expireAt.Format(time.RFC3339); got != want {
 			t.Fatalf("body expireAt = %v, want %v", got, want)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"uuid":"` + uuid + `"}}`))
+		_, _ = w.Write([]byte(`{"response":{"id":42}}`))
 	}))
 	defer server.Close()
 
@@ -85,15 +91,15 @@ func TestExtendSubscriptionByUUIDSendsUUIDInBody(t *testing.T) {
 		t.Fatalf("NewClient returned error: %v", err)
 	}
 
-	if err := client.ExtendSubscriptionByUUID(context.Background(), uuid, expireAt); err != nil {
-		t.Fatalf("ExtendSubscriptionByUUID returned error: %v", err)
+	if err := client.ExtendSubscription(context.Background(), userID, expireAt); err != nil {
+		t.Fatalf("ExtendSubscription returned error: %v", err)
 	}
 }
 
-func TestSetTelegramIDSendsUUIDAndTelegramID(t *testing.T) {
+func TestSetTelegramIDSendsIDAndTelegramID(t *testing.T) {
 	const (
-		token = "test-api-token"
-		uuid  = "b1a2c3d4-0000-1111-2222-333344445555"
+		token  = "test-api-token"
+		userID = int64(42)
 	)
 	var telegramID int64 = 424242
 
@@ -115,15 +121,17 @@ func TestSetTelegramIDSendsUUIDAndTelegramID(t *testing.T) {
 		if err := json.Unmarshal(body, &payload); err != nil {
 			t.Fatalf("decode body: %v (body=%s)", err, body)
 		}
-		if got, want := payload["uuid"], uuid; got != want {
-			t.Fatalf("body uuid = %v, want %v", got, want)
+		if got, want := payload["id"], float64(userID); got != want {
+			t.Fatalf("body id = %v, want %v", got, want)
 		}
-		// JSON numbers decode to float64.
+		if _, present := payload["uuid"]; present {
+			t.Fatalf("body must not carry uuid: %v", payload)
+		}
 		if got, want := payload["telegramId"], float64(telegramID); got != want {
 			t.Fatalf("body telegramId = %v, want %v", got, want)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"uuid":"` + uuid + `"}}`))
+		_, _ = w.Write([]byte(`{"response":{"id":42}}`))
 	}))
 	defer server.Close()
 
@@ -132,7 +140,7 @@ func TestSetTelegramIDSendsUUIDAndTelegramID(t *testing.T) {
 		t.Fatalf("NewClient returned error: %v", err)
 	}
 
-	if err := client.SetTelegramID(context.Background(), uuid, telegramID); err != nil {
+	if err := client.SetTelegramID(context.Background(), userID, telegramID); err != nil {
 		t.Fatalf("SetTelegramID returned error: %v", err)
 	}
 }
@@ -150,7 +158,7 @@ func TestGetUserByUsername(t *testing.T) {
 			t.Fatalf("auth = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"uuid":"u-1","id":7,"username":"alice b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":555,"hwidDeviceLimit":4,"trafficLimitBytes":1073741824,"trafficLimitStrategy":"WEEK","activeInternalSquads":[{"uuid":"sq-1","name":"Default-Squad"}],"userTraffic":{"usedTrafficBytes":536870912,"lifetimeUsedTrafficBytes":2147483648}}}`))
+		_, _ = w.Write([]byte(`{"response":{"id":7,"username":"alice b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":555,"hwidDeviceLimit":4,"trafficLimitBytes":1073741824,"trafficLimitStrategy":"WEEK","activeInternalSquads":[{"uuid":"sq-1","name":"Default-Squad"}],"userTraffic":{"usedTrafficBytes":536870912,"lifetimeUsedTrafficBytes":2147483648}}}`))
 	}))
 	defer server.Close()
 
@@ -159,7 +167,7 @@ func TestGetUserByUsername(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if u == nil || u.UUID != "u-1" || u.ID != 7 || u.TelegramID == nil || *u.TelegramID != 555 {
+	if u == nil || u.ID != 7 || u.TelegramID == nil || *u.TelegramID != 555 {
 		t.Fatalf("user wrong: %+v", u)
 	}
 	if u.HwidDeviceLimit == nil || *u.HwidDeviceLimit != 4 {
@@ -172,6 +180,7 @@ func TestGetUserByUsername(t *testing.T) {
 	if u.UserTraffic.UsedTrafficBytes != 536870912 || u.UserTraffic.LifetimeUsedTrafficBytes != 2147483648 {
 		t.Fatalf("user traffic = %d / %d", u.UserTraffic.UsedTrafficBytes, u.UserTraffic.LifetimeUsedTrafficBytes)
 	}
+	// Squads keep their UUID identity in v3 — only users moved to numeric ids.
 	if len(u.ActiveInternalSquads) != 1 || u.ActiveInternalSquads[0].UUID != "sq-1" {
 		t.Fatalf("activeInternalSquads = %+v", u.ActiveInternalSquads)
 	}
@@ -206,7 +215,7 @@ func TestGetUserByShortUUID(t *testing.T) {
 			t.Fatalf("auth = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"uuid":"u-1","id":7,"shortUuid":"abc123XY","username":"alice","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z"}}`))
+		_, _ = w.Write([]byte(`{"response":{"id":7,"shortUuid":"abc123XY","username":"alice","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z"}}`))
 	}))
 	defer server.Close()
 
@@ -215,7 +224,7 @@ func TestGetUserByShortUUID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if u == nil || u.UUID != "u-1" || u.ShortUUID != "abc123XY" || u.Username != "alice" {
+	if u == nil || u.ID != 7 || u.ShortUUID != "abc123XY" || u.Username != "alice" {
 		t.Fatalf("user wrong: %+v", u)
 	}
 }
@@ -236,13 +245,26 @@ func TestGetUserByShortUUIDNotFound(t *testing.T) {
 	}
 }
 
-func TestGetUserByTelegramID(t *testing.T) {
+// v3 deleted GET /api/users/by-telegram-id/{id}; the lookup now runs through the
+// cursor-paginated stream with a telegramId filter.
+func TestGetUserByTelegramIDUsesStream(t *testing.T) {
+	var gotQuery string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/users/by-telegram-id/123" {
-			t.Fatalf("path = %s", r.URL.Path)
+		if r.URL.Path != "/api/users/stream" {
+			t.Fatalf("path = %s, want /api/users/stream", r.URL.Path)
+		}
+		gotQuery = r.URL.RawQuery
+		if got := r.URL.Query().Get("telegramId"); got != "123" {
+			t.Fatalf("telegramId filter = %q, want 123", got)
+		}
+		if _, present := r.URL.Query()["cursor"]; present {
+			t.Fatalf("first page must not send a cursor: %s", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":[{"uuid":"u-a","id":1,"username":"a","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":123},{"uuid":"u-b","id":2,"username":"b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":123}]}`))
+		_, _ = w.Write([]byte(`{"response":{"users":[` +
+			`{"id":1,"username":"a","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":123},` +
+			`{"id":2,"username":"b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z","telegramId":123}` +
+			`],"nextCursor":null,"hasMore":false}}`))
 	}))
 	defer server.Close()
 
@@ -253,6 +275,105 @@ func TestGetUserByTelegramID(t *testing.T) {
 	}
 	if len(us) != 2 || us[0].Username != "a" || us[1].Username != "b" {
 		t.Fatalf("users wrong: %+v", us)
+	}
+	if us[0].ID != 1 || us[1].ID != 2 {
+		t.Fatalf("ids wrong: %+v", us)
+	}
+	if gotQuery == "" {
+		t.Fatal("no query recorded")
+	}
+}
+
+// The panel's contract is asymmetric: the request cursor is a number but
+// nextCursor comes back as a string, so it must be echoed verbatim.
+func TestGetUserByTelegramIDStreamFollowsCursor(t *testing.T) {
+	var cursors []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cursors = append(cursors, r.URL.Query().Get("cursor"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("cursor") {
+		case "":
+			_, _ = w.Write([]byte(`{"response":{"users":[{"id":1,"username":"a","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z"}],"nextCursor":"17","hasMore":true}}`))
+		case "17":
+			_, _ = w.Write([]byte(`{"response":{"users":[{"id":2,"username":"b","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z"}],"nextCursor":"31","hasMore":true}}`))
+		case "31":
+			_, _ = w.Write([]byte(`{"response":{"users":[{"id":3,"username":"c","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z"}],"nextCursor":null,"hasMore":false}}`))
+		default:
+			t.Fatalf("unexpected cursor %q", r.URL.Query().Get("cursor"))
+		}
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	us, err := c.GetUserByTelegramID(context.Background(), 123)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(us) != 3 || us[0].Username != "a" || us[2].Username != "c" {
+		t.Fatalf("users wrong: %+v", us)
+	}
+	if len(cursors) != 3 || cursors[0] != "" || cursors[1] != "17" || cursors[2] != "31" {
+		t.Fatalf("cursors = %v", cursors)
+	}
+}
+
+// hasMore must not be trusted on its own: a page that reports more results but
+// hands back no cursor would otherwise loop forever.
+func TestGetUserByTelegramIDStreamStopsWithoutCursor(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls > 5 {
+			t.Fatal("stream did not terminate")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"users":[{"id":1,"username":"a","status":"ACTIVE","expireAt":"2026-07-01T00:00:00Z"}],"nextCursor":null,"hasMore":true}}`))
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	us, err := c.GetUserByTelegramID(context.Background(), 123)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1", calls)
+	}
+	if len(us) != 1 {
+		t.Fatalf("users = %+v", us)
+	}
+}
+
+func TestGetUserByTelegramIDNoMatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"users":[],"nextCursor":null,"hasMore":false}}`))
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	us, err := c.GetUserByTelegramID(context.Background(), 999)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(us) != 0 {
+		t.Fatalf("want empty, got %+v", us)
+	}
+}
+
+func TestGetUserByTelegramIDNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	us, err := c.GetUserByTelegramID(context.Background(), 999)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(us) != 0 {
+		t.Fatalf("want empty, got %+v", us)
 	}
 }
 
@@ -298,16 +419,24 @@ func TestCreateUserSendsActiveInternalSquads(t *testing.T) {
 			t.Fatalf("decode body: %v (body=%s)", err, body)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"uuid":"u-new","username":"alice"}}`))
+		_, _ = w.Write([]byte(`{"response":{"id":99,"username":"alice","subscriptionUrl":"https://sub.example/abc"}}`))
 	}))
 	defer server.Close()
 
 	c, _ := NewClient(server.URL, "tok", time.Second)
-	if _, err := c.CreateUser(context.Background(), CreateUserSpec{
+	created, err := c.CreateUser(context.Background(), CreateUserSpec{
 		Username: "alice", ExpireAt: expireAt, SquadUUIDs: []string{"sq-1"},
 		TrafficLimitBytes: 10 * 1024 * 1024 * 1024, TrafficLimitStrategy: "WEEK", HwidDeviceLimit: 1,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("err: %v", err)
+	}
+	// The created user's numeric id is the handle every later call needs.
+	if created == nil || created.ID != 99 || created.SubscriptionURL != "https://sub.example/abc" {
+		t.Fatalf("created user wrong: %+v", created)
+	}
+	if _, present := gotBody["uuid"]; present {
+		t.Fatalf("v3 rejects a caller-supplied uuid: %v", gotBody)
 	}
 	if gotBody["trafficLimitBytes"] != float64(10*1024*1024*1024) || gotBody["hwidDeviceLimit"] != float64(1) {
 		t.Fatalf("creation limits missing from body: %v", gotBody)
@@ -347,7 +476,7 @@ func TestCreateUserSendsActiveInternalSquads(t *testing.T) {
 }
 
 func TestUpdateUserSendsOnlySetFields(t *testing.T) {
-	const uuid = "u-42"
+	const userID = int64(42)
 	var gotBody map[string]interface{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -362,7 +491,7 @@ func TestUpdateUserSendsOnlySetFields(t *testing.T) {
 			t.Fatalf("decode body: %v (body=%s)", err, body)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"uuid":"u-42"}}`))
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"response":{"id":%d}}`, userID)))
 	}))
 	defer server.Close()
 
@@ -372,15 +501,18 @@ func TestUpdateUserSendsOnlySetFields(t *testing.T) {
 	var bytesLimit int64 = 0
 	status := "DISABLED"
 	strategy := "MONTH"
-	if err := c.UpdateUser(context.Background(), uuid, UserPatch{
+	if err := c.UpdateUser(context.Background(), userID, UserPatch{
 		TrafficLimitBytes:    &bytesLimit,
 		TrafficLimitStrategy: &strategy,
 		Status:               &status,
 	}); err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if gotBody["uuid"] != uuid {
-		t.Fatalf("uuid = %v, want %v", gotBody["uuid"], uuid)
+	if gotBody["id"] != float64(userID) {
+		t.Fatalf("id = %v, want %v", gotBody["id"], userID)
+	}
+	if _, present := gotBody["uuid"]; present {
+		t.Fatalf("body must not carry uuid: %v", gotBody)
 	}
 	if v, ok := gotBody["trafficLimitBytes"]; !ok || v.(float64) != 0 {
 		t.Fatalf("trafficLimitBytes = %v (present=%v), want 0", v, ok)
@@ -403,7 +535,7 @@ func TestUpdateUserSendsOnlySetFields(t *testing.T) {
 	hwid := 3
 	expire := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	squads := []string{"sq-1", "sq-2"}
-	if err := c.UpdateUser(context.Background(), uuid, UserPatch{
+	if err := c.UpdateUser(context.Background(), userID, UserPatch{
 		ExpireAt:             &expire,
 		HwidDeviceLimit:      &hwid,
 		ActiveInternalSquads: &squads,
@@ -427,7 +559,7 @@ func TestUpdateUserSendsOnlySetFields(t *testing.T) {
 	// Tag set: sent verbatim.
 	gotBody = nil
 	tag := "MESSENGER"
-	if err := c.UpdateUser(context.Background(), uuid, UserPatch{Tag: &tag}); err != nil {
+	if err := c.UpdateUser(context.Background(), userID, UserPatch{Tag: &tag}); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if gotBody["tag"] != "MESSENGER" {
@@ -437,26 +569,10 @@ func TestUpdateUserSendsOnlySetFields(t *testing.T) {
 	// Tag pointer to empty string: cleared via JSON null (the panel rejects "").
 	gotBody = nil
 	empty := ""
-	if err := c.UpdateUser(context.Background(), uuid, UserPatch{Tag: &empty}); err != nil {
+	if err := c.UpdateUser(context.Background(), userID, UserPatch{Tag: &empty}); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if v, present := gotBody["tag"]; !present || v != nil {
 		t.Fatalf("tag = %v (present=%v), want explicit null", v, present)
-	}
-}
-
-func TestGetUserByTelegramIDNotFound(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	c, _ := NewClient(server.URL, "tok", time.Second)
-	us, err := c.GetUserByTelegramID(context.Background(), 999)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if len(us) != 0 {
-		t.Fatalf("want empty, got %+v", us)
 	}
 }

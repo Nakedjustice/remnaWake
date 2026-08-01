@@ -104,26 +104,26 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 	}
 
 	if s.dryRun {
-		s.logger.Info("dry-run: would extend and stamp plan", "uuid", req.UUID, "months", req.Months, "plan", req.Plan, "new_expire", newExpireAt.Format("2006-01-02"))
-	} else if err := s.userUpdater.UpdateUser(ctx, req.UUID, patch); err != nil {
-		s.logger.Error("extend subscription failed", "uuid", req.UUID, "err", err.Error())
+		s.logger.Info("dry-run: would extend and stamp plan", "user_id", req.RemnawaveID, "months", req.Months, "plan", req.Plan, "new_expire", newExpireAt.Format("2006-01-02"))
+	} else if err := s.userUpdater.UpdateUser(ctx, req.RemnawaveID, patch); err != nil {
+		s.logger.Error("extend subscription failed", "user_id", req.RemnawaveID, "err", err.Error())
 		return req, time.Time{}, fmt.Errorf("extend subscription: %w", err)
 	}
-	if active, err := s.store.ActiveTrafficExtensionForUUID(ctx, req.UUID, s.now()); err == nil && active != nil && patch.TrafficLimitBytes != nil {
+	if active, err := s.store.ActiveTrafficExtensionForUser(ctx, req.RemnawaveID, s.now()); err == nil && active != nil && patch.TrafficLimitBytes != nil {
 		newLimit := *patch.TrafficLimitBytes + active.ExtraTrafficBytes
 		if !s.dryRun {
-			if err := s.userUpdater.UpdateUser(ctx, req.UUID, UserPatch{TrafficLimitBytes: &newLimit}); err != nil {
-				s.logger.Error("preserve traffic extension failed", "uuid", req.UUID, "err", err.Error())
+			if err := s.userUpdater.UpdateUser(ctx, req.RemnawaveID, UserPatch{TrafficLimitBytes: &newLimit}); err != nil {
+				s.logger.Error("preserve traffic extension failed", "user_id", req.RemnawaveID, "err", err.Error())
 				return req, time.Time{}, fmt.Errorf("preserve traffic extension: %w", err)
 			}
 		}
-		if err := s.store.UpdateActiveTrafficExtensionBase(ctx, req.UUID, s.now(), *patch.TrafficLimitBytes); err != nil {
-			s.logger.Error("update traffic extension base failed", "uuid", req.UUID, "err", err.Error())
+		if err := s.store.UpdateActiveTrafficExtensionBase(ctx, req.RemnawaveID, s.now(), *patch.TrafficLimitBytes); err != nil {
+			s.logger.Error("update traffic extension base failed", "user_id", req.RemnawaveID, "err", err.Error())
 		}
 	}
 
 	if _, err := s.store.ConfirmPaymentRequest(ctx, reqID, s.now()); err != nil {
-		s.logger.Error("mark confirmed failed", "uuid", req.UUID, "req_id", reqID, "err", err.Error())
+		s.logger.Error("mark confirmed failed", "user_id", req.RemnawaveID, "req_id", reqID, "err", err.Error())
 		// The subscription IS extended; clear the buttons anyway so a second tap
 		// cannot extend it again, and report the inconsistency to the caller.
 		s.clearPayButtons(ctx, reqID)
@@ -134,11 +134,6 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 		s.settleReferral(ctx, pendingReferral, inviterDays, inviteeDays)
 	}
 	return req, newExpireAt, nil
-}
-
-func (s *Service) renewalExpireAt(ctx context.Context, req *store.PaymentRequest, targetPlanKnown bool) time.Time {
-	newExpireAt, _ := s.renewalPlanChange(ctx, req, targetPlanKnown)
-	return newExpireAt
 }
 
 func (s *Service) renewalPlanChangePreview(ctx context.Context, req *store.PaymentRequest, targetPlanKnown bool) *PlanChangePreview {
@@ -157,9 +152,9 @@ func (s *Service) renewalPlanChange(ctx context.Context, req *store.PaymentReque
 		return newExpireAt, nil
 	}
 
-	prev, err := s.store.LatestConfirmedPaymentRequestByUUID(ctx, req.UUID)
+	prev, err := s.store.LatestConfirmedPaymentRequestByUser(ctx, req.RemnawaveID)
 	if err != nil {
-		s.logger.Warn("confirm: latest plan lookup failed, using full remaining time", "uuid", req.UUID, "err", err.Error())
+		s.logger.Warn("confirm: latest plan lookup failed, using full remaining time", "user_id", req.RemnawaveID, "err", err.Error())
 		return newExpireAt, nil
 	}
 	if prev == nil || prev.Months <= 0 || prev.Price <= 0 || samePlan(prev.Plan, req.Plan) {

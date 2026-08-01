@@ -66,7 +66,7 @@ func TestStartStarsAndPromptSendsInvoice(t *testing.T) {
 	ctx := context.Background()
 	svc.SetTelegramStars(50)
 
-	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+	u := &store.NotifiedUser{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	cb := &tg.CallbackQuery{ID: "cb1", From: tg.User{ID: 555},
 		Message: &tg.Message{MessageID: 1, Chat: tg.Chat{ID: 555}}}
@@ -100,7 +100,7 @@ func TestStartStarsAndPromptWithdrawsOnSendError(t *testing.T) {
 	svc.SetTelegramStars(50)
 	bot.invoiceErr = context.DeadlineExceeded
 
-	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+	u := &store.NotifiedUser{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	cb := &tg.CallbackQuery{ID: "cb1", From: tg.User{ID: 555}}
 	svc.startStarsAndPrompt(ctx, cb, u, 1, 100, store.PlanStandard)
@@ -116,7 +116,7 @@ func TestPreCheckoutAcksPendingAndRejectsStale(t *testing.T) {
 	ctx := context.Background()
 	svc.SetTelegramStars(50)
 
-	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+	u := &store.NotifiedUser{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	reqID, err := svc.startStarsPayment(ctx, u, 1, 100, store.PlanStandard) // 2 stars
 	if err != nil {
@@ -154,7 +154,7 @@ func TestSuccessfulPaymentConfirmsAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	svc.SetTelegramStars(50)
 
-	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+	u := &store.NotifiedUser{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	reqID, err := svc.startStarsPayment(ctx, u, 1, 100, store.PlanStandard)
 	if err != nil {
@@ -236,7 +236,7 @@ func TestHandlePayViaRoutesToStars(t *testing.T) {
 	}
 
 	// A remembered user and a tariff are needed for the payvia route.
-	u := store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+	u := store.NotifiedUser{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	if err := st.UpsertNotifiedUser(ctx, u); err != nil {
 		t.Fatalf("remember user: %v", err)
@@ -270,7 +270,7 @@ func TestCreateRenewRequestStarsReturnsInvoiceLink(t *testing.T) {
 
 	// A linked subscriber via the finder and a tariff.
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		555: {{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+		555: {{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 			ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	if err := st.UpsertTariff(ctx, store.PlanStandard, 1, 100); err != nil {
@@ -294,7 +294,7 @@ func TestCreateRenewRequestChoosesProvider(t *testing.T) {
 		t.Fatalf("enable stars: %v", err)
 	}
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		555: {{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+		555: {{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 			ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	if err := st.UpsertTariff(ctx, store.PlanStandard, 1, 100); err != nil {

@@ -53,7 +53,6 @@ var (
 // WebProfile is one linked subscription as shown in the mini app.
 type WebProfile struct {
 	RemnawaveID      int64                     `json:"remnawave_id"`
-	UUID             string                    `json:"uuid,omitempty"`
 	Username         string                    `json:"username"`
 	Status           string                    `json:"status"`
 	StatusLabel      string                    `json:"status_label"`
@@ -192,7 +191,6 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 		sub := &subs[i]
 		p := WebProfile{
 			RemnawaveID:     sub.RemnawaveID,
-			UUID:            sub.UUID,
 			Username:        sub.Username,
 			Status:          sub.Status,
 			StatusLabel:     subStatusLabel(sub.Status),
@@ -205,7 +203,7 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 		if sub.UsedTrafficBytes > 0 {
 			p.UsedTrafficGB = strconv.FormatFloat(float64(sub.UsedTrafficBytes)/float64(bytesPerGB), 'f', 2, 64)
 		}
-		if active, err := s.store.ActiveTrafficExtensionForUUID(ctx, sub.UUID, now); err == nil && active != nil && active.ExtensionExpiresAt != nil {
+		if active, err := s.store.ActiveTrafficExtensionForUser(ctx, sub.RemnawaveID, now); err == nil && active != nil && active.ExtensionExpiresAt != nil {
 			p.TrafficExtension = &WebTrafficExtensionState{
 				TrafficGB: active.TrafficGB,
 				ExpiresAt: active.ExtensionExpiresAt.Format("02.01.2006"),
@@ -223,7 +221,6 @@ func (s *Service) CabinetData(ctx context.Context, telegramID int64) (*WebCabine
 		// if this user was never notified (same as the chat cabinet).
 		if err := s.store.UpsertNotifiedUser(ctx, store.NotifiedUser{
 			RemnawaveID: sub.RemnawaveID,
-			UUID:        sub.UUID,
 			Username:    sub.Username,
 			TelegramID:  telegramID,
 			ExpireAt:    sub.ExpireAt,
@@ -434,7 +431,6 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 
 	u := &store.NotifiedUser{
 		RemnawaveID: sub.RemnawaveID,
-		UUID:        sub.UUID,
 		Username:    sub.Username,
 		TelegramID:  telegramID,
 		ExpireAt:    sub.ExpireAt,
@@ -444,7 +440,7 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 	}
 
 	previewReq := &store.PaymentRequest{
-		RemnawaveID: sub.RemnawaveID, UUID: sub.UUID, Username: sub.Username,
+		RemnawaveID: sub.RemnawaveID, Username: sub.Username,
 		TelegramID: telegramID, Months: months, Price: price, ExpireAt: sub.ExpireAt,
 		Plan: plan,
 	}
@@ -534,7 +530,6 @@ func (s *Service) CreateTrafficExtensionRequest(ctx context.Context, telegramID,
 	}
 	u := &store.NotifiedUser{
 		RemnawaveID: sub.RemnawaveID,
-		UUID:        sub.UUID,
 		Username:    sub.Username,
 		TelegramID:  telegramID,
 		ExpireAt:    sub.ExpireAt,

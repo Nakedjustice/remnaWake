@@ -55,7 +55,6 @@ func (s *Service) SendCabinet(ctx context.Context, chatID int64) bool {
 		// works even if this user was never notified.
 		if err := s.store.UpsertNotifiedUser(ctx, store.NotifiedUser{
 			RemnawaveID: sub.RemnawaveID,
-			UUID:        sub.UUID,
 			Username:    sub.Username,
 			TelegramID:  chatID,
 			ExpireAt:    sub.ExpireAt,
@@ -344,7 +343,7 @@ func (s *Service) handleTrafficExtensionPick(ctx context.Context, cb *tg.Callbac
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Докупка трафика недоступна для этого профиля."))
 		return true
 	}
-	u := &store.NotifiedUser{RemnawaveID: sub.RemnawaveID, UUID: sub.UUID, Username: sub.Username, TelegramID: cb.From.ID, ExpireAt: sub.ExpireAt}
+	u := &store.NotifiedUser{RemnawaveID: sub.RemnawaveID, Username: sub.Username, TelegramID: cb.From.ID, ExpireAt: sub.ExpireAt}
 	_ = s.store.UpsertNotifiedUser(ctx, *u)
 	providers := s.enabledProviders()
 	if cb.Message != nil {

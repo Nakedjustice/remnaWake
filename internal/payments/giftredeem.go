@@ -219,7 +219,7 @@ func (s *Service) redeemExtend(ctx context.Context, chatID int64, st *redeemStat
 			_ = s.bot.SendPlain(ctx, chatID, i18n.T("Этот код уже был активирован."))
 			return
 		}
-		s.logger.Error("redeem: extend failed", "uuid", sub.UUID, "err", err.Error())
+		s.logger.Error("redeem: extend failed", "user_id", sub.RemnawaveID, "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка активации подарка. Попробуйте позже."))
 		return
 	}
@@ -335,7 +335,7 @@ func (s *Service) redeemGiftExtend(ctx context.Context, telegramID int64, st *re
 	}
 	newExpireAt := base.AddDate(0, st.months, 0)
 	if !s.dryRun {
-		if err := s.extender.ExtendSubscriptionByUUID(ctx, sub.UUID, newExpireAt); err != nil {
+		if err := s.extender.ExtendSubscription(ctx, sub.RemnawaveID, newExpireAt); err != nil {
 			_, _ = s.store.ReissueGiftCode(ctx, st.giftID)
 			return nil, fmt.Errorf("%w: extend gift profile: %v", ErrPanelUnavailable, err)
 		}
@@ -388,8 +388,8 @@ func (s *Service) redeemGiftCreate(ctx context.Context, telegramID int64, st *re
 	}
 	linkFailed := false
 	if s.registrar != nil {
-		if err := s.registrar.SetTelegramID(ctx, created.UUID, telegramID); err != nil {
-			s.logger.Error("redeem web: set telegram id failed", "uuid", created.UUID, "err", err.Error())
+		if err := s.registrar.SetTelegramID(ctx, created.ID, telegramID); err != nil {
+			s.logger.Error("redeem web: set telegram id failed", "user_id", created.ID, "err", err.Error())
 			linkFailed = true
 		}
 	}

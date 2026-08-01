@@ -35,7 +35,6 @@ func TestSendCabinetLinkedShowsProfileAndActions(t *testing.T) {
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
 		555: {{
 			RemnawaveID:     42,
-			UUID:            "uuid-42",
 			Username:        "ivan",
 			TelegramID:      555,
 			ExpireAt:        expire,
@@ -78,7 +77,7 @@ func TestSendCabinetLinkedShowsProfileAndActions(t *testing.T) {
 	if err != nil || u == nil {
 		t.Fatalf("expected notified user snapshot, got %v, err=%v", u, err)
 	}
-	if u.UUID != "uuid-42" || u.TelegramID != 555 {
+	if u.RemnawaveID != 42 || u.TelegramID != 555 {
 		t.Errorf("snapshot mismatch: %+v", u)
 	}
 }
@@ -87,7 +86,7 @@ func TestSendCabinetWebAppHidesPayButtons(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
 	svc.SetWebAppURL("https://app.example")
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		555: {{RemnawaveID: 42, UUID: "u", Username: "ivan", TelegramID: 555, ExpireAt: time.Now().Add(time.Hour), Status: "ACTIVE"}},
+		555: {{RemnawaveID: 42, Username: "ivan", TelegramID: 555, ExpireAt: time.Now().Add(time.Hour), Status: "ACTIVE"}},
 	}}
 
 	if !svc.SendCabinet(context.Background(), 555) {
@@ -120,7 +119,7 @@ func TestSendCabinetWebAppHidesPayButtons(t *testing.T) {
 func TestSendCabinetShowsGiftAndInviteSummary(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		555: {{RemnawaveID: 42, UUID: "u", Username: "ivan", TelegramID: 555, ExpireAt: time.Now().Add(time.Hour), Status: "ACTIVE"}},
+		555: {{RemnawaveID: 42, Username: "ivan", TelegramID: 555, ExpireAt: time.Now().Add(time.Hour), Status: "ACTIVE"}},
 	}}
 	ctx := context.Background()
 	if _, err := st.CreateGiftCode(ctx, store.GiftCode{Code: "C1", BuyerTelegramID: 555, BuyerUsername: "ivan", Months: 1}); err != nil {
@@ -147,7 +146,7 @@ func TestCabinetPayShowsTariffsWithoutTouchingCabinetMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := st.UpsertNotifiedUser(ctx, store.NotifiedUser{
-		RemnawaveID: 42, UUID: "u", Username: "ivan", TelegramID: 555, ExpireAt: time.Now().Add(time.Hour),
+		RemnawaveID: 42, Username: "ivan", TelegramID: 555, ExpireAt: time.Now().Add(time.Hour),
 	}); err != nil {
 		t.Fatal(err)
 	}
