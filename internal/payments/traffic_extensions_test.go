@@ -14,7 +14,7 @@ func TestConfirmTrafficExtensionAppliesTemporaryLimitAndResetRestoresBase(t *tes
 	now := time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return now }
 	reqID, err := st.CreateTrafficExtensionPaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 1, UUID: "u-1", Username: "alice", TelegramID: 777,
+		RemnawaveID: 1, Username: "alice", TelegramID: 777,
 		Price: 300, ExpireAt: now.AddDate(0, 1, 0), TrafficGB: 50,
 		BaseTrafficLimitBytes: 100 * bytesPerGB, ExtraTrafficBytes: 50 * bytesPerGB,
 	}, now)

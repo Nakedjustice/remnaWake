@@ -142,7 +142,7 @@ func TestPaymentRequestPlanRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	id, err := st.CreatePaymentRequest(ctx, PaymentRequest{
-		RemnawaveID: 1, UUID: "u-1", Username: "alice", TelegramID: 42,
+		RemnawaveID: 1, Username: "alice", TelegramID: 42,
 		Months: 3, Price: 250, Plan: "messenger",
 	})
 	if err != nil {
@@ -155,7 +155,7 @@ func TestPaymentRequestPlanRoundTrip(t *testing.T) {
 
 	// An empty plan defaults to standard on insert.
 	id2, err := st.CreatePaymentRequest(ctx, PaymentRequest{
-		RemnawaveID: 2, UUID: "u-2", Username: "bob", TelegramID: 43, Months: 1, Price: 300,
+		RemnawaveID: 2, Username: "bob", TelegramID: 43, Months: 1, Price: 300,
 	})
 	if err != nil {
 		t.Fatal(err)

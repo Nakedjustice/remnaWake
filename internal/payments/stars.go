@@ -55,7 +55,7 @@ func (s *Service) starsTrafficInvoiceContent(username string, trafficGB, price i
 // chat flow (SendInvoice) and the Mini App flow (CreateInvoiceLink) can reuse it.
 func (s *Service) startStarsPayment(ctx context.Context, u *store.NotifiedUser, months, price int, plan string) (int64, error) {
 	reqID, err := s.store.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
+		RemnawaveID: u.RemnawaveID, Username: u.Username,
 		TelegramID: u.TelegramID, Months: months, Price: price,
 		ExpireAt: u.ExpireAt, Status: "pending", Provider: ProviderTelegramStars, Plan: plan,
 	})

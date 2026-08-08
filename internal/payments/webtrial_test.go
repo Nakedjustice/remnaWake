@@ -65,7 +65,7 @@ func TestWebClaimTrialSentinels(t *testing.T) {
 	})
 
 	t.Run("not eligible", func(t *testing.T) {
-		finder := &fakeFinder{byTG: map[int64][]Subscriber{555: {{UUID: "u", Username: "sub", TelegramID: 555}}}}
+		finder := &fakeFinder{byTG: map[int64][]Subscriber{555: {{Username: "sub", TelegramID: 555}}}}
 		svc, _, _, _ := webTrialFixture(t, finder)
 		svc.InitTrial(true, 7)
 		if _, err := svc.ClaimTrial(ctx, 555, "newbie"); !errors.Is(err, ErrTrialNotEligible) {

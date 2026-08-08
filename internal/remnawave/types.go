@@ -11,8 +11,10 @@ const (
 	StatusExpired  Status = "EXPIRED"
 )
 
+// User is one panel profile. Since Remnawave v3 the panel identifies users by
+// the numeric ID — the v2 "uuid" property was removed from every response, and
+// ID is the handle every write path must carry.
 type User struct {
-	UUID                 string          `json:"uuid"`
 	ID                   int64           `json:"id"`
 	ShortUUID            string          `json:"shortUuid"`
 	Username             string          `json:"username"`
@@ -82,14 +84,20 @@ type userResponse struct {
 	Response User `json:"response"`
 }
 
-// usersByTgResponse wraps the by-Telegram-ID lookup, which returns an array
-// because one Telegram ID may map to multiple subscriptions.
-type usersByTgResponse struct {
-	Response []User `json:"response"`
+// usersStreamResponse wraps one page of GET /api/users/stream, the keyset-
+// paginated listing that replaced the v2 by-telegram-id / by-email / by-tag
+// lookups. NextCursor is a string even though the request takes a number, so it
+// is echoed back verbatim rather than parsed.
+type usersStreamResponse struct {
+	Response struct {
+		Users      []User  `json:"users"`
+		NextCursor *string `json:"nextCursor"`
+		HasMore    bool    `json:"hasMore"`
+	} `json:"response"`
 }
 
 // HwidDevice is one device occupying a slot of a user's HwidDeviceLimit, as
-// reported by GET /api/hwid/devices/{userUuid}. Every descriptive field is
+// reported by GET /api/hwid/devices/{userId}. Every descriptive field is
 // self-reported by the client app, so any of them may be empty.
 type HwidDevice struct {
 	HWID        string    `json:"hwid"`

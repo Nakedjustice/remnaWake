@@ -11,7 +11,6 @@ import (
 type PaymentRequest struct {
 	ID              int64
 	RemnawaveID     int64
-	UUID            string
 	Username        string
 	TelegramID      int64
 	Months          int
@@ -99,14 +98,18 @@ func (s *Store) CreatePaymentRequest(ctx context.Context, r PaymentRequest) (int
 	if r.ExtensionRestoredAt != nil {
 		restoredAt = formatTime(*r.ExtensionRestoredAt)
 	}
+	// The uuid column is a v2 leftover: Remnawave v3 removed the panel uuid, so
+	// remnawave_user_id is the only panel identity now. The column is kept (and
+	// written empty) because it is NOT NULL on every existing install and
+	// dropping it would rule out rolling back to a v2 build.
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO payment_requests
 			(remnawave_user_id, uuid, username, telegram_id, months, price, expire_at,
 			 status, created_at, payer_telegram_id, payer_username, screenshot_file_id,
 			 screenshot_is_document, provider, provider_txn_id, plan, kind, traffic_gb,
 			 base_traffic_limit_bytes, extra_traffic_bytes, extension_expires_at, extension_restored_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, r.RemnawaveID, r.UUID, r.Username, r.TelegramID, r.Months, r.Price,
+		VALUES (?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, r.RemnawaveID, r.Username, r.TelegramID, r.Months, r.Price,
 		formatTime(r.ExpireAt), "pending", now, r.PayerTelegramID, r.PayerUsername, r.ScreenshotFileID,
 		r.ScreenshotIsDocument, provider, r.ProviderTxnID, plan, kind, r.TrafficGB,
 		r.BaseTrafficLimitBytes, r.ExtraTrafficBytes, expiresAt, restoredAt)
@@ -123,13 +126,13 @@ func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentReques
 		confirmed    sql.NullString
 	)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
+		SELECT id, remnawave_user_id, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
 			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
 			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
 			extension_expires_at, extension_restored_at
 		FROM payment_requests WHERE id = ?
-	`, id).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
+	`, id).Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID, &r.Months,
 		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
 		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,
 		&r.Kind, &r.TrafficGB, &r.BaseTrafficLimitBytes, &r.ExtraTrafficBytes,
@@ -163,13 +166,13 @@ func (s *Store) GetPaymentRequestByProviderTxn(ctx context.Context, txnID string
 		confirmed    sql.NullString
 	)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
+		SELECT id, remnawave_user_id, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
 			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
 			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
 			extension_expires_at, extension_restored_at
 		FROM payment_requests WHERE provider_txn_id = ?
-	`, txnID).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
+	`, txnID).Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID, &r.Months,
 		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
 		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,
 		&r.Kind, &r.TrafficGB, &r.BaseTrafficLimitBytes, &r.ExtraTrafficBytes,
@@ -190,11 +193,11 @@ func (s *Store) GetPaymentRequestByProviderTxn(ctx context.Context, txnID string
 	return &r, nil
 }
 
-// LatestConfirmedPaymentRequestByUUID returns the most recent confirmed
+// LatestConfirmedPaymentRequestByUser returns the most recent confirmed
 // payment for a panel user. It is used as the local source of truth for the
 // currently paid plan when prorating an upgrade.
-func (s *Store) LatestConfirmedPaymentRequestByUUID(ctx context.Context, uuid string) (*PaymentRequest, error) {
-	if uuid == "" {
+func (s *Store) LatestConfirmedPaymentRequestByUser(ctx context.Context, remnawaveID int64) (*PaymentRequest, error) {
+	if remnawaveID == 0 {
 		return nil, nil
 	}
 	var (
@@ -204,14 +207,14 @@ func (s *Store) LatestConfirmedPaymentRequestByUUID(ctx context.Context, uuid st
 		confirmed sql.NullString
 	)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
+		SELECT id, remnawave_user_id, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
 			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan
 		FROM payment_requests
-		WHERE uuid = ? AND status = 'confirmed'
+		WHERE remnawave_user_id = ? AND status = 'confirmed'
 		ORDER BY confirmed_at DESC, id DESC
 		LIMIT 1
-	`, uuid).Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID, &r.Months,
+	`, remnawaveID).Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID, &r.Months,
 		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
 		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -248,7 +251,7 @@ func (s *Store) SetPaymentRequestScreenshot(ctx context.Context, id int64, fileI
 // creation order.
 func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) ([]PaymentRequest, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, remnawave_user_id, uuid, username, telegram_id, months, price,
+		SELECT id, remnawave_user_id, username, telegram_id, months, price,
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
 			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
 			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
@@ -267,7 +270,7 @@ func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) 
 			exp, created string
 			confirmed    sql.NullString
 		)
-		if err := rows.Scan(&r.ID, &r.RemnawaveID, &r.UUID, &r.Username, &r.TelegramID,
+		if err := rows.Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID,
 			&r.Months, &r.Price, &exp, &r.Status, &created, &confirmed,
 			&r.PayerTelegramID, &r.PayerUsername, &r.ScreenshotFileID,
 			&r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,

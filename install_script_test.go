@@ -36,11 +36,24 @@ func TestInstallScriptV2Contract(t *testing.T) {
 		"pull_policy: always",
 		`DOCKER_API_VERSION: "1.40"`,
 		`service_image "$OVERRIDE_FILE" bot`,
+		// The panel-version requirement must reach the operator both while
+		// entering the panel URL and when diagnosing an existing install.
+		"Requires Remnawave panel v3.0.0 or newer.",
+		"non-empty; panel must be Remnawave v3.0.0 or newer",
 		"Expose the Xray Checker web dashboard at a public URL?",
 		"XRAY_CHECKER_PUBLIC_URL=$XRAY_CHECKER_PUBLIC_URL",
 		`METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"`,
 		"127.0.0.1:%s:2112",
 		"reverse_proxy remnaWake-xray-checker:2112",
+		// Only the image is pulled on update, so the installer keeps itself
+		// current too: an operator on a months-old install.sh runs doctor checks
+		// and override generation that predate the bot they are running.
+		"refresh_installer()",
+		"fetch_remote_installer()",
+		"$REPO_RAW/install.sh",
+		"REMNAWAKE_SKIP_SELF_UPDATE",
+		`doctor_section "Installer"`,
+		"install.sh freshness",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("install.sh is missing %q", want)

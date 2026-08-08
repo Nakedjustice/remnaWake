@@ -126,7 +126,7 @@ func TestTrialRefusedSecondTime(t *testing.T) {
 
 func TestTrialRefusedForExistingUser(t *testing.T) {
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		555: {{UUID: "u-1", Username: "sub", TelegramID: 555}},
+		555: {{Username: "sub", TelegramID: 555}},
 	}}
 	svc, _, bot, creator, _ := trialFixture(t, finder)
 	svc.InitTrial(true, 7)
@@ -163,7 +163,7 @@ func referralFixture(t *testing.T, inviterExpiry time.Time) (*Service, *fakeBot,
 	bot := &fakeBot{}
 	ext := &fakeExtender{}
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		300: {{UUID: "inv-uuid", Username: "payer", TelegramID: 300, ExpireAt: inviterExpiry}},
+		300: {{RemnawaveID: 30, Username: "payer", TelegramID: 300, ExpireAt: inviterExpiry}},
 	}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := New(st, bot, ext, &fakeCreator{}, &fakeUpdater{}, finder, &fakeRegistrar{}, newFakeSquadLister(), []int64{1000}, "₽", false, logger)
@@ -193,8 +193,8 @@ func TestReferralAwardsInviterAndInvitee(t *testing.T) {
 	approveSeededInvite(t, svc)
 
 	// Inviter bonus: their own subscription is extended by 30 days.
-	if ext.calls != 1 || ext.uuid != "inv-uuid" {
-		t.Fatalf("inviter bonus not applied: calls=%d uuid=%s", ext.calls, ext.uuid)
+	if ext.calls != 1 || ext.userID != 30 {
+		t.Fatalf("inviter bonus not applied: calls=%d user_id=%d", ext.calls, ext.userID)
 	}
 	wantInviter := inviterExpiry.AddDate(0, 0, 30)
 	if !ext.expire.Equal(wantInviter) {

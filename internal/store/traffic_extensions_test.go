@@ -33,7 +33,7 @@ func TestTrafficExtensionRequestBlocksPendingAndActive(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
 	now := time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)
-	req := PaymentRequest{RemnawaveID: 1, UUID: "u", Username: "alice", TelegramID: 7, Price: 100, ExpireAt: now.AddDate(0, 1, 0), TrafficGB: 20, BaseTrafficLimitBytes: 100, ExtraTrafficBytes: 20}
+	req := PaymentRequest{RemnawaveID: 1, Username: "alice", TelegramID: 7, Price: 100, ExpireAt: now.AddDate(0, 1, 0), TrafficGB: 20, BaseTrafficLimitBytes: 100, ExtraTrafficBytes: 20}
 	id, err := st.CreateTrafficExtensionPaymentRequest(ctx, req, now)
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -47,7 +47,7 @@ func TestTrafficExtensionRequestBlocksPendingAndActive(t *testing.T) {
 	if _, err := st.CreateTrafficExtensionPaymentRequest(ctx, req, now.AddDate(0, 0, 1)); !errors.Is(err, ErrTrafficExtensionActive) {
 		t.Fatalf("active create err = %v", err)
 	}
-	if err := st.MarkActiveTrafficExtensionsRestored(ctx, "u", now.AddDate(0, 0, 31)); err != nil {
+	if err := st.MarkActiveTrafficExtensionsRestored(ctx, 1, now.AddDate(0, 0, 31)); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 	if _, err := st.CreateTrafficExtensionPaymentRequest(ctx, req, now.AddDate(0, 0, 31)); err != nil {

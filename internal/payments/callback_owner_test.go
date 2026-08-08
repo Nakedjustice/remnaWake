@@ -94,7 +94,7 @@ func TestUnlinkedProfileCallbackIsDenied(t *testing.T) {
 	svc, bot, _, st := newTestService(t)
 	ctx := context.Background()
 	if err := st.UpsertNotifiedUser(ctx, store.NotifiedUser{
-		RemnawaveID: 51, UUID: "uuid-51", Username: "orphan",
+		RemnawaveID: 51, Username: "orphan",
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("remember unlinked: %v", err)
@@ -125,7 +125,7 @@ func TestPlategaCheckButtonConcealsForeignRequest(t *testing.T) {
 	gw := &fakePlatega{nextID: "tx-11", statuses: map[string]string{"tx-11": "CONFIRMED"}}
 	svc.SetPlatega(gw, 2, "RUB", "https://t.me")
 
-	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+	u := &store.NotifiedUser{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	reqID, _, err := svc.startPlategaPayment(ctx, u, 1, 150, store.PlanStandard)
 	if err != nil {
@@ -161,7 +161,7 @@ func TestPlategaCheckIgnoresNonPlategaRequest(t *testing.T) {
 	svc.SetPlatega(&fakePlatega{nextID: "tx-12"}, 2, "RUB", "https://t.me")
 
 	reqID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 100, ExpireAt: time.Now(), Status: "pending", Provider: ProviderP2P,
 	})
 	if err != nil {

@@ -44,7 +44,7 @@ func TestWebAdminRejectsNonAdmin(t *testing.T) {
 	calls["AdminListUsers"] = err
 	_, err = svc.AdminFindUser(ctx, userTG, "alice")
 	calls["AdminFindUser"] = err
-	calls["AdminUpdateUser"] = svc.AdminUpdateUser(ctx, userTG, WebUserUpdate{UUID: "u-1"})
+	calls["AdminUpdateUser"] = svc.AdminUpdateUser(ctx, userTG, WebUserUpdate{RemnawaveID: 1})
 	for name, err := range calls {
 		if !errors.Is(err, ErrNotAdmin) {
 			t.Errorf("%s: err = %v, want ErrNotAdmin", name, err)
@@ -78,8 +78,8 @@ func TestAdminSetDefaultTrafficReset(t *testing.T) {
 
 func TestAdminListUsers(t *testing.T) {
 	finder := &fakeFinder{all: []Subscriber{
-		{UUID: "u-1", Username: "alice", Status: "ACTIVE", ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)},
-		{UUID: "u-2", Username: "bob", Status: "DISABLED", ExpireAt: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)},
+		{Username: "alice", Status: "ACTIVE", ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)},
+		{Username: "bob", Status: "DISABLED", ExpireAt: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)},
 	}}
 	svc, _ := newUserCtlService(t, finder, &fakeUpdater{})
 	rows, err := svc.AdminListUsers(context.Background(), adminTG)
@@ -100,12 +100,12 @@ func TestAdminListUsers(t *testing.T) {
 func TestAdminListUsersByCohort(t *testing.T) {
 	now := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
 	finder := &fakeFinder{all: []Subscriber{
-		{UUID: "u-a", Username: "alice", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TelegramID: 111},
-		{UUID: "u-b", Username: "bob", Status: "ACTIVE", ExpireAt: now.Add(3 * 24 * time.Hour), TelegramID: 222},
-		{UUID: "u-c", Username: "carol", Status: "ACTIVE", ExpireAt: now.Add(7 * 24 * time.Hour)},
-		{UUID: "u-d", Username: "dave", Status: "EXPIRED", ExpireAt: now.Add(-5 * 24 * time.Hour)},
-		{UUID: "u-e", Username: "erin", Status: "ACTIVE", ExpireAt: now.Add(-24 * time.Hour)}, // past expiry => expired
-		{UUID: "u-f", Username: "frank", Status: "DISABLED", ExpireAt: now.Add(30 * 24 * time.Hour)},
+		{Username: "alice", Status: "ACTIVE", ExpireAt: now.Add(30 * 24 * time.Hour), TelegramID: 111},
+		{Username: "bob", Status: "ACTIVE", ExpireAt: now.Add(3 * 24 * time.Hour), TelegramID: 222},
+		{Username: "carol", Status: "ACTIVE", ExpireAt: now.Add(7 * 24 * time.Hour)},
+		{Username: "dave", Status: "EXPIRED", ExpireAt: now.Add(-5 * 24 * time.Hour)},
+		{Username: "erin", Status: "ACTIVE", ExpireAt: now.Add(-24 * time.Hour)}, // past expiry => expired
+		{Username: "frank", Status: "DISABLED", ExpireAt: now.Add(30 * 24 * time.Hour)},
 	}}
 	svc, _ := newUserCtlService(t, finder, &fakeUpdater{})
 	svc.now = func() time.Time { return now }
@@ -177,7 +177,7 @@ func TestAdminListUsersByCohort(t *testing.T) {
 func TestAdminFindAndUpdateUser(t *testing.T) {
 	finder := &fakeFinder{byName: map[string]*Subscriber{
 		"alice": {
-			UUID:                 "u-alice",
+			RemnawaveID:          11,
 			Username:             "alice",
 			Status:               "ACTIVE",
 			ExpireAt:             time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
@@ -196,7 +196,7 @@ func TestAdminFindAndUpdateUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find: %v", err)
 	}
-	if card.UUID != "u-alice" || card.TrafficLimitGB != 2 || card.ResetStrategy != "NO_RESET" {
+	if card.RemnawaveID != 11 || card.TrafficLimitGB != 2 || card.ResetStrategy != "NO_RESET" {
 		t.Fatalf("card: %+v", card)
 	}
 	var selected bool
@@ -214,7 +214,7 @@ func TestAdminFindAndUpdateUser(t *testing.T) {
 	var gb int64 = 10
 	status := "DISABLED"
 	if err := svc.AdminUpdateUser(ctx, adminTG, WebUserUpdate{
-		UUID: "u-alice", HwidLimit: &hwid, TrafficGB: &gb, Status: &status,
+		RemnawaveID: 11, HwidLimit: &hwid, TrafficGB: &gb, Status: &status,
 	}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -230,14 +230,14 @@ func TestAdminFindAndUpdateUser(t *testing.T) {
 
 	// Bad enum strategy → ErrBadInput, no panel call.
 	bad := "NOPE"
-	if err := svc.AdminUpdateUser(ctx, adminTG, WebUserUpdate{UUID: "u-alice", ResetStrategy: &bad}); !errors.Is(err, ErrBadInput) {
+	if err := svc.AdminUpdateUser(ctx, adminTG, WebUserUpdate{RemnawaveID: 11, ResetStrategy: &bad}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("bad strategy: err = %v, want ErrBadInput", err)
 	}
 
 	// Expiry delta re-reads the user and floors at now.
 	svc.now = func() time.Time { return time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC) }
 	days := 5
-	if err := svc.AdminUpdateUser(ctx, adminTG, WebUserUpdate{UUID: "u-alice", Username: "alice", ExpireDays: &days}); err != nil {
+	if err := svc.AdminUpdateUser(ctx, adminTG, WebUserUpdate{RemnawaveID: 11, Username: "alice", ExpireDays: &days}); err != nil {
 		t.Fatalf("expiry: %v", err)
 	}
 	last := updater.calls[len(updater.calls)-1]
@@ -283,7 +283,7 @@ func TestAdminPanelData(t *testing.T) {
 
 	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	reqID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: userTG,
+		RemnawaveID: 42, Username: "alice", TelegramID: userTG,
 		Months: 3, Price: 450, ExpireAt: exp, Status: "pending",
 	})
 	if err != nil {
@@ -548,15 +548,15 @@ func TestAdminConfirmRequest(t *testing.T) {
 
 	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	reqID, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: userTG,
+		RemnawaveID: 42, Username: "alice", TelegramID: userTG,
 		Months: 3, Price: 450, ExpireAt: exp, Status: "pending",
 	})
 
 	if err := svc.AdminConfirmRequest(ctx, adminTG, reqID); err != nil {
 		t.Fatalf("confirm: %v", err)
 	}
-	if ext.calls != 1 || ext.uuid != "uuid-42" || !ext.expire.Equal(exp.AddDate(0, 3, 0)) {
-		t.Fatalf("extend: calls=%d uuid=%s expire=%v", ext.calls, ext.uuid, ext.expire)
+	if ext.calls != 1 || ext.userID != 42 || !ext.expire.Equal(exp.AddDate(0, 3, 0)) {
+		t.Fatalf("extend: calls=%d user_id=%d expire=%v", ext.calls, ext.userID, ext.expire)
 	}
 	req, _ := st.GetPaymentRequest(ctx, reqID)
 	if req.Status != "confirmed" {
@@ -587,7 +587,7 @@ func TestAdminRejectRequest(t *testing.T) {
 
 	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	reqID, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: userTG,
+		RemnawaveID: 42, Username: "alice", TelegramID: userTG,
 		Months: 3, Price: 450, ExpireAt: exp, Status: "pending",
 	})
 
@@ -623,7 +623,7 @@ func TestAdminDeletePaymentRequest(t *testing.T) {
 	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	confirmedAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	reqID, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: userTG,
+		RemnawaveID: 42, Username: "alice", TelegramID: userTG,
 		Months: 3, Price: 450, ExpireAt: exp, Status: "pending",
 	})
 	// A confirmed record skews revenue stats, so deletion must work on it.

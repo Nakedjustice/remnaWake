@@ -12,15 +12,15 @@ import (
 	"github.com/Nakedjustice/remnaWake/internal/store"
 )
 
-// recExtender records every ExtendSubscriptionByUUID call so a test can assert
+// recExtender records every ExtendSubscription call so a test can assert
 // both the payer/redeemer extension and the separate referrer-bonus extension.
 type recExtender struct {
-	uuids   []string
+	userIDs []int64
 	expires []time.Time
 }
 
-func (r *recExtender) ExtendSubscriptionByUUID(_ context.Context, uuid string, e time.Time) error {
-	r.uuids = append(r.uuids, uuid)
+func (r *recExtender) ExtendSubscription(_ context.Context, userID int64, e time.Time) error {
+	r.userIDs = append(r.userIDs, userID)
 	r.expires = append(r.expires, e)
 	return nil
 }
@@ -44,7 +44,7 @@ func newReferralLinkService(t *testing.T, finder *fakeFinder) (*Service, *fakeBo
 func TestStartReferralRecordsNewUser(t *testing.T) {
 	ctx := context.Background()
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		300: {{UUID: "ref-uuid", Username: "referrer", TelegramID: 300, ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
+		300: {{RemnawaveID: 30, Username: "referrer", TelegramID: 300, ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	svc, bot, _, _, st := newReferralLinkService(t, finder)
 	svc.InitReferral(true, 30, 5)
@@ -72,8 +72,8 @@ func TestStartReferralRecordsNewUser(t *testing.T) {
 func TestStartReferralSkips(t *testing.T) {
 	ctx := context.Background()
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		300: {{UUID: "ref-uuid", TelegramID: 300}},
-		777: {{UUID: "existing-uuid", TelegramID: 777}}, // already a subscriber
+		300: {{TelegramID: 300}},
+		777: {{TelegramID: 777}}, // already a subscriber
 	}}
 	svc, _, _, _, st := newReferralLinkService(t, finder)
 	svc.InitReferral(true, 30, 5)
@@ -94,7 +94,7 @@ func TestStartReferralSkips(t *testing.T) {
 
 func TestStartReferralDisabledRecordsNothing(t *testing.T) {
 	ctx := context.Background()
-	finder := &fakeFinder{byTG: map[int64][]Subscriber{300: {{UUID: "ref-uuid", TelegramID: 300}}}}
+	finder := &fakeFinder{byTG: map[int64][]Subscriber{300: {{TelegramID: 300}}}}
 	svc, _, _, _, st := newReferralLinkService(t, finder)
 	// referral disabled
 
@@ -108,8 +108,8 @@ func TestReferralLinkCreditOnFirstPayment(t *testing.T) {
 	ctx := context.Background()
 	base := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		300: {{UUID: "ref-uuid", Username: "referrer", TelegramID: 300, ExpireAt: base}},
-		555: {{UUID: "payer-uuid", Username: "newbie", TelegramID: 555, ExpireAt: base}},
+		300: {{RemnawaveID: 30, Username: "referrer", TelegramID: 300, ExpireAt: base}},
+		555: {{RemnawaveID: 55, Username: "newbie", TelegramID: 555, ExpireAt: base}},
 	}}
 	svc, bot, ext, _, st := newReferralLinkService(t, finder)
 	svc.InitReferral(true, 30, 5)
@@ -118,7 +118,7 @@ func TestReferralLinkCreditOnFirstPayment(t *testing.T) {
 		t.Fatalf("seed referral: %v", err)
 	}
 	reqID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 1, UUID: "payer-uuid", Username: "newbie", TelegramID: 555,
+		RemnawaveID: 55, Username: "newbie", TelegramID: 555,
 		Months: 1, Price: 100, ExpireAt: base,
 	})
 	if err != nil {
@@ -129,18 +129,18 @@ func TestReferralLinkCreditOnFirstPayment(t *testing.T) {
 		t.Fatalf("confirm: %v", err)
 	}
 
-	if len(ext.uuids) != 2 {
-		t.Fatalf("expected 2 extends (payer + referrer), got %v", ext.uuids)
+	if len(ext.userIDs) != 2 {
+		t.Fatalf("expected 2 extends (payer + referrer), got %v", ext.userIDs)
 	}
 	// The payer's extension folds in the invitee bonus: 1 month + 5 days.
 	wantPayer := base.AddDate(0, 1, 0).AddDate(0, 0, 5)
-	if ext.uuids[0] != "payer-uuid" || !ext.expires[0].Equal(wantPayer) {
-		t.Fatalf("payer extend = %s @ %s, want payer-uuid @ %s", ext.uuids[0], ext.expires[0], wantPayer)
+	if ext.userIDs[0] != 55 || !ext.expires[0].Equal(wantPayer) {
+		t.Fatalf("payer extend = %d @ %s, want 55 @ %s", ext.userIDs[0], ext.expires[0], wantPayer)
 	}
 	// The referrer earns 30 days on their own subscription.
 	wantRef := base.AddDate(0, 0, 30)
-	if ext.uuids[1] != "ref-uuid" || !ext.expires[1].Equal(wantRef) {
-		t.Fatalf("referrer extend = %s @ %s, want ref-uuid @ %s", ext.uuids[1], ext.expires[1], wantRef)
+	if ext.userIDs[1] != 30 || !ext.expires[1].Equal(wantRef) {
+		t.Fatalf("referrer extend = %d @ %s, want 30 @ %s", ext.userIDs[1], ext.expires[1], wantRef)
 	}
 	if r, _ := st.GetReferral(ctx, 555); r == nil || r.Status != "credited" {
 		t.Fatalf("referral not credited: %+v", r)
@@ -160,14 +160,14 @@ func TestReferralLinkCreditOnFirstPayment(t *testing.T) {
 
 	// A second payment by the same user must not credit the referrer again.
 	req2, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 1, UUID: "payer-uuid", Username: "newbie", TelegramID: 555,
+		RemnawaveID: 55, Username: "newbie", TelegramID: 555,
 		Months: 1, Price: 100, ExpireAt: base,
 	})
 	if _, _, err := svc.confirmPaymentRequest(ctx, req2); err != nil {
 		t.Fatalf("confirm2: %v", err)
 	}
-	if len(ext.uuids) != 3 || ext.uuids[2] != "payer-uuid" {
-		t.Fatalf("second payment should add exactly one payer extend, got %v", ext.uuids)
+	if len(ext.userIDs) != 3 || ext.userIDs[2] != 55 {
+		t.Fatalf("second payment should add exactly one payer extend, got %v", ext.userIDs)
 	}
 }
 
@@ -175,7 +175,7 @@ func TestGiftReferralCreditsBuyer(t *testing.T) {
 	ctx := context.Background()
 	buyerExpiry := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		300: {{UUID: "buyer-uuid", Username: "buyer", TelegramID: 300, ExpireAt: buyerExpiry}},
+		300: {{RemnawaveID: 30, Username: "buyer", TelegramID: 300, ExpireAt: buyerExpiry}},
 		// redeemer 555 has no profile yet
 	}}
 	svc, bot, ext, creator, st := newReferralLinkService(t, finder)
@@ -204,8 +204,8 @@ func TestGiftReferralCreditsBuyer(t *testing.T) {
 		t.Fatalf("new user not created: %v", creator.created)
 	}
 	// The gift buyer is credited 30 days — the only extension here.
-	if len(ext.uuids) != 1 || ext.uuids[0] != "buyer-uuid" {
-		t.Fatalf("buyer not credited: %v", ext.uuids)
+	if len(ext.userIDs) != 1 || ext.userIDs[0] != 30 {
+		t.Fatalf("buyer not credited: %v", ext.userIDs)
 	}
 	if !ext.expires[0].Equal(buyerExpiry.AddDate(0, 0, 30)) {
 		t.Fatalf("buyer expire = %s, want %s", ext.expires[0], buyerExpiry.AddDate(0, 0, 30))
@@ -230,8 +230,8 @@ func TestGiftReferralCreditsBuyer(t *testing.T) {
 func TestGiftReferralExistingUserNoCredit(t *testing.T) {
 	ctx := context.Background()
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		300: {{UUID: "buyer-uuid", TelegramID: 300, ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
-		555: {{RemnawaveID: 9, UUID: "redeemer-uuid", Username: "old", TelegramID: 555, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}},
+		300: {{RemnawaveID: 30, TelegramID: 300, ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
+		555: {{RemnawaveID: 9, Username: "old", TelegramID: 555, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	svc, bot, ext, _, st := newReferralLinkService(t, finder)
 	svc.InitReferral(true, 30, 5)
@@ -243,9 +243,9 @@ func TestGiftReferralExistingUserNoCredit(t *testing.T) {
 	if _, err := svc.RedeemGift(ctx, 555, code, 9, "old"); err != nil {
 		t.Fatalf("redeem: %v", err)
 	}
-	for _, u := range ext.uuids {
-		if u == "buyer-uuid" {
-			t.Fatalf("buyer must not be credited for an existing-subscriber redemption: %v", ext.uuids)
+	for _, u := range ext.userIDs {
+		if u == 30 {
+			t.Fatalf("buyer must not be credited for an existing-subscriber redemption: %v", ext.userIDs)
 		}
 	}
 	for _, m := range bot.sent {
@@ -258,7 +258,7 @@ func TestGiftReferralExistingUserNoCredit(t *testing.T) {
 func TestGiftReferralDisabledNoCredit(t *testing.T) {
 	ctx := context.Background()
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		300: {{UUID: "buyer-uuid", TelegramID: 300, ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
+		300: {{RemnawaveID: 30, TelegramID: 300, ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	svc, _, ext, _, st := newReferralLinkService(t, finder)
 	// referral disabled
@@ -275,15 +275,15 @@ func TestGiftReferralDisabledNoCredit(t *testing.T) {
 	if res.ExpireAt != wantPlain.Format("02.01.2006") {
 		t.Fatalf("expire = %s, want plain %s (no invitee bonus)", res.ExpireAt, wantPlain.Format("02.01.2006"))
 	}
-	if len(ext.uuids) != 0 {
-		t.Fatalf("no extends expected when referral disabled, got %v", ext.uuids)
+	if len(ext.userIDs) != 0 {
+		t.Fatalf("no extends expected when referral disabled, got %v", ext.userIDs)
 	}
 }
 
 func TestCabinetDataReferral(t *testing.T) {
 	ctx := context.Background()
 	finder := &fakeFinder{byTG: map[int64][]Subscriber{
-		300: {{RemnawaveID: 1, UUID: "u", Username: "me", TelegramID: 300, ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
+		300: {{RemnawaveID: 1, Username: "me", TelegramID: 300, ExpireAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	svc, _, _, _, st := newReferralLinkService(t, finder)
 	svc.SetBotUsername("mybot")

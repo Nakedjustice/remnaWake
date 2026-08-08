@@ -135,6 +135,22 @@ func (s *Service) NotifyProxyRecovered(ctx context.Context, name, protocol, addr
 	s.broadcastProxyAlert(ctx, fmt.Sprintf(i18n.T("🟢 Прокси снова доступен: %s"), proxyLabel(name, protocol, address)))
 }
 
+// NotifyCheckerUnreachable DMs every admin that polling the checker has failed
+// persistently, so proxy health is no longer being monitored. Implements
+// xraychecker.Notifier. The reason is the raw fetch error — it names the status
+// code or dial failure, which is what actually tells an admin where to look.
+func (s *Service) NotifyCheckerUnreachable(ctx context.Context, reason string) {
+	s.broadcastProxyAlert(ctx, fmt.Sprintf(
+		i18n.T("⚠️ Мониторинг прокси не отвечает: %s\n\nСостояние прокси сейчас не проверяется. Проверьте контейнер xray-checker и XRAY_CHECKER_URL, затем запустите ./install.sh doctor."),
+		reason))
+}
+
+// NotifyCheckerReachable DMs every admin that polling recovered. Implements
+// xraychecker.Notifier.
+func (s *Service) NotifyCheckerReachable(ctx context.Context) {
+	s.broadcastProxyAlert(ctx, i18n.T("✅ Мониторинг прокси снова работает."))
+}
+
 func (s *Service) broadcastProxyAlert(ctx context.Context, text string) {
 	if s.dryRun {
 		s.logger.Info("xray checker: alert suppressed (dry run)", "text", text)

@@ -14,7 +14,7 @@ import (
 func pendingPayment(t *testing.T, st *store.Store, username string) int64 {
 	t.Helper()
 	id, err := st.CreatePaymentRequest(context.Background(), store.PaymentRequest{
-		RemnawaveID: 1, UUID: "u-" + username, Username: username, TelegramID: 777,
+		RemnawaveID: 1, Username: username, TelegramID: 777,
 		Months: 3, Price: 450, ExpireAt: time.Now(),
 	})
 	if err != nil {
@@ -175,7 +175,7 @@ func TestPendingCategoryListRecoversOrphanedConfirm(t *testing.T) {
 	ctx := context.Background()
 	pendingPayment(t, st, "alice")
 	if _, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 2, UUID: "u-bob", Username: "bob", TelegramID: 778,
+		RemnawaveID: 2, Username: "bob", TelegramID: 778,
 		Kind: store.PaymentKindTrafficExtension, TrafficGB: 50, Price: 200, ExpireAt: time.Now(),
 	}); err != nil {
 		t.Fatalf("create traffic request: %v", err)

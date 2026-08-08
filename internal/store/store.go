@@ -489,13 +489,19 @@ func ensureSupportTicketSchema(db *sql.DB) error {
 }
 
 func ensurePaymentRequestIndexes(db *sql.DB) error {
+	// The two uuid-keyed indexes are dropped rather than kept: Remnawave v3
+	// removed the panel uuid, so the column is now written empty and an index
+	// over it would only cost write throughput. Dropping an index is reversible
+	// — a rollback to a v2 build recreates them from its own migration.
 	_, err := db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_created_at ON payment_requests(created_at);
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_status_resolved ON payment_requests(status, confirmed_at);
-		CREATE INDEX IF NOT EXISTS idx_payment_requests_uuid_status_resolved ON payment_requests(uuid, status, confirmed_at);
+		CREATE INDEX IF NOT EXISTS idx_payment_requests_user_status_resolved ON payment_requests(remnawave_user_id, status, confirmed_at);
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_provider ON payment_requests(provider);
 		CREATE INDEX IF NOT EXISTS idx_payment_requests_provider_txn ON payment_requests(provider_txn_id);
-		CREATE INDEX IF NOT EXISTS idx_payment_requests_traffic_active ON payment_requests(uuid, kind, status, extension_expires_at, extension_restored_at);
+		CREATE INDEX IF NOT EXISTS idx_payment_requests_traffic_active_user ON payment_requests(remnawave_user_id, kind, status, extension_expires_at, extension_restored_at);
+		DROP INDEX IF EXISTS idx_payment_requests_uuid_status_resolved;
+		DROP INDEX IF EXISTS idx_payment_requests_traffic_active;
 	`)
 	return err
 }

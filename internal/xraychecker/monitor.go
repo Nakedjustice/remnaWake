@@ -12,6 +12,13 @@ import (
 // are never alerted twice.
 const stateKey = "xray_checker_state"
 
+// unreachableThreshold is how many consecutive failed polls turn "the checker
+// hiccuped" into "the checker is broken, tell the admins". At the default 2m
+// poll interval that is ~6 minutes: long enough to ride out a sidecar restart
+// or a container-network blip, short enough to surface a real outage the same
+// day it starts.
+const unreachableThreshold = 3
+
 // statusProvider is the slice of *Client the monitor needs.
 type statusProvider interface {
 	Status(ctx context.Context) ([]ProxyStatus, error)
@@ -30,10 +37,18 @@ type settingsStore interface {
 }
 
 // Notifier receives a callback when a monitored proxy changes between up and
-// down. Primitive parameters keep implementers free of an xraychecker import.
+// down, and when the checker itself becomes unusable. Primitive parameters keep
+// implementers free of an xraychecker import.
 type Notifier interface {
 	NotifyProxyDown(ctx context.Context, name, protocol, address string)
 	NotifyProxyRecovered(ctx context.Context, name, protocol, address string)
+	// NotifyCheckerUnreachable reports that polling has failed persistently, so
+	// proxy health is no longer being monitored at all. reason is the underlying
+	// fetch error.
+	NotifyCheckerUnreachable(ctx context.Context, reason string)
+	// NotifyCheckerReachable reports that polling recovered. Only ever follows a
+	// NotifyCheckerUnreachable.
+	NotifyCheckerReachable(ctx context.Context)
 }
 
 // Monitor polls a running xray-checker on an interval and alerts on changes.
@@ -42,12 +57,18 @@ type Notifier interface {
 // baseline without alerting (so enabling the feature does not fire an alert for
 // every already-down proxy). Thereafter each up<->down transition of a
 // previously-seen proxy fires exactly one notification.
+// A failing poll is tracked in memory rather than in the settings table: a
+// restart deliberately re-arms the alert, so a fresh process reports a checker
+// that is still broken once more instead of inheriting a silenced flag.
 type Monitor struct {
 	client   statusProvider
 	store    settingsStore
 	notifier Notifier
 	interval time.Duration
 	logger   *slog.Logger
+
+	fetchFailures    int  // consecutive failed polls; reset by any success
+	unreachableAlert bool // admins have been told, so do not repeat every tick
 }
 
 // NewMonitor wires a monitor. A nil logger uses slog.Default; a non-positive
@@ -81,8 +102,10 @@ func (m *Monitor) checkOnce(ctx context.Context) {
 	statuses, err := m.client.Status(ctx)
 	if err != nil {
 		m.logger.Warn("xray checker: status fetch failed", "err", err.Error())
+		m.noteFetchFailure(ctx, err)
 		return
 	}
+	m.noteFetchSuccess(ctx)
 
 	prev, hadPrev, err := m.loadState(ctx)
 	if err != nil {
@@ -122,6 +145,32 @@ func (m *Monitor) checkOnce(ctx context.Context) {
 	if err := m.saveState(ctx, cur); err != nil {
 		m.logger.Error("xray checker: save state failed", "err", err.Error())
 	}
+}
+
+// noteFetchFailure counts a failed poll and alerts admins once the failures stop
+// looking transient. Without this the checker can die silently: every tick logs
+// a warning and the per-proxy state simply freezes at its last good value.
+func (m *Monitor) noteFetchFailure(ctx context.Context, err error) {
+	m.fetchFailures++
+	if m.fetchFailures < unreachableThreshold || m.unreachableAlert {
+		return
+	}
+	m.unreachableAlert = true
+	m.logger.Error("xray checker: unreachable, alerting admins",
+		"failures", m.fetchFailures, "err", err.Error())
+	m.notifier.NotifyCheckerUnreachable(ctx, err.Error())
+}
+
+// noteFetchSuccess clears the failure streak, announcing recovery only to admins
+// who were told about the outage in the first place.
+func (m *Monitor) noteFetchSuccess(ctx context.Context) {
+	m.fetchFailures = 0
+	if !m.unreachableAlert {
+		return
+	}
+	m.unreachableAlert = false
+	m.logger.Info("xray checker: reachable again")
+	m.notifier.NotifyCheckerReachable(ctx)
 }
 
 // stateIdentity keys a proxy by the labels that distinguish it in xray-checker.

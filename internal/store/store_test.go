@@ -64,9 +64,16 @@ func TestNewMigratesPaymentRequestIndexes(t *testing.T) {
 		}
 		indexes[name] = true
 	}
-	for _, name := range []string{"idx_payment_requests_created_at", "idx_payment_requests_status_resolved", "idx_payment_requests_uuid_status_resolved", "idx_payment_requests_provider", "idx_payment_requests_provider_txn"} {
+	for _, name := range []string{"idx_payment_requests_created_at", "idx_payment_requests_status_resolved", "idx_payment_requests_user_status_resolved", "idx_payment_requests_provider", "idx_payment_requests_provider_txn", "idx_payment_requests_traffic_active_user"} {
 		if !indexes[name] {
 			t.Errorf("missing migrated index %s", name)
+		}
+	}
+	// The uuid-keyed indexes are retired: Remnawave v3 removed the panel uuid, so
+	// the column no longer carries a value worth indexing.
+	for _, name := range []string{"idx_payment_requests_uuid_status_resolved", "idx_payment_requests_traffic_active"} {
+		if indexes[name] {
+			t.Errorf("stale uuid index %s should have been dropped", name)
 		}
 	}
 }
@@ -118,7 +125,7 @@ func TestNotifiedUsersUpsert(t *testing.T) {
 	ctx := context.Background()
 	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 
-	u := NotifiedUser{RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 999, ExpireAt: exp}
+	u := NotifiedUser{RemnawaveID: 42, Username: "alice", TelegramID: 999, ExpireAt: exp}
 	if err := st.UpsertNotifiedUser(ctx, u); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
@@ -131,7 +138,7 @@ func TestNotifiedUsersUpsert(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("get: %+v err %v", got, err)
 	}
-	if got.Username != "alice2" || got.UUID != "uuid-42" || got.TelegramID != 999 || !got.ExpireAt.Equal(exp) {
+	if got.Username != "alice2" || got.RemnawaveID != 42 || got.TelegramID != 999 || !got.ExpireAt.Equal(exp) {
 		t.Fatalf("unexpected: %+v", got)
 	}
 	if missing, err := st.GetNotifiedUser(ctx, 7); err != nil || missing != nil {
@@ -145,7 +152,7 @@ func TestPaymentRequestsLifecycle(t *testing.T) {
 	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 
 	id, err := st.CreatePaymentRequest(ctx, PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 999,
+		RemnawaveID: 42, Username: "alice", TelegramID: 999,
 		Months: 3, Price: 450, ExpireAt: exp, Status: "pending",
 	})
 	if err != nil || id == 0 {

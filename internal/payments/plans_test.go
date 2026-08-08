@@ -29,7 +29,7 @@ func TestConfirmStampsCustomPlan(t *testing.T) {
 	}
 	exp := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 3, Price: 250, ExpireAt: exp, Plan: "messenger",
 	})
 
@@ -38,8 +38,8 @@ func TestConfirmStampsCustomPlan(t *testing.T) {
 	}
 
 	upd := svc.userUpdater.(*fakeUpdater)
-	if len(upd.calls) != 1 || upd.uuids[0] != "uuid-42" {
-		t.Fatalf("expected one patch for uuid-42, got %v / %v", upd.uuids, upd.calls)
+	if len(upd.calls) != 1 || upd.userIDs[0] != 42 {
+		t.Fatalf("expected one patch for user 42, got %v / %v", upd.userIDs, upd.calls)
 	}
 	p := upd.calls[0]
 	if p.ExpireAt == nil || !p.ExpireAt.Equal(exp.AddDate(0, 3, 0)) {
@@ -70,7 +70,7 @@ func TestConfirmStampsStandardPlan(t *testing.T) {
 	ctx := context.Background()
 
 	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 300, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
 	})
 	if _, _, err := svc.confirmPaymentRequest(ctx, id); err != nil {
@@ -105,7 +105,7 @@ func TestConfirmProratesRemainingTimeOnUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 3, Price: 300, ExpireAt: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
 		Plan: "basic",
 	})
@@ -120,7 +120,7 @@ func TestConfirmProratesRemainingTimeOnUpgrade(t *testing.T) {
 	// Basic was paid at 100/month, standard is 400/month, so the remaining time
 	// is worth 23 standard days. Buying 1 standard month yields 2026-07-24.
 	upgradeID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 400, ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 		Plan: store.PlanStandard,
 	})
@@ -136,8 +136,8 @@ func TestConfirmProratesRemainingTimeOnUpgrade(t *testing.T) {
 	if !newExpireAt.Equal(want) {
 		t.Fatalf("newExpireAt = %s, want %s", newExpireAt, want)
 	}
-	if ext.calls != 1 || ext.uuid != "uuid-42" || !ext.expire.Equal(want) {
-		t.Fatalf("panel expiry = %s calls=%d uuid=%q, want %s / uuid-42", ext.expire, ext.calls, ext.uuid, want)
+	if ext.calls != 1 || ext.userID != 42 || !ext.expire.Equal(want) {
+		t.Fatalf("panel expiry = %s calls=%d user_id=%d, want %s / 42", ext.expire, ext.calls, ext.userID, want)
 	}
 }
 
@@ -148,7 +148,7 @@ func TestConfirmDoesNotProrateSamePlanRenewal(t *testing.T) {
 	svc.now = func() time.Time { return now }
 
 	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 400, ExpireAt: now, Plan: store.PlanStandard,
 	})
 	if err != nil {
@@ -159,7 +159,7 @@ func TestConfirmDoesNotProrateSamePlanRenewal(t *testing.T) {
 	}
 
 	reqID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 400, ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 		Plan: store.PlanStandard,
 	})
@@ -187,7 +187,7 @@ func TestRenewalPlanChangePreviewUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 3, Price: 300, ExpireAt: now, Plan: "basic",
 	})
 	if err != nil {
@@ -198,7 +198,7 @@ func TestRenewalPlanChangePreviewUpgrade(t *testing.T) {
 	}
 
 	req := &store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 400, ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 		Plan: store.PlanStandard,
 	}
@@ -224,7 +224,7 @@ func TestRenewalPlanChangePreviewDowngrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 400, ExpireAt: now, Plan: store.PlanStandard,
 	})
 	if err != nil {
@@ -235,7 +235,7 @@ func TestRenewalPlanChangePreviewDowngrade(t *testing.T) {
 	}
 
 	req := &store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 100, ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 		Plan: "basic",
 	}
@@ -259,7 +259,7 @@ func TestRenewalPlanChangePreviewSamePlanNil(t *testing.T) {
 	svc.now = func() time.Time { return now }
 
 	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 400, ExpireAt: now, Plan: store.PlanStandard,
 	})
 	if err != nil {
@@ -270,7 +270,7 @@ func TestRenewalPlanChangePreviewSamePlanNil(t *testing.T) {
 	}
 
 	req := &store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 400, ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 		Plan: store.PlanStandard,
 	}
@@ -287,7 +287,7 @@ func TestConfirmDeletedPlanExtendsOnly(t *testing.T) {
 	ctx := context.Background()
 
 	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 100, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
 		Plan: "vanished",
 	})
@@ -436,7 +436,7 @@ func TestBotPlanChangeRequiresConfirmation(t *testing.T) {
 	_ = st.UpsertTariff(ctx, "basic", 3, 300)
 	_ = st.UpsertTariff(ctx, store.PlanStandard, 1, 400)
 	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 3, Price: 300, ExpireAt: now, Plan: "basic",
 	})
 	if err != nil {
@@ -446,7 +446,7 @@ func TestBotPlanChangeRequiresConfirmation(t *testing.T) {
 		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
 	}
 	if err := st.UpsertNotifiedUser(ctx, store.NotifiedUser{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("remember: %v", err)
@@ -488,7 +488,7 @@ func TestStalePayViaPlanChangeRequiresConfirmation(t *testing.T) {
 	_ = st.UpsertTariff(ctx, "basic", 3, 300)
 	_ = st.UpsertTariff(ctx, store.PlanStandard, 1, 400)
 	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 3, Price: 300, ExpireAt: now, Plan: "basic",
 	})
 	if err != nil {
@@ -498,7 +498,7 @@ func TestStalePayViaPlanChangeRequiresConfirmation(t *testing.T) {
 		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
 	}
 	if err := st.UpsertNotifiedUser(ctx, store.NotifiedUser{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("remember: %v", err)
@@ -571,7 +571,7 @@ func TestCreateRenewRequestWithPlan(t *testing.T) {
 	svc, _, _, st := newTestService(t)
 	ctx := context.Background()
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		777: {{RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		777: {{RemnawaveID: 42, Username: "alice", TelegramID: 777,
 			ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	if err := st.UpsertPlan(ctx, store.Plan{Code: "messenger", Name: "Мессенджер"}); err != nil {
@@ -607,7 +607,7 @@ func TestCreateRenewRequestPlanChangePreviewRequiresConfirmation(t *testing.T) {
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return now }
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
-		777: {{RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		777: {{RemnawaveID: 42, Username: "alice", TelegramID: 777,
 			ExpireAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}},
 	}}
 	if err := st.UpsertPlan(ctx, store.Plan{Code: "basic", Name: "Базовый"}); err != nil {
@@ -616,7 +616,7 @@ func TestCreateRenewRequestPlanChangePreviewRequiresConfirmation(t *testing.T) {
 	_ = st.UpsertTariff(ctx, "basic", 3, 300)
 	_ = st.UpsertTariff(ctx, store.PlanStandard, 1, 400)
 	prevID, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 3, Price: 300, ExpireAt: now, Plan: "basic",
 	})
 	if err != nil {
@@ -736,7 +736,7 @@ func TestConfirmDryRunMakesNoPanelCalls(t *testing.T) {
 
 	ctx := context.Background()
 	id, _ := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777,
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
 		Months: 1, Price: 300, ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
 	})
 	if _, _, err := svc.confirmPaymentRequest(ctx, id); err != nil {

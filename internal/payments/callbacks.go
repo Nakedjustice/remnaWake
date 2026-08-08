@@ -368,7 +368,6 @@ func (s *Service) routeProviderWithPlanChangeGate(ctx context.Context, cb *tg.Ca
 	if !planChangeConfirmed {
 		req := &store.PaymentRequest{
 			RemnawaveID: u.RemnawaveID,
-			UUID:        u.UUID,
 			Username:    u.Username,
 			TelegramID:  u.TelegramID,
 			Months:      months,
@@ -627,7 +626,7 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 		fileID, isDoc = att.fileID, att.asDocument
 	}
 	reqID, err := s.store.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: u.RemnawaveID, UUID: u.UUID, Username: u.Username,
+		RemnawaveID: u.RemnawaveID, Username: u.Username,
 		TelegramID: u.TelegramID, Months: months, Price: price,
 		ExpireAt: u.ExpireAt, Status: "pending", Plan: plan,
 		ScreenshotFileID: fileID, ScreenshotIsDocument: isDoc,
@@ -1257,7 +1256,6 @@ func (s *Service) formatAdminRequest(ctx context.Context, u *store.NotifiedUser,
 	b.WriteString(i18n.T("💳 Заявка на оплату\n\n"))
 	b.WriteString(i18n.T("Клиент: ") + u.Username + "\n")
 	b.WriteString(fmt.Sprintf("Remnawave ID: %d\n", u.RemnawaveID))
-	b.WriteString("UUID: " + u.UUID + "\n")
 	b.WriteString(fmt.Sprintf("Telegram ID: %d\n", u.TelegramID))
 	b.WriteString(i18n.T("Подписка до: ") + u.ExpireAt.Format("02.01.2006") + "\n")
 	if plan != "" && plan != store.PlanStandard {

@@ -3,6 +3,7 @@ package payments
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -13,33 +14,33 @@ import (
 // fakeDeviceManager records the panel calls the device flows make and mutates
 // its own listing so a revoke is observable through a follow-up read.
 type fakeDeviceManager struct {
-	devices map[string][]Device // panel uuid -> registered devices
+	devices map[int64][]Device // panel user id -> registered devices
 	listErr error
 	delErr  error
-	deleted []string // "<uuid>|<hwid>" per DeleteDevice call
+	deleted []string // "<user id>|<hwid>" per DeleteDevice call
 	lists   int
 }
 
-func (f *fakeDeviceManager) ListDevices(_ context.Context, uuid string) ([]Device, error) {
+func (f *fakeDeviceManager) ListDevices(_ context.Context, userID int64) ([]Device, error) {
 	f.lists++
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
-	return f.devices[uuid], nil
+	return f.devices[userID], nil
 }
 
-func (f *fakeDeviceManager) DeleteDevice(_ context.Context, uuid, hwid string) error {
+func (f *fakeDeviceManager) DeleteDevice(_ context.Context, userID int64, hwid string) error {
 	if f.delErr != nil {
 		return f.delErr
 	}
-	f.deleted = append(f.deleted, uuid+"|"+hwid)
-	kept := make([]Device, 0, len(f.devices[uuid]))
-	for _, d := range f.devices[uuid] {
+	f.deleted = append(f.deleted, strconv.FormatInt(userID, 10)+"|"+hwid)
+	kept := make([]Device, 0, len(f.devices[userID]))
+	for _, d := range f.devices[userID] {
 		if d.HWID != hwid {
 			kept = append(kept, d)
 		}
 	}
-	f.devices[uuid] = kept
+	f.devices[userID] = kept
 	return nil
 }
 
@@ -55,18 +56,18 @@ func deviceService(t *testing.T) (*Service, *fakeBot, *fakeDeviceManager) {
 	capped, uncapped := 2, 0
 	svc.finder = &fakeFinder{byTG: map[int64][]Subscriber{
 		777: {
-			{RemnawaveID: 42, UUID: "uuid-42", Username: "alice", TelegramID: 777, HwidDeviceLimit: &capped},
-			{RemnawaveID: 43, UUID: "uuid-43", Username: "alice-work", TelegramID: 777, HwidDeviceLimit: &uncapped},
+			{RemnawaveID: 42, Username: "alice", TelegramID: 777, HwidDeviceLimit: &capped},
+			{RemnawaveID: 43, Username: "alice-work", TelegramID: 777, HwidDeviceLimit: &uncapped},
 		},
-		888: {{RemnawaveID: 99, UUID: "uuid-99", Username: "bob", TelegramID: 888, HwidDeviceLimit: &capped}},
+		888: {{RemnawaveID: 99, Username: "bob", TelegramID: 888, HwidDeviceLimit: &capped}},
 	}}
-	dm := &fakeDeviceManager{devices: map[string][]Device{
-		"uuid-42": {
+	dm := &fakeDeviceManager{devices: map[int64][]Device{
+		42: {
 			{HWID: "hw-phone", Platform: "iOS", OSVersion: "17.4", DeviceModel: "iPhone 15", CreatedAt: deviceNow.AddDate(0, -1, 0)},
 			{HWID: "hw-laptop", Platform: "macOS", DeviceModel: "MacBook Air", CreatedAt: deviceNow.AddDate(0, 0, -3)},
 		},
-		"uuid-43": {{HWID: "hw-work", Platform: "Windows"}},
-		"uuid-99": {{HWID: "hw-bob", Platform: "Android"}},
+		43: {{HWID: "hw-work", Platform: "Windows"}},
+		99: {{HWID: "hw-bob", Platform: "Android"}},
 	}}
 	svc.SetDeviceManager(dm)
 	return svc, bot, dm
@@ -146,7 +147,7 @@ func TestRevokeDeviceFreesSlotAndConcealsForeignTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RevokeDevice: %v", err)
 	}
-	if len(dm.deleted) != 1 || dm.deleted[0] != "uuid-42|hw-phone" {
+	if len(dm.deleted) != 1 || dm.deleted[0] != "42|hw-phone" {
 		t.Fatalf("deleted = %v", dm.deleted)
 	}
 	// The caller gets the refreshed overview so the freed slot is visible.
@@ -225,7 +226,7 @@ func TestDeviceCallbackConfirmsBeforeRevoking(t *testing.T) {
 	if !svc.HandleCallback(ctx, cbq(777, "dev:rev:0:ok")) {
 		t.Fatal("dev:rev:ok should be handled")
 	}
-	if len(dm.deleted) != 1 || dm.deleted[0] != "uuid-42|hw-phone" {
+	if len(dm.deleted) != 1 || dm.deleted[0] != "42|hw-phone" {
 		t.Fatalf("deleted = %v", dm.deleted)
 	}
 	// The refreshed listing is pushed back so the user sees the freed slot.

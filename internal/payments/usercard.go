@@ -21,7 +21,7 @@ func (s *Service) rememberUserCtl(chatID int64, sub *Subscriber) {
 			delete(s.userCtl, k)
 		}
 	}
-	s.userCtl[chatID] = &userCtlState{uuid: sub.UUID, username: sub.Username, createdAt: now}
+	s.userCtl[chatID] = &userCtlState{username: sub.Username, createdAt: now}
 }
 
 // userCtlTarget returns the remembered target's username, or false when the
@@ -156,7 +156,7 @@ func (s *Service) handleUserExpiryDelta(ctx context.Context, chatID int64, data 
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return
 	}
-	if _, err := s.applyUserExpiryDelta(ctx, sub.UUID, sub.ExpireAt, days); err != nil {
+	if _, err := s.applyUserExpiryDelta(ctx, sub.RemnawaveID, sub.ExpireAt, days); err != nil {
 		s.reportUserCtlError(ctx, chatID, err)
 		return
 	}
@@ -198,7 +198,7 @@ func (s *Service) consumeUserHwid(ctx context.Context, chatID int64, text string
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return true
 	}
-	if err := s.setUserHwidLimit(ctx, sub.UUID, n); err != nil {
+	if err := s.setUserHwidLimit(ctx, sub.RemnawaveID, n); err != nil {
 		s.reportUserCtlError(ctx, chatID, err)
 		return true
 	}
@@ -226,7 +226,7 @@ func (s *Service) consumeUserTraffic(ctx context.Context, chatID int64, text str
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return true
 	}
-	if err := s.setUserTrafficLimitGB(ctx, sub.UUID, gb); err != nil {
+	if err := s.setUserTrafficLimitGB(ctx, sub.RemnawaveID, gb); err != nil {
 		s.reportUserCtlError(ctx, chatID, err)
 		return true
 	}
@@ -254,7 +254,7 @@ func (s *Service) consumeUserExpiry(ctx context.Context, chatID int64, text stri
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return true
 	}
-	if _, err := s.applyUserExpiryDelta(ctx, sub.UUID, sub.ExpireAt, days); err != nil {
+	if _, err := s.applyUserExpiryDelta(ctx, sub.RemnawaveID, sub.ExpireAt, days); err != nil {
 		s.reportUserCtlError(ctx, chatID, err)
 		return true
 	}
@@ -274,7 +274,7 @@ func (s *Service) handleUserStatusToggle(ctx context.Context, chatID int64) {
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return
 	}
-	if _, err := s.toggleUserStatus(ctx, sub.UUID, sub.Status); err != nil {
+	if _, err := s.toggleUserStatus(ctx, sub.RemnawaveID, sub.Status); err != nil {
 		s.reportUserCtlError(ctx, chatID, err)
 		return
 	}
@@ -320,7 +320,7 @@ func (s *Service) handleUserResetPick(ctx context.Context, chatID int64, data st
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return
 	}
-	if err := s.setUserResetStrategy(ctx, sub.UUID, strategy); err != nil {
+	if err := s.setUserResetStrategy(ctx, sub.RemnawaveID, strategy); err != nil {
 		s.reportUserCtlError(ctx, chatID, err)
 		return
 	}
@@ -382,7 +382,7 @@ func (s *Service) handleUserSquadToggle(ctx context.Context, chatID int64, data 
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return
 	}
-	if err := s.toggleUserSquad(ctx, sub.UUID, sub.SquadUUIDs, squadUUID); err != nil {
+	if err := s.toggleUserSquad(ctx, sub.RemnawaveID, sub.SquadUUIDs, squadUUID); err != nil {
 		s.reportUserCtlError(ctx, chatID, err)
 		return
 	}

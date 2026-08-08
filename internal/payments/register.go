@@ -15,7 +15,7 @@ import (
 type registerState struct {
 	requesterTGID int64
 	username      string // empty = still awaiting username input
-	uuid          string // resolved panel UUID once a free account is found
+	remnawaveID   int64  // resolved panel user id once a free account is found
 	createdAt     time.Time
 }
 
@@ -79,17 +79,17 @@ func (s *Service) RegisterProfile(ctx context.Context, telegramID int64, query s
 		}
 		return nil, ErrProfileLinkedElsewhere
 	}
-	if err := s.linkResolvedProfile(ctx, sub.UUID, telegramID); err != nil {
+	if err := s.linkResolvedProfile(ctx, sub.RemnawaveID, telegramID); err != nil {
 		return nil, err
 	}
 	return &WebRegistrationResult{Username: sub.Username}, nil
 }
 
-func (s *Service) linkResolvedProfile(ctx context.Context, uuid string, telegramID int64) error {
+func (s *Service) linkResolvedProfile(ctx context.Context, userID, telegramID int64) error {
 	if s.dryRun {
 		return nil
 	}
-	if err := s.registrar.SetTelegramID(ctx, uuid, telegramID); err != nil {
+	if err := s.registrar.SetTelegramID(ctx, userID, telegramID); err != nil {
 		return fmt.Errorf("%w: link profile: %v", ErrPanelUnavailable, err)
 	}
 	return nil
@@ -241,7 +241,7 @@ func (s *Service) continueRegisterWith(ctx context.Context, chatID int64, r *reg
 	}
 
 	r.username = sub.Username
-	r.uuid = sub.UUID
+	r.remnawaveID = sub.RemnawaveID
 	s.setRegister(chatID, r)
 	s.showRegisterConfirm(ctx, chatID, r)
 }
@@ -306,11 +306,11 @@ func (s *Service) handleRegisterConfirm(ctx context.Context, cb *tg.CallbackQuer
 	}
 
 	username := r.username
-	uuid := r.uuid
+	userID := r.remnawaveID
 	tgID := r.requesterTGID
 
 	if s.dryRun {
-		s.logger.Info("dry-run: would set telegram id", "username", username, "uuid", uuid, "telegram_id", tgID)
+		s.logger.Info("dry-run: would set telegram id", "username", username, "user_id", userID, "telegram_id", tgID)
 		s.clearRegister(chatID)
 		_ = s.bot.EditMessageReplyMarkup(ctx, chatID, cb.Message.MessageID, nil)
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Готово (dry-run)."))
@@ -319,8 +319,8 @@ func (s *Service) handleRegisterConfirm(ctx context.Context, cb *tg.CallbackQuer
 		return true
 	}
 
-	if err := s.linkResolvedProfile(ctx, uuid, tgID); err != nil {
-		s.logger.Error("register: set telegram id failed", "uuid", uuid, "err", err.Error())
+	if err := s.linkResolvedProfile(ctx, userID, tgID); err != nil {
+		s.logger.Error("register: set telegram id failed", "user_id", userID, "err", err.Error())
 		s.clearRegister(chatID)
 		_ = s.bot.EditMessageReplyMarkup(ctx, chatID, cb.Message.MessageID, nil)
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка привязки. Попробуйте позже."))

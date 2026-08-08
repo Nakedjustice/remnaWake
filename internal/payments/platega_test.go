@@ -116,7 +116,7 @@ func TestStartPlategaPaymentCreatesRequestAndReturnsURL(t *testing.T) {
 	gw := &fakePlatega{nextID: "tx-1", nextURL: "https://pay.example/tx-1"}
 	svc.SetPlatega(gw, 2, "RUB", "https://t.me")
 
-	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+	u := &store.NotifiedUser{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	_, url, err := svc.startPlategaPayment(ctx, u, 2, 300, store.PlanStandard)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestPlategaWebhookConfirmsAndIsIdempotent(t *testing.T) {
 	gw := &fakePlatega{nextID: "tx-9", nextURL: "https://pay/x", statuses: map[string]string{}}
 	svc.SetPlatega(gw, 2, "RUB", "https://t.me")
 
-	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+	u := &store.NotifiedUser{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	if _, _, err := svc.startPlategaPayment(ctx, u, 1, 150, store.PlanStandard); err != nil {
 		t.Fatalf("start: %v", err)
@@ -195,7 +195,7 @@ func TestPlategaCheckButtonConfirms(t *testing.T) {
 	gw := &fakePlatega{nextID: "tx-5", statuses: map[string]string{"tx-5": "CONFIRMED"}}
 	svc.SetPlatega(gw, 2, "RUB", "https://t.me")
 
-	u := &store.NotifiedUser{RemnawaveID: 7, UUID: "u-7", Username: "bob", TelegramID: 555,
+	u := &store.NotifiedUser{RemnawaveID: 7, Username: "bob", TelegramID: 555,
 		ExpireAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	if _, _, err := svc.startPlategaPayment(ctx, u, 1, 150, store.PlanStandard); err != nil {
 		t.Fatalf("start: %v", err)

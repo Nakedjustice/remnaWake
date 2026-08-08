@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -88,7 +89,7 @@ func (c *Client) fetchUsersPage(ctx context.Context, start, size int) ([]User, i
 }
 
 // patchUser sends a PATCH /api/users request with the given JSON payload.
-// The payload must include the target user's "uuid". op names the operation
+// The payload must include the target user's "id". op names the operation
 // for error messages.
 func (c *Client) patchUser(ctx context.Context, payload map[string]interface{}, op string) error {
 	endpoint := fmt.Sprintf("%s/api/users", c.baseURL)
@@ -121,24 +122,24 @@ func (c *Client) patchUser(ctx context.Context, payload map[string]interface{}, 
 	return nil
 }
 
-func (c *Client) ExtendSubscriptionByUUID(ctx context.Context, uuid string, newExpireAt time.Time) error {
+func (c *Client) ExtendSubscription(ctx context.Context, userID int64, newExpireAt time.Time) error {
 	return c.patchUser(ctx, map[string]interface{}{
-		"uuid":     uuid,
+		"id":       userID,
 		"expireAt": newExpireAt.Format(time.RFC3339),
 	}, "extend subscription")
 }
 
-func (c *Client) SetTelegramID(ctx context.Context, uuid string, telegramID int64) error {
+func (c *Client) SetTelegramID(ctx context.Context, userID, telegramID int64) error {
 	return c.patchUser(ctx, map[string]interface{}{
-		"uuid":       uuid,
+		"id":         userID,
 		"telegramId": telegramID,
 	}, "set telegram id")
 }
 
 // UpdateUser patches the manageable fields of an existing user. Only the fields
 // set in patch are sent; nil pointers are omitted entirely.
-func (c *Client) UpdateUser(ctx context.Context, uuid string, patch UserPatch) error {
-	payload := map[string]interface{}{"uuid": uuid}
+func (c *Client) UpdateUser(ctx context.Context, userID int64, patch UserPatch) error {
+	payload := map[string]interface{}{"id": userID}
 	if patch.ExpireAt != nil {
 		payload["expireAt"] = patch.ExpireAt.UTC().Format(time.RFC3339)
 	}
@@ -315,8 +316,67 @@ func (c *Client) GetInternalSquads(ctx context.Context) ([]InternalSquad, error)
 	return payload.Response.InternalSquads, nil
 }
 
+// streamPageSize is the page size requested from GET /api/users/stream. The
+// panel caps it at 1000; the filtered lookups here match far fewer than that.
+const streamPageSize = 1000
+
+// maxStreamPages bounds the keyset walk so a panel that keeps handing back a
+// cursor can never spin the loop forever.
+const maxStreamPages = 1000
+
+// GetUserByTelegramID returns every profile linked to a Telegram ID — one ID may
+// map to several subscriptions.
+//
+// v3 deleted GET /api/users/by-telegram-id/{telegramId}; the replacement is the
+// keyset-paginated stream with a telegramId filter.
 func (c *Client) GetUserByTelegramID(ctx context.Context, telegramID int64) ([]User, error) {
-	endpoint := fmt.Sprintf("%s/api/users/by-telegram-id/%d", c.baseURL, telegramID)
+	filter := url.Values{"telegramId": {strconv.FormatInt(telegramID, 10)}}
+	return c.streamUsers(ctx, filter, "get user by telegram id")
+}
+
+// streamUsers walks GET /api/users/stream to exhaustion with filter applied to
+// every page. A 404 yields no matches rather than an error, preserving the
+// contract the v2 by-* lookups had.
+func (c *Client) streamUsers(ctx context.Context, filter url.Values, op string) ([]User, error) {
+	var (
+		out    []User
+		cursor string
+	)
+	for i := 0; i < maxStreamPages; i++ {
+		q := url.Values{}
+		for k, vs := range filter {
+			q[k] = vs
+		}
+		q.Set("size", strconv.Itoa(streamPageSize))
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		page, err := c.fetchUsersStreamPage(ctx, fmt.Sprintf("%s/api/users/stream?%s", c.baseURL, q.Encode()), op)
+		if err != nil {
+			return nil, err
+		}
+		if page == nil {
+			return out, nil
+		}
+		out = append(out, page.Users...)
+		// hasMore alone is not enough to continue: with no cursor to advance to,
+		// another request would refetch the page we just read.
+		if !page.HasMore || page.NextCursor == nil || *page.NextCursor == "" {
+			return out, nil
+		}
+		cursor = *page.NextCursor
+	}
+	return nil, fmt.Errorf("%s: stream did not terminate after %d pages", op, maxStreamPages)
+}
+
+// usersStreamPage is one decoded page; a nil return means the panel answered 404.
+type usersStreamPage struct {
+	Users      []User
+	NextCursor *string
+	HasMore    bool
+}
+
+func (c *Client) fetchUsersStreamPage(ctx context.Context, endpoint, op string) (*usersStreamPage, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -325,7 +385,7 @@ func (c *Client) GetUserByTelegramID(ctx context.Context, telegramID int64) ([]U
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("get user by telegram id: %w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer resp.Body.Close()
 
@@ -333,22 +393,26 @@ func (c *Client) GetUserByTelegramID(ctx context.Context, telegramID int64) ([]U
 		return nil, nil
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("get user by telegram id: unauthorized (status=%d)", resp.StatusCode)
+		return nil, fmt.Errorf("%s: unauthorized (status=%d)", op, resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("get user by telegram id: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
+		return nil, fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	var payload usersByTgResponse
+	var payload usersStreamResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("decode users: %w (body=%s)", err, textutil.Truncate(string(body), 300))
+		return nil, fmt.Errorf("decode users stream: %w (body=%s)", err, textutil.Truncate(string(body), 300))
 	}
-	return payload.Response, nil
+	return &usersStreamPage{
+		Users:      payload.Response.Users,
+		NextCursor: payload.Response.NextCursor,
+		HasMore:    payload.Response.HasMore,
+	}, nil
 }
 
 // ErrHwidDeviceNotFound reports a 404 from POST /api/hwid/devices/delete: the
@@ -360,8 +424,8 @@ var ErrHwidDeviceNotFound = errors.New("hwid device not found")
 // A 404 (unknown user) yields an empty list rather than an error, mirroring the
 // single-user lookups: the caller has already resolved the profile, so the only
 // useful reading of "no such user record here" is "no devices".
-func (c *Client) GetHwidDevices(ctx context.Context, userUUID string) ([]HwidDevice, error) {
-	endpoint := fmt.Sprintf("%s/api/hwid/devices/%s", c.baseURL, url.PathEscape(userUUID))
+func (c *Client) GetHwidDevices(ctx context.Context, userID int64) ([]HwidDevice, error) {
+	endpoint := fmt.Sprintf("%s/api/hwid/devices/%d", c.baseURL, userID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -384,9 +448,9 @@ func (c *Client) GetHwidDevices(ctx context.Context, userUUID string) ([]HwidDev
 // (the panel answers the delete with the refreshed listing). A 404 comes back as
 // ErrHwidDeviceNotFound so a slot revoked twice is distinguishable from a panel
 // outage.
-func (c *Client) DeleteHwidDevice(ctx context.Context, userUUID, hwid string) ([]HwidDevice, error) {
+func (c *Client) DeleteHwidDevice(ctx context.Context, userID int64, hwid string) ([]HwidDevice, error) {
 	endpoint := fmt.Sprintf("%s/api/hwid/devices/delete", c.baseURL)
-	body, err := json.Marshal(map[string]string{"userUuid": userUUID, "hwid": hwid})
+	body, err := json.Marshal(map[string]interface{}{"userId": userID, "hwid": hwid})
 	if err != nil {
 		return nil, err
 	}

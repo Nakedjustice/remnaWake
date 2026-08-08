@@ -15,7 +15,7 @@ func TestAdminPaymentReportMapsHistoryAndGuardsAdmin(t *testing.T) {
 	now := time.Now().UTC().Add(time.Minute)
 	svc.now = func() time.Time { return now }
 	id, err := st.CreatePaymentRequest(ctx, store.PaymentRequest{
-		RemnawaveID: 7, UUID: "uuid-7", Username: "alice", TelegramID: 77,
+		RemnawaveID: 7, Username: "alice", TelegramID: 77,
 		Months: 3, Price: 450, ExpireAt: now.AddDate(0, 1, 0), Provider: ProviderPlatega,
 		PayerTelegramID: 88, PayerUsername: "payer", ProviderTxnID: "txn-7",
 	})
