@@ -39,6 +39,13 @@ COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
 OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
 BACKUP_DIR="$INSTALL_DIR/backups"
 
+# Absolute path to this script, but only when it was run from a real file:
+# `curl ... | bash` has no file to compare or replace, so self-update is skipped.
+SCRIPT_FILE=""
+if [ -n "$__src" ] && [ -f "$__src" ]; then
+  SCRIPT_FILE="$(cd -- "$(dirname -- "$__src")" >/dev/null 2>&1 && pwd)/$(basename -- "$__src")"
+fi
+
 if [ -t 1 ]; then
   BOLD="$(printf '\033[1m')"; DIM="$(printf '\033[2m')"
   GREEN="$(printf '\033[32m')"; YELLOW="$(printf '\033[33m')"
@@ -99,6 +106,77 @@ fetch() {
 
 timestamp() {
   date +%Y%m%d%H%M%S
+}
+
+# sha256 of a file. Fails (empty output) when no hashing tool is installed.
+file_digest() {
+  local file="$1"
+  [ -f "$file" ] || return 1
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | cut -d' ' -f1
+  else
+    return 1
+  fi
+}
+
+# Download the current channel's install.sh to a temp file and print its path.
+# Uses its own short-timeout fetch rather than fetch(): a freshness check must
+# never hang an update or a doctor run behind an unreachable GitHub.
+fetch_remote_installer() {
+  local tmp
+  tmp="$(mktemp)" || return 1
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --max-time 15 "$REPO_RAW/install.sh" -o "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$tmp" --timeout=15 --tries=1 "$REPO_RAW/install.sh" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+  # A captive portal or GitHub error page must never be mistaken for the
+  # installer and copied over a working one.
+  if ! head -n 1 "$tmp" | grep -q '^#!/usr/bin/env bash'; then
+    rm -f "$tmp"
+    return 1
+  fi
+  printf '%s' "$tmp"
+}
+
+# Replace install.sh with the current channel version when they differ.
+#
+# `update` pulls the bot image but historically left the installer alone, so an
+# operator could run a months-old install.sh against a current bot: its doctor
+# checks and its docker-compose.override.yml generation both lag the image, and
+# nothing ever says so. The rename is atomic and the running bash keeps reading
+# the old inode, so replacing the file mid-run is safe.
+refresh_installer() {
+  local remote local_digest remote_digest
+  if [ -z "$SCRIPT_FILE" ] || [ "${REMNAWAKE_SKIP_SELF_UPDATE:-}" = "1" ]; then
+    return 0
+  fi
+  if ! remote="$(fetch_remote_installer)"; then
+    warn "Could not check whether install.sh is current (no network, or curl/wget missing)."
+    return 0
+  fi
+  local_digest="$(file_digest "$SCRIPT_FILE" 2>/dev/null || true)"
+  remote_digest="$(file_digest "$remote" 2>/dev/null || true)"
+  if [ -z "$local_digest" ] || [ -z "$remote_digest" ]; then
+    rm -f "$remote"
+    warn "Could not compare install.sh versions (no sha256sum or shasum available)."
+    return 0
+  fi
+  if [ "$local_digest" = "$remote_digest" ]; then
+    rm -f "$remote"
+    ok "install.sh is current for the $REMNAWAKE_CHANNEL channel."
+    return 0
+  fi
+  backup_file "$SCRIPT_FILE"
+  chmod +x "$remote"
+  mv "$remote" "$SCRIPT_FILE"
+  ok "Updated install.sh to the current $REMNAWAKE_CHANNEL version."
+  warn "It takes effect on the next run — re-run ./install.sh doctor to use the new checks."
 }
 
 backup_file() {
@@ -1520,6 +1598,7 @@ doctor_mode() {
   local failures=0 warnings=0 compose value expected base_image autoupdate_image effective_image override_bot_image web_port mode
   local web_url platega_id topology xray_url xray_sub xray_base xray_host_port xray_public caddyfile
   local backup_count latest backup_name
+  local remote_installer local_digest remote_digest
 
   doctor_section() { info ""; info "$*"; }
   doctor_finding() {
@@ -1586,6 +1665,28 @@ doctor_mode() {
     fi
   fi
 
+  # A stale installer is worth reporting before anything else: its own checks and
+  # its override generation lag the running bot, so it can both miss real
+  # problems and reintroduce ones already fixed upstream.
+  doctor_section "Installer"
+  if [ -z "$SCRIPT_FILE" ]; then
+    check_warn "install.sh freshness" "running from a pipe, not a file" "run from ./install.sh so the version can be compared" "curl -fsSL $REPO_RAW/install.sh -o install.sh && chmod +x install.sh"
+  elif remote_installer="$(fetch_remote_installer)"; then
+    local_digest="$(file_digest "$SCRIPT_FILE" 2>/dev/null || true)"
+    remote_digest="$(file_digest "$remote_installer" 2>/dev/null || true)"
+    rm -f "$remote_installer"
+    if [ -z "$local_digest" ] || [ -z "$remote_digest" ]; then
+      check_warn "install.sh freshness" "cannot hash files" "sha256sum or shasum available" "install coreutils, or re-download install.sh manually"
+    elif [ "$local_digest" = "$remote_digest" ]; then
+      check_ok "install.sh freshness" "matches the $REMNAWAKE_CHANNEL channel" "same as $REPO_RAW/install.sh" "no action needed"
+    else
+      check_warn "install.sh freshness" "differs from the $REMNAWAKE_CHANNEL channel (local ${local_digest:0:12}, remote ${remote_digest:0:12})" "same as $REPO_RAW/install.sh" "./install.sh update refreshes it, or re-download it manually"
+    fi
+  else
+    check_warn "install.sh freshness" "could not download the channel version" "reachable $REPO_RAW/install.sh" "check network access to GitHub; re-run later"
+  fi
+
+  doctor_section "Docker"
   if command -v docker >/dev/null 2>&1; then
     check_ok "docker command" "$(command -v docker)" "docker CLI installed" "no action needed"
     if docker info >/dev/null 2>&1; then
@@ -1764,11 +1865,17 @@ update_mode() {
     err "Docker Compose was not found. Install Docker Engine + Compose first."
     exit 1
   fi
+  # The installer follows the same channel as the image it pulls.
+  REMNAWAKE_CHANNEL="$(env_default REMNAWAKE_CHANNEL "${REMNAWAKE_CHANNEL:-main}")"
+  v_channel "$REMNAWAKE_CHANNEL" >/dev/null 2>&1 || REMNAWAKE_CHANNEL="main"
+  apply_channel_defaults
   run_backup
   info "Pulling image..."
   $compose pull
   info "Restarting..."
   $compose up -d
+  # After the image, so a GitHub outage can never block the actual update.
+  refresh_installer
   ok "Update complete. Useful commands:"
   printf '%s\n' "  $compose ps" >&2
   printf '%s\n' "  $compose logs -f" >&2
