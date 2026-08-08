@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -140,8 +139,7 @@ func NewServer(cabinet Cabinet, admin Admin, webhooks Webhooks, botToken string,
 // Handler returns the mini app HTTP handler (static files + /api routes).
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	static, _ := fs.Sub(staticFS, "static")
-	mux.Handle("/", http.FileServer(http.FS(static)))
+	mux.Handle("/", staticHandler())
 	// Public payment-gateway callback (no initData auth): Platega verifies the
 	// transaction itself via its API, so the body is trusted only for its id.
 	mux.HandleFunc("POST /platega/callback", s.handlePlategaCallback)
@@ -256,7 +254,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/trial-request/reject", s.adminIDAction("reject trial request", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminRejectTrialRequest(ctx, tgID, id)
 	}))
-	return mux
+	return gzipMiddleware(mux)
 }
 
 // Run serves the mini app on addr until ctx is cancelled.
