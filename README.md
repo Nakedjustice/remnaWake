@@ -375,10 +375,22 @@ With `XRAY_CHECKER_URL` set the bot:
   latency) or ❌ down;
 - polls the checker every `XRAY_CHECKER_POLL_INTERVAL` (default `2m`) and DMs
   every admin when a proxy goes **down** or **recovers** (deduped across
-  restarts, so enabling the feature never alerts for already-down proxies).
+  restarts, so enabling the feature never alerts for already-down proxies);
+- DMs every admin when **the checker itself stops answering** — after three
+  consecutive failed polls (~6 minutes at the default interval), with the
+  underlying error, and once more when polling recovers. Without this a broken
+  sidecar is invisible outside the logs: monitoring simply stops while the last
+  known proxy states sit there looking healthy.
 
 The bot only consumes the checker's metrics — it does not re-implement proxy
 probing. Leave `XRAY_CHECKER_URL` empty to keep the feature off (the default).
+
+If that unreachable alert arrives, `./install.sh doctor` is the fastest triage:
+it checks the sidecar service, the credentials, and — the usual culprit when
+`/metrics` returns **404** — that `METRICS_BASE_PATH` in
+`docker-compose.override.yml` still agrees with `XRAY_CHECKER_BASE_PATH` in
+`.env`. When they disagree the checker serves at the root while the bot polls a
+sub-path that does not exist.
 
 ### Full web dashboard
 
@@ -631,8 +643,8 @@ Maintenance helpers:
 ```bash
 ./install.sh configure   # first install walks every section; reopens the menu if .env exists
 ./install.sh menu        # jump straight to the reconfigure menu to edit one section
-./install.sh doctor      # read-only health report: routes, ports, compose, Watchtower, xray, backups
-./install.sh update      # back up config, pull the image and restart
+./install.sh doctor      # read-only health report: installer freshness, routes, ports, compose, Watchtower, xray, backups
+./install.sh update      # back up config, pull the image, restart, and refresh install.sh itself
 ./install.sh backup      # copy .env and compose files into ./backups
 ./install.sh restore <backup.db>  # replace the bot database with a backup file
 ```
@@ -640,6 +652,15 @@ Maintenance helpers:
 `doctor` explains each finding with the detected value, expected invariant and a
 likely fix command. It does not rewrite generated files; use `./install.sh configure`
 for rewrites and `./install.sh backup` to create timestamped config backups.
+
+`update` pulls the image *and* keeps `install.sh` itself current: it compares the
+local file with your release channel's version and replaces it (after a
+timestamped backup) when they differ, taking effect on the next run. This matters
+because the two ship from the same commit but only the image used to be pulled —
+an operator could run a months-old installer against a current bot, with doctor
+checks and override generation that predate it. `doctor` reports the same
+comparison read-only under **Installer**. Set `REMNAWAKE_SKIP_SELF_UPDATE=1` to
+opt out, e.g. when the file is managed by configuration management.
 
 ### 💾 Database backup & restore
 

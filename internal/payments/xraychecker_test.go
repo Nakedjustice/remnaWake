@@ -115,6 +115,45 @@ func TestNotifyProxyDownDMsAllAdmins(t *testing.T) {
 	}
 }
 
+func TestNotifyCheckerUnreachableDMsAllAdminsWithReason(t *testing.T) {
+	svc, bot, _, _ := newTestServiceTwoAdmins(t)
+	svc.NotifyCheckerUnreachable(context.Background(), "unexpected status 404")
+
+	got := map[int64]bool{}
+	for _, m := range bot.sent {
+		got[m.ChatID] = true
+		if !strings.Contains(m.Text, "404") {
+			t.Fatalf("alert should carry the underlying reason: %q", m.Text)
+		}
+	}
+	if !got[1000] || !got[2000] {
+		t.Fatalf("expected a DM to both admins: %+v", bot.sent)
+	}
+}
+
+func TestNotifyCheckerReachableDMsAllAdmins(t *testing.T) {
+	svc, bot, _, _ := newTestServiceTwoAdmins(t)
+	svc.NotifyCheckerReachable(context.Background())
+
+	got := map[int64]bool{}
+	for _, m := range bot.sent {
+		got[m.ChatID] = true
+	}
+	if !got[1000] || !got[2000] {
+		t.Fatalf("expected a DM to both admins: %+v", bot.sent)
+	}
+}
+
+func TestCheckerReachabilityAlertsSuppressedInDryRun(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	svc.dryRun = true
+	svc.NotifyCheckerUnreachable(context.Background(), "boom")
+	svc.NotifyCheckerReachable(context.Background())
+	if len(bot.sent) != 0 {
+		t.Fatalf("dry run must not DM admins: %+v", bot.sent)
+	}
+}
+
 func TestProxyAlertSuppressedInDryRun(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
 	svc.dryRun = true
