@@ -262,118 +262,129 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 			continue
 		}
 
+		// Advance the offset for the whole batch first: the next getUpdates is what
+		// confirms these updates to Telegram, and dispatchUpdates below does not
+		// return until every one of them has been handled.
 		for i := range updates {
-			u := updates[i]
-			if u.UpdateID >= offset {
-				offset = u.UpdateID + 1
+			if updates[i].UpdateID >= offset {
+				offset = updates[i].UpdateID + 1
 			}
-			if u.PreCheckoutQuery != nil {
-				if pay.HandlePreCheckout(ctx, u.PreCheckoutQuery) {
-					continue
-				}
-				logger.Debug("ignored pre-checkout query", "payload", u.PreCheckoutQuery.InvoicePayload)
-				continue
+		}
+		dispatchUpdates(ctx, updates, func(ctx context.Context, u tgbot.Update) {
+			handleUpdate(ctx, bot, pay, logger, u)
+		})
+	}
+}
+
+// handleUpdate routes one Telegram update. It is called from dispatchUpdates,
+// so several may run at once — but never two for the same chat, which is what
+// the per-chat conversation state on payments.Service relies on.
+func handleUpdate(ctx context.Context, bot *tgbot.Bot, pay *payments.Service, logger *slog.Logger, u tgbot.Update) {
+	if u.PreCheckoutQuery != nil {
+		if pay.HandlePreCheckout(ctx, u.PreCheckoutQuery) {
+			return
+		}
+		logger.Debug("ignored pre-checkout query", "payload", u.PreCheckoutQuery.InvoicePayload)
+		return
+	}
+	if u.CallbackQuery != nil {
+		if pay.HandleCallback(ctx, u.CallbackQuery) {
+			return
+		}
+		logger.Debug("ignored telegram callback", "data", u.CallbackQuery.Data)
+		return
+	}
+	if u.Message != nil && u.Message.SuccessfulPayment != nil {
+		if pay.HandleSuccessfulPayment(ctx, u.Message) {
+			return
+		}
+	}
+	if u.Message != nil && len(u.Message.Photo) > 0 {
+		if pay.HandlePhoto(ctx, u.Message) {
+			return
+		}
+	}
+	if u.Message != nil && u.Message.Document != nil {
+		if pay.HandleDocument(ctx, u.Message) {
+			return
+		}
+	}
+	if u.Message != nil && u.Message.Text != "" {
+		text := strings.TrimSpace(u.Message.Text)
+		if text == "/start" || strings.HasPrefix(text, "/start ") {
+			if pay.GuardNewTelegramUser(ctx, u.Message.From) {
+				return
 			}
-			if u.CallbackQuery != nil {
-				if pay.HandleCallback(ctx, u.CallbackQuery) {
-					continue
-				}
-				logger.Debug("ignored telegram callback", "data", u.CallbackQuery.Data)
-				continue
+			payload := strings.TrimSpace(strings.TrimPrefix(text, "/start"))
+			if code, ok := strings.CutPrefix(payload, "gift_"); ok && code != "" {
+				logger.Info("received gift deep link", "chat_id", u.Message.Chat.ID)
+				pay.StartGiftRedemption(ctx, u.Message.Chat.ID, code)
+				return
 			}
-			if u.Message != nil && u.Message.SuccessfulPayment != nil {
-				if pay.HandleSuccessfulPayment(ctx, u.Message) {
-					continue
-				}
+			if id, ok := strings.CutPrefix(payload, "ref_"); ok && id != "" {
+				logger.Info("received referral deep link", "chat_id", u.Message.Chat.ID)
+				pay.StartReferral(ctx, u.Message.Chat.ID, id)
+				// Fall through to the normal welcome + reply keyboard so the
+				// referred user still sees the start screen and trial offer.
 			}
-			if u.Message != nil && len(u.Message.Photo) > 0 {
-				if pay.HandlePhoto(ctx, u.Message) {
-					continue
-				}
+			logger.Info("received /start command", "chat_id", u.Message.Chat.ID)
+			if err := bot.SendWelcome(ctx, u.Message.Chat.ID, pay.TrialOffered()); err != nil {
+				logger.Error("send welcome message failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
 			}
-			if u.Message != nil && u.Message.Document != nil {
-				if pay.HandleDocument(ctx, u.Message) {
-					continue
-				}
+			if err := bot.SendPlainWithReplyKeyboard(ctx, u.Message.Chat.ID,
+				fmt.Sprintf(i18n.T("Кнопка «%s» теперь всегда под полем ввода 👇"), tgbot.CabinetButtonLabel()), tgbot.MainReplyKeyboard()); err != nil {
+				logger.Error("send reply keyboard failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
 			}
-			if u.Message != nil && u.Message.Text != "" {
-				text := strings.TrimSpace(u.Message.Text)
-				if text == "/start" || strings.HasPrefix(text, "/start ") {
-					if pay.GuardNewTelegramUser(ctx, u.Message.From) {
-						continue
-					}
-					payload := strings.TrimSpace(strings.TrimPrefix(text, "/start"))
-					if code, ok := strings.CutPrefix(payload, "gift_"); ok && code != "" {
-						logger.Info("received gift deep link", "chat_id", u.Message.Chat.ID)
-						pay.StartGiftRedemption(ctx, u.Message.Chat.ID, code)
-						continue
-					}
-					if id, ok := strings.CutPrefix(payload, "ref_"); ok && id != "" {
-						logger.Info("received referral deep link", "chat_id", u.Message.Chat.ID)
-						pay.StartReferral(ctx, u.Message.Chat.ID, id)
-						// Fall through to the normal welcome + reply keyboard so the
-						// referred user still sees the start screen and trial offer.
-					}
-					logger.Info("received /start command", "chat_id", u.Message.Chat.ID)
-					if err := bot.SendWelcome(ctx, u.Message.Chat.ID, pay.TrialOffered()); err != nil {
-						logger.Error("send welcome message failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
-					}
-					if err := bot.SendPlainWithReplyKeyboard(ctx, u.Message.Chat.ID,
-						fmt.Sprintf(i18n.T("Кнопка «%s» теперь всегда под полем ввода 👇"), tgbot.CabinetButtonLabel()), tgbot.MainReplyKeyboard()); err != nil {
-						logger.Error("send reply keyboard failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
-					}
-					continue
-				}
-				if pay.HandleBlockedRegistrationMessage(ctx, u.Message) {
-					continue
-				}
-				if text == "/me" || text == "/cabinet" || tgbot.IsCabinetButton(text) {
-					if pay.SendCabinet(ctx, u.Message.Chat.ID) {
-						continue
-					}
-				}
-				switch text {
-				case "/menu", "/help":
-					pay.SendMenu(ctx, u.Message.Chat.ID)
-					continue
-				case "/devices":
-					if pay.SendDevices(ctx, u.Message.Chat.ID) {
-						continue
-					}
-				case "/tariff":
-					pay.SendTariffs(ctx, u.Message.Chat.ID)
-					continue
-				case "/gift":
-					if pay.StartGiftCodeFlow(ctx, u.Message) {
-						continue
-					}
-				case "/mygifts":
-					pay.SendMyGifts(ctx, u.Message.Chat.ID)
-					continue
-				case "/invite":
-					if pay.StartInviteFlow(ctx, u.Message) {
-						continue
-					}
-				case "/register":
-					if pay.StartRegisterFlow(ctx, u.Message) {
-						continue
-					}
-				case "/trial":
-					if pay.StartTrialFlow(ctx, u.Message) {
-						continue
-					}
-				case "/support":
-					if pay.StartSupport(ctx, u.Message.Chat.ID) {
-						continue
-					}
-				}
-				if pay.HandleText(ctx, u.Message) {
-					continue
-				}
-				if pay.HandleAdminCommand(ctx, u.Message) {
-					continue
-				}
+			return
+		}
+		if pay.HandleBlockedRegistrationMessage(ctx, u.Message) {
+			return
+		}
+		if text == "/me" || text == "/cabinet" || tgbot.IsCabinetButton(text) {
+			if pay.SendCabinet(ctx, u.Message.Chat.ID) {
+				return
 			}
+		}
+		switch text {
+		case "/menu", "/help":
+			pay.SendMenu(ctx, u.Message.Chat.ID)
+			return
+		case "/devices":
+			if pay.SendDevices(ctx, u.Message.Chat.ID) {
+				return
+			}
+		case "/tariff":
+			pay.SendTariffs(ctx, u.Message.Chat.ID)
+			return
+		case "/gift":
+			if pay.StartGiftCodeFlow(ctx, u.Message) {
+				return
+			}
+		case "/mygifts":
+			pay.SendMyGifts(ctx, u.Message.Chat.ID)
+			return
+		case "/invite":
+			if pay.StartInviteFlow(ctx, u.Message) {
+				return
+			}
+		case "/register":
+			if pay.StartRegisterFlow(ctx, u.Message) {
+				return
+			}
+		case "/trial":
+			if pay.StartTrialFlow(ctx, u.Message) {
+				return
+			}
+		case "/support":
+			if pay.StartSupport(ctx, u.Message.Chat.ID) {
+				return
+			}
+		}
+		if pay.HandleText(ctx, u.Message) {
+			return
+		}
+		if pay.HandleAdminCommand(ctx, u.Message) {
+			return
 		}
 	}
 }
