@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -62,14 +63,32 @@ type fakeBot struct {
 	// invoiceErr makes SendInvoice / CreateInvoiceLink fail when set.
 	invoiceErr error
 	plainSent  chan sentMsg
+	// beforeSend runs before each SendPlain records anything, so a test can hold
+	// a background send open and observe the caller in the meantime.
+	beforeSend func(chatID int64)
+	// mu guards the recorded sends: the broadcast runs detached from its caller.
+	mu sync.Mutex
+}
+
+// sentCount reports how many messages have been recorded so far; safe to call
+// while a background send is in flight.
+func (f *fakeBot) sentCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.sent)
 }
 
 func (f *fakeBot) SendPlain(_ context.Context, chatID int64, text string) error {
+	if f.beforeSend != nil {
+		f.beforeSend(chatID)
+	}
 	if err := f.sendErrs[chatID]; err != nil {
 		return err
 	}
 	msg := sentMsg{ChatID: chatID, Text: text}
+	f.mu.Lock()
 	f.sent = append(f.sent, msg)
+	f.mu.Unlock()
 	if f.plainSent != nil {
 		f.plainSent <- msg
 	}

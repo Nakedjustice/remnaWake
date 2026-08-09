@@ -551,7 +551,7 @@ func (f *fakeAdmin) AdminBroadcast(_ context.Context, tgID int64, text string) (
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &payments.WebBroadcastResult{Sent: 3, Failed: 1}, nil
+	return &payments.WebBroadcastResult{Started: true}, nil
 }
 
 func (f *fakeAdmin) AdminListInfraServers(_ context.Context, tgID int64) ([]payments.WebInfraServer, error) {
@@ -1540,7 +1540,7 @@ func TestHandleAdminListUsers(t *testing.T) {
 	}
 }
 
-func TestHandleAdminBroadcastReturnsCounts(t *testing.T) {
+func TestHandleAdminBroadcastReportsAccepted(t *testing.T) {
 	srv := newTestServerWithAdmin(&fakeCabinet{}, &fakeAdmin{})
 
 	req := httptest.NewRequest("POST", "/api/admin/broadcast", strings.NewReader(`{"message":"hello"}`))
@@ -1551,15 +1551,29 @@ func TestHandleAdminBroadcastReturnsCounts(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 	var got struct {
-		OK     bool `json:"ok"`
-		Sent   int  `json:"sent"`
-		Failed int  `json:"failed"`
+		OK      bool `json:"ok"`
+		Started bool `json:"started"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !got.OK || got.Sent != 3 || got.Failed != 1 {
+	if !got.OK || !got.Started {
 		t.Fatalf("unexpected payload: %+v", got)
+	}
+}
+
+// TestHandleAdminBroadcastConflict pins the new sentinel to a 409 so the mini
+// app can tell "already running" apart from a real failure.
+func TestHandleAdminBroadcastConflict(t *testing.T) {
+	adm := &fakeAdmin{err: payments.ErrBroadcastInProgress}
+	srv := newTestServerWithAdmin(&fakeCabinet{}, adm)
+
+	req := httptest.NewRequest("POST", "/api/admin/broadcast", strings.NewReader(`{"message":"hello"}`))
+	req.Header.Set("Authorization", validAuth(t))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body=%s", w.Code, w.Body.String())
 	}
 }
 

@@ -892,15 +892,15 @@ func (s *Service) AdminUpdateUser(ctx context.Context, telegramID int64, req Web
 	return s.updateUser(ctx, req.RemnawaveID, patch, "webadmin")
 }
 
-// WebBroadcastResult reports broadcast delivery counts to the mini app.
+// WebBroadcastResult tells the mini app the broadcast was accepted. Counts do
+// not come back on the response: the run takes minutes, so it is reported to
+// the admin's chat when it finishes, exactly as the bot flow does.
 type WebBroadcastResult struct {
-	Sent   int `json:"sent"`
-	Failed int `json:"failed"`
+	Started bool `json:"started"`
 }
 
-// AdminBroadcast sends text to every panel user with a linked Telegram ID
-// from the mini app admin panel. Runs synchronously: the HTTP caller waits
-// and gets delivery counts back.
+// AdminBroadcast starts a broadcast to every panel user with a linked Telegram
+// ID from the mini app admin panel and returns immediately.
 func (s *Service) AdminBroadcast(ctx context.Context, telegramID int64, text string) (*WebBroadcastResult, error) {
 	if err := s.adminGuard(telegramID); err != nil {
 		return nil, err
@@ -909,11 +909,19 @@ func (s *Service) AdminBroadcast(ctx context.Context, telegramID int64, text str
 	if text == "" {
 		return nil, ErrBadInput
 	}
-	sent, failed, err := s.broadcastMessage(ctx, text)
+	err := s.startBroadcast(ctx, text, func(ctx context.Context, sent, failed int, err error) {
+		if err != nil {
+			s.logger.Error("broadcast: list users failed", "err", err.Error())
+			_ = s.bot.SendPlain(ctx, telegramID, i18n.T("Ошибка получения списка пользователей, рассылка не выполнена."))
+			return
+		}
+		_ = s.bot.SendPlain(ctx, telegramID,
+			fmt.Sprintf(i18n.T("Рассылка завершена: отправлено %d, ошибок %d."), sent, failed))
+	})
 	if err != nil {
-		return nil, fmt.Errorf("list users: %w", err)
+		return nil, err
 	}
-	return &WebBroadcastResult{Sent: sent, Failed: failed}, nil
+	return &WebBroadcastResult{Started: true}, nil
 }
 
 // AdminRevokeGiftCode revokes an issued gift code from the mini app admin

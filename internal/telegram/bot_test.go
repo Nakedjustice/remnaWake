@@ -340,3 +340,26 @@ func TestSetMyCommandsForChatSendsCorrectScope(t *testing.T) {
 		t.Fatalf("chat_id = %v", scope["chat_id"])
 	}
 }
+
+// TestLongPollSurvivesAShortHTTPTimeout pins the split between the two clients:
+// getUpdates holds a request open for LongPollSeconds, so it cannot share the
+// HTTP_TIMEOUT budget sized for ordinary API calls. Before the split, an
+// operator setting HTTP_TIMEOUT below the poll timeout broke polling outright.
+func TestLongPollSurvivesAShortHTTPTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(150 * time.Millisecond) // longer than the API timeout below
+		_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
+	}))
+	defer srv.Close()
+
+	b := NewBot("token", "HTML", 20*time.Millisecond)
+	b.apiBase = srv.URL
+	if _, err := b.GetUpdates(context.Background(), 0, LongPollSeconds); err != nil {
+		t.Fatalf("GetUpdates: %v", err)
+	}
+
+	// Ordinary sends keep the short budget.
+	if err := b.SendPlain(context.Background(), 1, "hi"); err == nil {
+		t.Fatal("send should still honour the configured HTTP timeout")
+	}
+}
