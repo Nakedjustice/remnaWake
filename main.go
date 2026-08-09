@@ -67,7 +67,7 @@ func main() {
 	}
 	defer db.Close()
 
-	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwUpdater{rwClient}, rwFinder{rwClient}, rwRegistrar{rwClient}, rwCreator{rwClient}, cfg.Telegram.AdminIDs, cfg.Currency, cfg.DryRun, logger)
+	pay := payments.New(db, bot, rwClient, rwCreator{rwClient}, rwUpdater{rwClient}, newRWFinder(rwClient), rwRegistrar{rwClient}, rwCreator{rwClient}, cfg.Telegram.AdminIDs, cfg.Currency, cfg.DryRun, logger)
 	// Live FX rates power infrastructure-cost conversion; best-effort, with
 	// admin-entered manual rates as the fallback when the source is unreachable.
 	pay.SetForex(forex.NewClient())
@@ -410,7 +410,18 @@ func userBotCommands() []tgbot.BotCommand {
 }
 
 // rwFinder adapts *remnawave.Client to payments.Finder, converting User -> Subscriber.
-type rwFinder struct{ c *remnawave.Client }
+// ListAll goes through a short-lived snapshot; the single-user lookups always
+// hit the panel, because they back flows that act on what they read.
+type rwFinder struct {
+	c     *remnawave.Client
+	users *panelUserCache
+}
+
+func newRWFinder(c *remnawave.Client) rwFinder {
+	f := rwFinder{c: c}
+	f.users = newPanelUserCache(f.listAllFromPanel, panelUserCacheTTL)
+	return f
+}
 
 func (f rwFinder) FindByTelegramID(ctx context.Context, telegramID int64) ([]payments.Subscriber, error) {
 	us, err := f.c.GetUserByTelegramID(ctx, telegramID)
@@ -449,6 +460,10 @@ func (f rwFinder) FindByShortUUID(ctx context.Context, shortUUID string) (*payme
 }
 
 func (f rwFinder) ListAll(ctx context.Context) ([]payments.Subscriber, error) {
+	return f.users.list(ctx)
+}
+
+func (f rwFinder) listAllFromPanel(ctx context.Context) ([]payments.Subscriber, error) {
 	us, err := f.c.GetUsers(ctx)
 	if err != nil {
 		return nil, err
