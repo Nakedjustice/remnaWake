@@ -98,6 +98,8 @@ func (f *fakeBot) SendPlainWithKeyboard(_ context.Context, chatID int64, text st
 	if err := f.sendErrs[chatID]; err != nil {
 		return 0, err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.msgIDSeq++
 	f.sent = append(f.sent, sentMsg{ChatID: chatID, Text: text, Keyboard: kb, MsgID: f.msgIDSeq})
 	return f.msgIDSeq, nil
@@ -109,6 +111,8 @@ func (f *fakeBot) SendPhoto(_ context.Context, chatID int64, fileID, caption str
 	if err := f.sendErrs[chatID]; err != nil {
 		return 0, err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.msgIDSeq++
 	f.photos = append(f.photos, sentPhoto{ChatID: chatID, FileID: fileID, Caption: caption, Keyboard: kb, MsgID: f.msgIDSeq})
 	return f.msgIDSeq, nil
@@ -117,6 +121,8 @@ func (f *fakeBot) SendDocument(_ context.Context, chatID int64, fileID, caption 
 	if err := f.sendErrs[chatID]; err != nil {
 		return 0, err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.msgIDSeq++
 	f.docs = append(f.docs, sentPhoto{ChatID: chatID, FileID: fileID, Caption: caption, Keyboard: kb, MsgID: f.msgIDSeq})
 	return f.msgIDSeq, nil
@@ -125,6 +131,8 @@ func (f *fakeBot) SendPhotoUpload(_ context.Context, chatID int64, _ string, _ [
 	if err := f.sendErrs[chatID]; err != nil {
 		return 0, "", err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.msgIDSeq++
 	f.photoUploads++
 	fileID := "uploaded-photo-id"
@@ -135,6 +143,8 @@ func (f *fakeBot) SendDocumentUpload(_ context.Context, chatID int64, filename s
 	if err := f.sendErrs[chatID]; err != nil {
 		return 0, "", err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.msgIDSeq++
 	f.documentUploads++
 	f.docUploadNames = append(f.docUploadNames, filename)
@@ -144,14 +154,20 @@ func (f *fakeBot) SendDocumentUpload(_ context.Context, chatID int64, filename s
 	return f.msgIDSeq, fileID, nil
 }
 func (f *fakeBot) AnswerCallbackQuery(_ context.Context, _ string, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.answers = append(f.answers, text)
 	return nil
 }
 func (f *fakeBot) EditMessageReplyMarkup(_ context.Context, chatID, messageID int64, kb *tg.InlineKeyboardMarkup) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.edits = append(f.edits, editCall{ChatID: chatID, MessageID: messageID, Keyboard: kb})
 	return nil
 }
 func (f *fakeBot) EditMessageText(_ context.Context, chatID, messageID int64, text string, kb *tg.InlineKeyboardMarkup) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.edits = append(f.edits, editCall{ChatID: chatID, MessageID: messageID, Text: text, Keyboard: kb})
 	return nil
 }
@@ -159,6 +175,8 @@ func (f *fakeBot) SendInvoice(_ context.Context, chatID int64, title, _, payload
 	if f.invoiceErr != nil {
 		return 0, f.invoiceErr
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.msgIDSeq++
 	f.invoices = append(f.invoices, sentInvoice{ChatID: chatID, Title: title, Payload: payload, Prices: prices, MsgID: f.msgIDSeq})
 	return f.msgIDSeq, nil
@@ -167,10 +185,14 @@ func (f *fakeBot) CreateInvoiceLink(_ context.Context, title, _, payload string,
 	if f.invoiceErr != nil {
 		return "", f.invoiceErr
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.invoiceLinks = append(f.invoiceLinks, sentInvoice{Title: title, Payload: payload, Prices: prices})
 	return "https://t.me/invoice/" + payload, nil
 }
 func (f *fakeBot) AnswerPreCheckoutQuery(_ context.Context, _ string, ok bool, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.precheckoutAck = append(f.precheckoutAck, ok)
 	return nil
 }
