@@ -572,7 +572,7 @@ docker compose restart caddy    # in your caddy directory
 | `TZ`                   | no       | `Europe/Moscow`  | IANA timezone                                                |
 | `RUN_AT`               | no       | `09:00`          | Local time of the daily run (`HH:MM`)                        |
 | `LOG_LEVEL`            | no       | `info`           | `debug` / `info` / `warn` / `error`                          |
-| `HTTP_TIMEOUT`         | no       | `15s`            | HTTP request timeout (Go duration)                           |
+| `HTTP_TIMEOUT`         | no       | `15s`            | HTTP request timeout for panel and Bot API calls (Go duration). Telegram long polling has its own budget and is unaffected. |
 | `DRY_RUN`              | no       | `false`          | Log instead of sending to Telegram                           |
 | `RUN_ON_START`         | no       | `true`           | Run the job on start; reminders are still only sent within the `RUN_AT` hour |
 | `DB_PATH`              | no       | `/data/bot.db`   | SQLite database file path                                    |

@@ -692,3 +692,21 @@ func TestDeleteHwidDeviceNotFound(t *testing.T) {
 		t.Fatalf("err = %v, want ErrHwidDeviceNotFound", err)
 	}
 }
+
+// TestPanelClientKeepsConnectionsWarm guards against falling back to
+// http.DefaultTransport, whose MaxIdleConnsPerHost of 2 forces a fresh TCP+TLS
+// handshake per concurrent panel call once the bot handles updates in parallel.
+func TestPanelClientKeepsConnectionsWarm(t *testing.T) {
+	c, err := NewClient("https://panel.example", "token", time.Second)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	tr, ok := c.http.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T, want a configured *http.Transport", c.http.Transport)
+	}
+	if tr.MaxIdleConnsPerHost <= http.DefaultMaxIdleConnsPerHost {
+		t.Fatalf("MaxIdleConnsPerHost = %d, want more than the default %d",
+			tr.MaxIdleConnsPerHost, http.DefaultMaxIdleConnsPerHost)
+	}
+}

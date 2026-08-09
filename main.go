@@ -248,7 +248,7 @@ func pollTelegramCallbacks(ctx context.Context, bot *tgbot.Bot, pay *payments.Se
 		default:
 		}
 
-		updates, err := bot.GetUpdates(ctx, offset, 10)
+		updates, err := bot.GetUpdates(ctx, offset, tgbot.LongPollSeconds)
 		if err != nil {
 			if ctx.Err() != nil {
 				return

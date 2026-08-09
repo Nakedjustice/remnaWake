@@ -570,7 +570,7 @@ docker compose restart caddy    # в каталоге caddy
 | `TZ`                     | нет         | `Europe/Moscow`   | IANA-таймзона                                                    |
 | `RUN_AT`                 | нет         | `09:00`           | Локальное время ежедневного запуска (`HH:MM`)                    |
 | `LOG_LEVEL`              | нет         | `info`            | `debug` / `info` / `warn` / `error`                              |
-| `HTTP_TIMEOUT`           | нет         | `15s`             | Таймаут HTTP-запросов (Go duration)                              |
+| `HTTP_TIMEOUT`           | нет         | `15s`             | Таймаут HTTP-запросов к панели и Bot API (Go duration). На long polling Telegram не влияет — у него свой бюджет. |
 | `DRY_RUN`                | нет         | `false`           | Писать в лог, не отправлять в Telegram                           |
 | `RUN_ON_START`           | нет         | `true`            | Выполнить задачу при старте; напоминания всё равно шлются только в течение часа `RUN_AT` |
 | `DB_PATH`                | нет         | `/data/bot.db`    | Путь к файлу базы данных SQLite                                  |
