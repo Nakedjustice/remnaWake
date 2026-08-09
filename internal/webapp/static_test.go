@@ -124,3 +124,24 @@ func TestSmallJSONResponsesAreNotCompressed(t *testing.T) {
 		t.Fatalf("body = %q, want JSON", w.Body.String())
 	}
 }
+
+// TestHTTPServerBoundsSlowConnections pins the timeouts an exposed server needs:
+// a request body and an idle keep-alive must not be able to hold a connection
+// open indefinitely.
+func TestHTTPServerBoundsSlowConnections(t *testing.T) {
+	srv := newTestServer(&fakeCabinet{}).newHTTPServer(":0")
+	if srv.ReadHeaderTimeout == 0 {
+		t.Fatal("ReadHeaderTimeout unset")
+	}
+	if srv.ReadTimeout == 0 {
+		t.Fatal("ReadTimeout unset: a slow body can hold a connection forever")
+	}
+	if srv.IdleTimeout == 0 {
+		t.Fatal("IdleTimeout unset: closed mini apps leak keep-alive connections")
+	}
+	// The admin backup streams the database inside its request; a WriteTimeout
+	// would cut it off mid-upload.
+	if srv.WriteTimeout != 0 {
+		t.Fatalf("WriteTimeout = %v, want none so the backup download survives", srv.WriteTimeout)
+	}
+}

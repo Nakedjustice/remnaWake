@@ -881,7 +881,6 @@ const EN = {
   '📢 Отправить всем': '📢 Send to all',
   'Текст рассылки не может быть пустым.': 'Broadcast text cannot be empty.',
   'Отправить сообщение всем пользователям?': 'Send the message to all users?',
-  'Рассылка завершена: отправлено {sent}, ошибок {failed}.': 'Broadcast finished: sent {sent}, failed {failed}.',
   '🎁 Активные подарочные коды': '🎁 Active gift codes',
   'Активных подарочных кодов нет.': 'No active gift codes.',
   'от {buyer} ({date})': 'from {buyer} ({date})',
@@ -997,6 +996,7 @@ const EN = {
   'Тарифы и оплата': 'Tariffs and payment',
   '🛠 Управление': '🛠 Management',
   'Настройки, пользователи, подарочные коды и рассылка.': 'Settings, users, gift codes and broadcast.',
+  'Рассылка запущена. Отчёт придёт в чат с ботом, когда она завершится.': 'Broadcast started. The report will arrive in the bot chat when it finishes.',
   '⚙️ Настройки': '⚙️ Settings',
   '🔄 Сброс трафика (новые)': '🔄 Traffic reset (new users)',
   'Стратегия сброса трафика, применяемая к вновь создаваемым пользователям.': 'Traffic-reset strategy applied to newly created users.',
@@ -3396,7 +3396,7 @@ function renderAdminBroadcast() {
           body: JSON.stringify({ message: text.value }),
         }));
       text.value = '';
-      tg.showAlert(t('Рассылка завершена: отправлено {sent}, ошибок {failed}.', { sent: res.sent, failed: res.failed }));
+      tg.showAlert(t('Рассылка запущена. Отчёт придёт в чат с ботом, когда она завершится.'));
     } catch (e) { tg.showAlert(e.message); }
   };
   card.appendChild(send);

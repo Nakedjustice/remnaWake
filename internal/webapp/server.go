@@ -259,11 +259,7 @@ func (s *Server) Handler() http.Handler {
 
 // Run serves the mini app on addr until ctx is cancelled.
 func (s *Server) Run(ctx context.Context, addr string) error {
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           s.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	srv := s.newHTTPServer(addr)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -276,6 +272,23 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 		return nil
 	}
 	return err
+}
+
+// newHTTPServer builds the mini app's HTTP server.
+//
+// ReadTimeout is generous because /api/receipt carries a photo from a phone on
+// mobile data. IdleTimeout bounds keep-alive connections that a closed mini app
+// leaves behind. There is deliberately no WriteTimeout: the admin backup
+// download streams the whole database to Telegram inside its request, and no
+// fixed cap fits both that and an ordinary JSON reply.
+func (s *Server) newHTTPServer(addr string) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           s.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 }
 
 // authenticateUser extracts and validates the Telegram identity from initData
@@ -761,6 +774,8 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 		writeJSONError(w, http.StatusConflict, "обращение уже закрыто")
 	case errors.Is(err, payments.ErrRequestResolved):
 		writeJSONError(w, http.StatusConflict, "уже обработано")
+	case errors.Is(err, payments.ErrBroadcastInProgress):
+		writeJSONError(w, http.StatusConflict, "рассылка уже выполняется")
 	case errors.Is(err, payments.ErrRegistrationGuardPatternExists):
 		writeJSONError(w, http.StatusConflict, "паттерн уже добавлен")
 	case errors.Is(err, payments.ErrBackupDryRun):
@@ -1507,7 +1522,7 @@ func (s *Server) handleAdminBroadcast(w http.ResponseWriter, r *http.Request) {
 		s.writeAdminError(w, "broadcast", userID, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sent": res.Sent, "failed": res.Failed})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "started": res.Started})
 }
 
 // adminIDAction builds a handler for admin mutations whose body is a single

@@ -1212,11 +1212,9 @@ func (s *Service) handleBroadcastSend(ctx context.Context, chatID int64, cb *tg.
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Нет текста для рассылки. Начните заново через меню."))
 		return
 	}
-	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Рассылка запущена…"))
 	// The update loop is sequential; a large broadcast paced at ~20 msg/s would
 	// block the bot for the whole run, so send in the background and report.
-	go func() {
-		sent, failed, err := s.broadcastMessage(ctx, text)
+	err := s.startBroadcast(ctx, text, func(ctx context.Context, sent, failed int, err error) {
 		if err != nil {
 			s.logger.Error("broadcast: list users failed", "err", err.Error())
 			_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка получения списка пользователей, рассылка не выполнена."))
@@ -1224,7 +1222,12 @@ func (s *Service) handleBroadcastSend(ctx context.Context, chatID int64, cb *tg.
 		}
 		_ = s.bot.SendPlain(ctx, chatID,
 			fmt.Sprintf(i18n.T("Рассылка завершена: отправлено %d, ошибок %d."), sent, failed))
-	}()
+	})
+	if errors.Is(err, ErrBroadcastInProgress) {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Рассылка уже выполняется. Дождитесь её завершения."))
+		return
+	}
+	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Рассылка запущена…"))
 }
 
 func (s *Service) handleBroadcastCancel(ctx context.Context, chatID int64, cb *tg.CallbackQuery) {
