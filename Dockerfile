@@ -12,7 +12,7 @@ RUN go build -ldflags="-s -w" -o /out/bot .
 RUN mkdir -p /data
 
 # runtime stage
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 WORKDIR /app
 COPY --from=build /out/bot /app/bot
 # Pre-create a nonroot-owned /data so the mounted named volume inherits
