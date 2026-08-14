@@ -340,19 +340,29 @@ newer `AUTOUPDATE_IMAGE` and DMs every admin when one is published, with
 `AUTOUPDATE_CHECK_INTERVAL`, default `6h`).
 
 Because the bot runs as a distroless, unprivileged container, **one-tap
-install** is delegated to a [Watchtower](https://containrrr.dev/watchtower/)
-sidecar in HTTP-API trigger-only mode. `install.sh configure` can generate the
+install** is delegated to a
+[Watchtower](https://github.com/nicholas-fedor/watchtower) sidecar in HTTP-API
+trigger-only mode. `install.sh configure` can generate the
 Watchtower service in `docker-compose.override.yml`, set
 `AUTOUPDATE_ENABLED=true`, `WATCHTOWER_URL=http://watchtower:8080` and create a
-shared `WATCHTOWER_TOKEN`. The bot calls Watchtower's `/v1/update` on
+shared `WATCHTOWER_TOKEN`. The bot POSTs to Watchtower's `/v1/update` on
 **Install now**; only Watchtower holds the Docker socket. With `WATCHTOWER_URL`
 empty the feature is notify-only and shows the manual
 `docker compose pull && docker compose up -d` command.
 
-The generated Watchtower service uses `containrrr/watchtower:latest` with
-`pull_policy: always` and `DOCKER_API_VERSION=1.40`. If an older install logs
-`client version 1.25 is too old`, rerun `./install.sh configure`, or refresh the
-sidecar with `docker compose pull watchtower` and `docker compose up -d watchtower`.
+The generated Watchtower service uses `nickfedor/watchtower:latest` with
+`pull_policy: always`. The original `containrrr/watchtower` image was archived
+by its authors in December 2025 and no longer works against current Docker
+daemons, so installs are generated against the maintained fork; it reads the
+same `WATCHTOWER_HTTP_API_*` variables and serves the same `/v1/update`
+endpoint. `DOCKER_API_VERSION` is deliberately left unset so Watchtower
+negotiates the API version with whatever daemon the host runs — pinning it is
+what stranded the old sidecar on new daemons.
+
+**Existing installs must migrate:** `./install.sh doctor` warns when the
+override still pins `containrrr/watchtower` or a `DOCKER_API_VERSION`. Rerun
+`./install.sh configure` to regenerate the sidecar, then
+`docker compose up -d watchtower`.
 
 ## 🩺 Xray Checker proxy monitoring (optional)
 

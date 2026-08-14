@@ -32,9 +32,12 @@ func TestInstallScriptV2Contract(t *testing.T) {
 		"REFERRAL_ENABLED=$REFERRAL_ENABLED",
 		`AUTOUPDATE_IMAGE="$(env_default AUTOUPDATE_IMAGE "$DEFAULT_DEPLOY_IMAGE")"`,
 		"docker-compose.override.yml",
-		"containrrr/watchtower:latest",
+		// The archived containrrr image was replaced by the maintained fork;
+		// the Docker API version is deliberately left unpinned so Watchtower
+		// negotiates it with whatever daemon the host runs.
+		"nickfedor/watchtower:latest",
 		"pull_policy: always",
-		`DOCKER_API_VERSION: "1.40"`,
+		"unset so Watchtower negotiates with the daemon",
 		`service_image "$OVERRIDE_FILE" bot`,
 		// The panel-version requirement must reach the operator both while
 		// entering the panel URL and when diagnosing an existing install.
@@ -79,10 +82,11 @@ func TestInstallSmokeScriptCoversSelectedPortAndUpdate(t *testing.T) {
 		"bash \"$ROOT/install.sh\" update",
 		"bash \"$ROOT/install.sh\" restore",
 		"bot.db.pre-restore.",
-		"image: containrrr/watchtower:latest",
+		"image: nickfedor/watchtower:latest",
 		"pull_policy: always",
-		`DOCKER_API_VERSION: "1.40"`,
-		"! grep -q 'containrrr/watchtower'",
+		`! grep -q 'DOCKER_API_VERSION'`,
+		"image: containrrr/watchtower:latest",
+		"! grep -q 'nickfedor/watchtower'",
 		"^XRAY_CHECKER_PUBLIC_URL=https://bot.example.com/checker/$",
 		`METRICS_BASE_PATH: "${XRAY_CHECKER_BASE_PATH}"`,
 		"127.0.0.1:2112:2112",
