@@ -1,6 +1,6 @@
 module github.com/Nakedjustice/remnaWake
 
-go 1.25.11
+go 1.26.6
 
 require (
 	github.com/go-co-op/gocron/v2 v2.21.2
