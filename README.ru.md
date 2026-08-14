@@ -344,19 +344,27 @@ Mini App не заблокирует человека снова. Имена п�
 
 Поскольку бот работает как distroless-контейнер без привилегий, **установка в
 один тап** делегируется sidecar-контейнеру
-[Watchtower](https://containrrr.dev/watchtower/) в режиме HTTP-API по триггеру.
+[Watchtower](https://github.com/nicholas-fedor/watchtower) в режиме HTTP-API по
+триггеру.
 `install.sh configure` может сгенерировать сервис Watchtower в
 `docker-compose.override.yml`, задать `AUTOUPDATE_ENABLED=true`,
 `WATCHTOWER_URL=http://watchtower:8080` и создать общий `WATCHTOWER_TOKEN`. По
-кнопке **Установить сейчас** бот вызывает `/v1/update` Watchtower; доступ к
+кнопке **Установить сейчас** бот шлёт POST на `/v1/update` Watchtower; доступ к
 Docker-сокету есть только у Watchtower. Если `WATCHTOWER_URL` пустой — режим
 «только уведомления» с командой `docker compose pull && docker compose up -d`.
 
-Сгенерированный сервис Watchtower использует `containrrr/watchtower:latest`,
-`pull_policy: always` и `DOCKER_API_VERSION=1.40`. Если старая установка пишет
-`client version 1.25 is too old`, заново запустите `./install.sh configure` или
-один раз обновите sidecar командой `docker compose pull watchtower`, затем
-`docker compose up -d watchtower`.
+Сгенерированный сервис Watchtower использует `nickfedor/watchtower:latest` и
+`pull_policy: always`. Исходный образ `containrrr/watchtower` заархивирован
+авторами в декабре 2025 года и больше не работает с актуальными демонами
+Docker, поэтому установки генерируются на поддерживаемом форке: он читает те же
+переменные `WATCHTOWER_HTTP_API_*` и отдаёт тот же эндпоинт `/v1/update`.
+`DOCKER_API_VERSION` намеренно не задаётся — Watchtower сам согласует версию API
+с демоном на хосте; именно закреплённая версия и оставила старый sidecar позади
+новых демонов.
+
+**Существующие установки нужно перевести:** `./install.sh doctor` предупредит,
+если в override всё ещё прописан `containrrr/watchtower` или `DOCKER_API_VERSION`.
+Заново запустите `./install.sh configure`, затем `docker compose up -d watchtower`.
 
 ## 🩺 Мониторинг прокси Xray Checker (опционально)
 

@@ -1,5 +1,5 @@
 # build stage
-FROM golang:1.25.11-alpine AS build
+FROM golang:1.26.6-alpine AS build
 WORKDIR /src
 
 ENV CGO_ENABLED=0 GOOS=linux
@@ -12,7 +12,7 @@ RUN go build -ldflags="-s -w" -o /out/bot .
 RUN mkdir -p /data
 
 # runtime stage
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 WORKDIR /app
 COPY --from=build /out/bot /app/bot
 # Pre-create a nonroot-owned /data so the mounted named volume inherits
