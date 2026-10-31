@@ -194,8 +194,8 @@ func (s *Store) GetPaymentRequestByProviderTxn(ctx context.Context, txnID string
 }
 
 // LatestConfirmedPaymentRequestByUser returns the most recent confirmed
-// payment for a panel user. It is used as the local source of truth for the
-// currently paid plan when prorating an upgrade.
+// subscription payment for a panel user. Traffic extensions do not change the
+// current plan and must not hide the purchase used for plan-change calculations.
 func (s *Store) LatestConfirmedPaymentRequestByUser(ctx context.Context, remnawaveID int64) (*PaymentRequest, error) {
 	if remnawaveID == 0 {
 		return nil, nil
@@ -211,10 +211,10 @@ func (s *Store) LatestConfirmedPaymentRequestByUser(ctx context.Context, remnawa
 			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
 			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan
 		FROM payment_requests
-		WHERE remnawave_user_id = ? AND status = 'confirmed'
+		WHERE remnawave_user_id = ? AND status = 'confirmed' AND kind = ?
 		ORDER BY confirmed_at DESC, id DESC
 		LIMIT 1
-	`, remnawaveID).Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID, &r.Months,
+	`, remnawaveID, PaymentKindSubscription).Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID, &r.Months,
 		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
 		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -109,8 +109,9 @@ Enabled only when `TELEGRAM_ADMIN_ID` is set:
    expensive plan, remaining active time is prorated by the old/new monthly
    price ratio before the purchased months are added.
    Plan changes require an extra user confirmation first: upgrades show the
-   recalculated expiry, while downgrades warn that time is not recalculated and
-   the new limits apply immediately after payment confirmation.
+   recalculated expiry, while downgrades warn that time is not recalculated.
+   After payment confirmation, the new limits apply immediately and current
+   traffic usage resets to zero.
 
 Prices are **informational** — the bot does not process money in P2P mode; the
 user pays you externally and you confirm manually.
@@ -216,8 +217,9 @@ Tariffs and payment state are stored in SQLite (`DB_PATH`, default
 revoke codes or manage tariffs; payment confirmation is idempotent; same-plan
 new expiry = `max(now, current expiry) + chosen months`, while upgrades to a
 more expensive plan first prorate existing active time by price so cheap months
-cannot become full-price months; downgrades do not recalculate existing time and
-apply the cheaper plan limits immediately after payment confirmation.
+cannot become full-price months; downgrades do not recalculate existing time,
+apply the cheaper plan limits immediately after payment confirmation, and reset
+current traffic usage to zero.
 
 ## 🎁 Gifting (`/gift`)
 

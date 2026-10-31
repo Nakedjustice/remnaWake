@@ -229,6 +229,23 @@ func TestLatestConfirmedPaymentRequestByUser(t *testing.T) {
 	if got.ID != latest || got.Plan != "basic" || got.Price != 300 || got.Months != 3 {
 		t.Fatalf("unexpected latest request: %+v", got)
 	}
+	trafficID, err := st.CreateTrafficExtensionPaymentRequest(ctx, PaymentRequest{
+		RemnawaveID: 42, Username: "alice", TelegramID: 999,
+		Price: 50, ExpireAt: exp, TrafficGB: 50, ExtraTrafficBytes: 50,
+	}, time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("create traffic extension: %v", err)
+	}
+	if ok, err := st.ConfirmTrafficExtensionRequest(ctx, trafficID,
+		time.Date(2026, 6, 4, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)); err != nil || !ok {
+		t.Fatalf("confirm traffic extension: ok=%v err=%v", ok, err)
+	}
+	got, err = st.LatestConfirmedPaymentRequestByUser(ctx, 42)
+	if err != nil || got == nil || got.ID != latest {
+		t.Fatalf("traffic extension hid latest subscription: got %+v, want id %d, err=%v", got, latest, err)
+	}
+
 	if missing, err := st.LatestConfirmedPaymentRequestByUser(ctx, 12345); err != nil || missing != nil {
 		t.Fatalf("missing latest: %+v err=%v", missing, err)
 	}

@@ -93,9 +93,11 @@ type UserPatch struct {
 	Tag *string
 }
 
-// UserUpdater patches the manageable fields of an existing panel user.
+// UserUpdater patches the manageable fields of an existing panel user and
+// resets its current traffic usage when a confirmed plan change requires it.
 type UserUpdater interface {
 	UpdateUser(ctx context.Context, userID int64, patch UserPatch) error
+	ResetUserTraffic(ctx context.Context, userID int64) error
 }
 
 // TrafficResetStrategies is the canonical set of valid traffic-reset strategies.
@@ -316,9 +318,9 @@ type Service struct {
 	backupEnabled      bool
 	backupIntervalDays int
 
-	finder    Finder
-	squads    SquadLister
-	mu        sync.Mutex
+	finder Finder
+	squads SquadLister
+	mu     sync.Mutex
 	// broadcasting is set while a broadcast run is in flight; both transports
 	// start one detached and would otherwise happily start a second.
 	broadcasting bool
@@ -326,11 +328,11 @@ type Service struct {
 	// test (and, later, a graceful shutdown) can wait for it.
 	background sync.WaitGroup
 	invites    map[int64]*inviteState
-	registers map[int64]*registerState
-	giftCodes map[int64]*giftCodeState
-	redeems   map[int64]*redeemState
-	payPhotos map[int64]*payPhotoState
-	userCtl   map[int64]*userCtlState // protected by mu; admin "Manage user" target
+	registers  map[int64]*registerState
+	giftCodes  map[int64]*giftCodeState
+	redeems    map[int64]*redeemState
+	payPhotos  map[int64]*payPhotoState
+	userCtl    map[int64]*userCtlState // protected by mu; admin "Manage user" target
 
 	// supportSessions tracks users who are in /support typing mode in the bot:
 	// while set, their plain text is routed to the support conversation. The

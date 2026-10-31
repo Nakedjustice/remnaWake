@@ -1,0 +1,26 @@
+# Version control and agent metadata
+.git/
+.github/
+.claude/
+.codex/
+
+# Local tools and editor state
+.cache/
+.idea/
+.vscode/
+
+# Secrets and local configuration
+.env
+.env.*
+
+# Build artifacts and local data
+/bot
+/bin/
+/botdata/
+/data/
+*.db
+*.db-shm
+*.db-wal
+*.out
+*.zip
+*.log

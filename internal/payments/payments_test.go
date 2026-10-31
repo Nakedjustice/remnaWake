@@ -263,10 +263,12 @@ func (f *fakeCreator) CreateUser(_ context.Context, spec CreateUserSpec) (*Creat
 // so extension assertions and panel-failure simulation keep working against
 // the extender fake regardless of which panel call carried the expiry.
 type fakeUpdater struct {
-	calls   []UserPatch
-	userIDs []int64
-	err     error
-	ext     Extender
+	calls        []UserPatch
+	userIDs      []int64
+	resetUserIDs []int64
+	err          error
+	resetErr     error
+	ext          Extender
 }
 
 func (f *fakeUpdater) UpdateUser(ctx context.Context, userID int64, patch UserPatch) error {
@@ -280,6 +282,14 @@ func (f *fakeUpdater) UpdateUser(ctx context.Context, userID int64, patch UserPa
 	}
 	f.userIDs = append(f.userIDs, userID)
 	f.calls = append(f.calls, patch)
+	return nil
+}
+
+func (f *fakeUpdater) ResetUserTraffic(_ context.Context, userID int64) error {
+	if f.resetErr != nil {
+		return f.resetErr
+	}
+	f.resetUserIDs = append(f.resetUserIDs, userID)
 	return nil
 }
 

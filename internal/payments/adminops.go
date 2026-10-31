@@ -74,7 +74,7 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 	}
 
 	plan, planErr := s.getPlan(ctx, req.Plan)
-	newExpireAt, _ := s.renewalPlanChange(ctx, req, planErr == nil)
+	newExpireAt, planChange := s.renewalPlanChange(ctx, req, planErr == nil)
 
 	// Referral link payout: if this payer was referred and not yet credited,
 	// fold the invitee bonus into this same extension so it lands in one panel
@@ -119,6 +119,17 @@ func (s *Service) confirmPaymentRequest(ctx context.Context, reqID int64) (*stor
 		}
 		if err := s.store.UpdateActiveTrafficExtensionBase(ctx, req.RemnawaveID, s.now(), *patch.TrafficLimitBytes); err != nil {
 			s.logger.Error("update traffic extension base failed", "user_id", req.RemnawaveID, "err", err.Error())
+		}
+	}
+
+	// A downgrade starts a fresh allowance under the cheaper plan. Reset only
+	// after all limit patches succeed so an active traffic extension is preserved.
+	if planChange != nil && planChange.Kind == PlanChangeDowngradeImmediate {
+		if s.dryRun {
+			s.logger.Info("dry-run: would reset traffic after downgrade", "user_id", req.RemnawaveID, "plan", req.Plan)
+		} else if err := s.userUpdater.ResetUserTraffic(ctx, req.RemnawaveID); err != nil {
+			s.logger.Error("reset traffic after downgrade failed", "user_id", req.RemnawaveID, "req_id", reqID, "err", err.Error())
+			return req, time.Time{}, fmt.Errorf("reset traffic after downgrade: %w", err)
 		}
 	}
 
