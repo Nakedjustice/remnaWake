@@ -573,6 +573,10 @@ func (u rwUpdater) UpdateUser(ctx context.Context, userID int64, patch payments.
 	})
 }
 
+func (u rwUpdater) ResetUserTraffic(ctx context.Context, userID int64) error {
+	return u.c.ResetUserTraffic(ctx, userID)
+}
+
 // plategaGateway adapts *platega.Client to payments.PlategaGateway, flattening
 // the Transaction struct into the primitive returns the payments package wants.
 type plategaGateway struct{ c *platega.Client }

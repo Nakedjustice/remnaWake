@@ -578,6 +578,42 @@ func TestUpdateUserSendsOnlySetFields(t *testing.T) {
 	}
 }
 
+func TestResetUserTraffic(t *testing.T) {
+	const token = "tok"
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != "/api/users/42/actions/reset-traffic" {
+			t.Fatalf("got %s %s, want POST /api/users/42/actions/reset-traffic", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Fatalf("Authorization = %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, token, time.Second)
+	if err := c.ResetUserTraffic(context.Background(), 42); err != nil {
+		t.Fatalf("ResetUserTraffic: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1", calls)
+	}
+}
+
+func TestResetUserTrafficHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "panel unavailable", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	c, _ := NewClient(server.URL, "tok", time.Second)
+	if err := c.ResetUserTraffic(context.Background(), 42); err == nil {
+		t.Fatal("ResetUserTraffic error = nil, want HTTP 500 error")
+	}
+}
+
 func TestGetHwidDevices(t *testing.T) {
 	const (
 		token  = "tok"

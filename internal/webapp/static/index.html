@@ -626,7 +626,7 @@ const EN = {
   '{months} мес. — {price}': '{months} mo. — {price}',
   '💳 Оплатить / продлить': '💳 Pay / renew',
   'Оплатить и продлить': 'Pay & renew',
-  '⚠️ Переход на более дешёвый тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время не будет пересчитано: срок после покупки на {months} мес. будет до {date}. После подтверждения оплаты лимиты нового тарифа применятся сразу.\n\nПродолжить?': '⚠️ Switching to a cheaper plan\n\nYou are switching from "{current}" to "{target}". Remaining time will not be recalculated: after purchasing {months} mo., the subscription will be valid until {date}. After payment confirmation, the new plan limits apply immediately.\n\nContinue?',
+  '⚠️ Переход на более дешёвый тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время не будет пересчитано: срок после покупки на {months} мес. будет до {date}. После подтверждения оплаты лимиты нового тарифа применятся сразу. Счётчик использованного трафика будет сброшен до нуля.\n\nПродолжить?': '⚠️ Switching to a cheaper plan\n\nYou are switching from "{current}" to "{target}". Remaining time will not be recalculated: after purchasing {months} mo., the subscription will be valid until {date}. After payment confirmation, the new plan limits apply immediately. Current traffic usage is reset to zero.\n\nContinue?',
   '⚠️ Переход на более дорогой тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время до {currentDate} будет пересчитано по цене. После покупки на {months} мес. подписка будет действовать до {date}.\n\nПродолжить?': '⚠️ Switching to a more expensive plan\n\nYou are switching from "{current}" to "{target}". Remaining time until {currentDate} will be recalculated by price. After purchasing {months} mo., the subscription will be valid until {date}.\n\nContinue?',
   'Выберите способ оплаты': 'Choose a payment method',
   'Доступно несколько способов оплаты. Выберите удобный вариант.': 'Several payment methods are available. Choose the one that works best.',
@@ -1845,7 +1845,7 @@ function planChangeMessage(change, months) {
     date: change.new_expire_at || '',
   };
   if (change.kind === 'downgrade_immediate') {
-    return t('⚠️ Переход на более дешёвый тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время не будет пересчитано: срок после покупки на {months} мес. будет до {date}. После подтверждения оплаты лимиты нового тарифа применятся сразу.\n\nПродолжить?', values);
+    return t('⚠️ Переход на более дешёвый тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время не будет пересчитано: срок после покупки на {months} мес. будет до {date}. После подтверждения оплаты лимиты нового тарифа применятся сразу. Счётчик использованного трафика будет сброшен до нуля.\n\nПродолжить?', values);
   }
   return t('⚠️ Переход на более дорогой тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время до {currentDate} будет пересчитано по цене. После покупки на {months} мес. подписка будет действовать до {date}.\n\nПродолжить?', values);
 }

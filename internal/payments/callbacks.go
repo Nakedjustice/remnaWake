@@ -451,7 +451,7 @@ func (s *Service) promptPlanChangeConfirm(ctx context.Context, cb *tg.CallbackQu
 	switch preview.Kind {
 	case PlanChangeDowngradeImmediate:
 		text = fmt.Sprintf(
-			i18n.T("⚠️ Переход на более дешёвый тариф\n\nВы переходите с «%s» на «%s». Оставшееся время не будет пересчитано: срок после покупки на %d мес. будет до %s. После подтверждения оплаты лимиты нового тарифа применятся сразу.\n\nПродолжить?"),
+			i18n.T("⚠️ Переход на более дешёвый тариф\n\nВы переходите с «%s» на «%s». Оставшееся время не будет пересчитано: срок после покупки на %d мес. будет до %s. После подтверждения оплаты лимиты нового тарифа применятся сразу. Счётчик использованного трафика будет сброшен до нуля.\n\nПродолжить?"),
 			preview.CurrentPlan, preview.TargetPlan, months, preview.NewExpireAt,
 		)
 	default:

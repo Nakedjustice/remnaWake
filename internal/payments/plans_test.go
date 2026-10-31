@@ -252,6 +252,154 @@ func TestRenewalPlanChangePreviewDowngrade(t *testing.T) {
 	}
 }
 
+func newPlanChangeRequestForResetTest(t *testing.T, st *store.Store, now time.Time, plan string, price int) int64 {
+	t.Helper()
+	if err := st.UpsertPlan(context.Background(), store.Plan{Code: "basic", Name: "Базовый", TrafficGB: 30}); err != nil {
+		t.Fatalf("create basic plan: %v", err)
+	}
+	prevID, err := st.CreatePaymentRequest(context.Background(), store.PaymentRequest{
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
+		Months: 1, Price: 400, ExpireAt: now, Plan: store.PlanStandard,
+	})
+	if err != nil {
+		t.Fatalf("create previous: %v", err)
+	}
+	if ok, err := st.ConfirmPaymentRequest(context.Background(), prevID, now.Add(-24*time.Hour)); err != nil || !ok {
+		t.Fatalf("confirm previous: ok=%v err=%v", ok, err)
+	}
+	reqID, err := st.CreatePaymentRequest(context.Background(), store.PaymentRequest{
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
+		Months: 1, Price: price, ExpireAt: now.AddDate(0, 3, 0), Plan: plan,
+	})
+	if err != nil {
+		t.Fatalf("create plan change: %v", err)
+	}
+	return reqID
+}
+
+func TestConfirmDowngradeResetsTraffic(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	reqID := newPlanChangeRequestForResetTest(t, st, now, "basic", 100)
+
+	if _, _, err := svc.confirmPaymentRequest(ctx, reqID); err != nil {
+		t.Fatalf("confirm downgrade: %v", err)
+	}
+	upd := svc.userUpdater.(*fakeUpdater)
+	if len(upd.resetUserIDs) != 1 || upd.resetUserIDs[0] != 42 {
+		t.Fatalf("traffic resets = %v, want one for user 42", upd.resetUserIDs)
+	}
+	req, err := st.GetPaymentRequest(ctx, reqID)
+	if err != nil || req.Status != "confirmed" {
+		t.Fatalf("request = %+v err=%v, want confirmed", req, err)
+	}
+}
+
+func TestConfirmNonDowngradeDoesNotResetTraffic(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		plan  string
+		price int
+	}{
+		{name: "same plan", plan: store.PlanStandard, price: 400},
+		{name: "upgrade", plan: "basic", price: 800},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, _, _, st := newTestService(t)
+			ctx := context.Background()
+			now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+			svc.now = func() time.Time { return now }
+			reqID := newPlanChangeRequestForResetTest(t, st, now, tc.plan, tc.price)
+
+			if _, _, err := svc.confirmPaymentRequest(ctx, reqID); err != nil {
+				t.Fatalf("confirm: %v", err)
+			}
+			if resets := svc.userUpdater.(*fakeUpdater).resetUserIDs; len(resets) != 0 {
+				t.Fatalf("traffic resets = %v, want none", resets)
+			}
+		})
+	}
+}
+
+func TestConfirmDowngradeResetFailureStaysPending(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	reqID := newPlanChangeRequestForResetTest(t, st, now, "basic", 100)
+	upd := svc.userUpdater.(*fakeUpdater)
+	upd.resetErr = errors.New("panel reset failed")
+
+	if _, _, err := svc.confirmPaymentRequest(ctx, reqID); err == nil || !strings.Contains(err.Error(), "reset traffic after downgrade") {
+		t.Fatalf("confirm error = %v, want reset failure", err)
+	}
+	req, err := st.GetPaymentRequest(ctx, reqID)
+	if err != nil || req.Status != "pending" {
+		t.Fatalf("request = %+v err=%v, want pending", req, err)
+	}
+
+	upd.resetErr = nil
+	if _, _, err := svc.confirmPaymentRequest(ctx, reqID); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if len(upd.resetUserIDs) != 1 || upd.resetUserIDs[0] != 42 {
+		t.Fatalf("traffic resets after retry = %v, want one for user 42", upd.resetUserIDs)
+	}
+}
+
+func TestConfirmDowngradeDryRunDoesNotResetTraffic(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	svc.dryRun = true
+	reqID := newPlanChangeRequestForResetTest(t, st, now, "basic", 100)
+
+	if _, _, err := svc.confirmPaymentRequest(ctx, reqID); err != nil {
+		t.Fatalf("dry-run confirm: %v", err)
+	}
+	upd := svc.userUpdater.(*fakeUpdater)
+	if len(upd.calls) != 0 || len(upd.resetUserIDs) != 0 {
+		t.Fatalf("dry-run panel calls = %d patches, %d resets; want none", len(upd.calls), len(upd.resetUserIDs))
+	}
+}
+
+func TestConfirmDowngradeWithTrafficExtensionResetsAndPreservesAllowance(t *testing.T) {
+	svc, _, _, st := newTestService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	extensionID, err := st.CreateTrafficExtensionPaymentRequest(ctx, store.PaymentRequest{
+		RemnawaveID: 42, Username: "alice", TelegramID: 777,
+		Price: 50, ExpireAt: now.AddDate(0, 3, 0), TrafficGB: 50,
+		ExtraTrafficBytes: 50 * bytesPerGB,
+	}, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("create traffic extension: %v", err)
+	}
+	if ok, err := st.ConfirmTrafficExtensionRequest(ctx, extensionID, now.Add(-time.Hour), now.AddDate(0, 0, 30)); err != nil || !ok {
+		t.Fatalf("confirm traffic extension: ok=%v err=%v", ok, err)
+	}
+	reqID := newPlanChangeRequestForResetTest(t, st, now, "basic", 100)
+
+	if _, _, err := svc.confirmPaymentRequest(ctx, reqID); err != nil {
+		t.Fatalf("confirm downgrade: %v", err)
+	}
+	upd := svc.userUpdater.(*fakeUpdater)
+	if len(upd.resetUserIDs) != 1 || upd.resetUserIDs[0] != 42 {
+		t.Fatalf("traffic resets = %v, want one for user 42", upd.resetUserIDs)
+	}
+	if len(upd.calls) != 2 || upd.calls[1].TrafficLimitBytes == nil || *upd.calls[1].TrafficLimitBytes != 80*bytesPerGB {
+		t.Fatalf("extension-preserving patches = %+v, want final 80 GB limit", upd.calls)
+	}
+	active, err := st.ActiveTrafficExtensionForUser(ctx, 42, now)
+	if err != nil || active == nil || active.BaseTrafficLimitBytes != 30*bytesPerGB {
+		t.Fatalf("active extension = %+v err=%v, want 30 GB base", active, err)
+	}
+}
+
 func TestRenewalPlanChangePreviewSamePlanNil(t *testing.T) {
 	svc, _, _, st := newTestService(t)
 	ctx := context.Background()
