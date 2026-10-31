@@ -626,6 +626,7 @@ const EN = {
   '{months} мес. — {price}': '{months} mo. — {price}',
   '💳 Оплатить / продлить': '💳 Pay / renew',
   'Оплатить и продлить': 'Pay & renew',
+  '✅ Продолжить': '✅ Continue',
   '⚠️ Переход на более дешёвый тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время не будет пересчитано: срок после покупки на {months} мес. будет до {date}. После подтверждения оплаты лимиты нового тарифа применятся сразу. Счётчик использованного трафика будет сброшен до нуля.\n\nПродолжить?': '⚠️ Switching to a cheaper plan\n\nYou are switching from "{current}" to "{target}". Remaining time will not be recalculated: after purchasing {months} mo., the subscription will be valid until {date}. After payment confirmation, the new plan limits apply immediately. Current traffic usage is reset to zero.\n\nContinue?',
   '⚠️ Переход на более дорогой тариф\n\nВы переходите с «{current}» на «{target}». Оставшееся время до {currentDate} будет пересчитано по цене. После покупки на {months} мес. подписка будет действовать до {date}.\n\nПродолжить?': '⚠️ Switching to a more expensive plan\n\nYou are switching from "{current}" to "{target}". Remaining time until {currentDate} will be recalculated by price. After purchasing {months} mo., the subscription will be valid until {date}.\n\nContinue?',
   'Выберите способ оплаты': 'Choose a payment method',
@@ -1536,6 +1537,8 @@ function renderRenew(target, data) {
   let months = 0;
   let plan = '';
   let planChangeConfirmed = false;
+  const planChangePanel = el('div', 'payment-step');
+  planChangePanel.hidden = true;
   const plans = data.plans || [];
   const context = el('div', 'renew-context');
   context.appendChild(el('div', 'label', t('Профиль')));
@@ -1563,6 +1566,7 @@ function renderRenew(target, data) {
     grid.textContent = '';
     months = 0;
     planChangeConfirmed = false;
+    planChangePanel.hidden = true;
     periodValue.textContent = '—';
     pay.disabled = true;
     (list || []).forEach(tf => {
@@ -1572,6 +1576,7 @@ function renderRenew(target, data) {
       b.onclick = () => {
         months = tf.months;
         planChangeConfirmed = false;
+        planChangePanel.hidden = true;
         grid.querySelectorAll('button').forEach(x => x.classList.remove('selected'));
         b.classList.add('selected');
         periodValue.textContent = t('{months} мес.', { months });
@@ -1687,11 +1692,28 @@ function renderRenew(target, data) {
     }
     if (res.status === 'plan_change_preview' && res.plan_change) {
       resetPay();
-      const ok = await confirmDialog(planChangeMessage(res.plan_change, months));
-      if (ok) {
+      pay.disabled = true;
+      planChangePanel.textContent = '';
+      const message = el('div', 'hint', planChangeMessage(res.plan_change, months));
+      message.style.whiteSpace = 'pre-line';
+      const actions = el('div', 'tariffs');
+      const continueButton = el('button', null, t('✅ Продолжить'));
+      const cancelButton = el('button', 'secondary', t('Отмена'));
+      continueButton.onclick = async () => {
+        planChangePanel.hidden = true;
         planChangeConfirmed = true;
         await doRenew(provider, triggerButton);
-      }
+      };
+      cancelButton.onclick = () => {
+        planChangePanel.hidden = true;
+        planChangeConfirmed = false;
+        resetPay();
+      };
+      actions.appendChild(continueButton);
+      actions.appendChild(cancelButton);
+      planChangePanel.appendChild(message);
+      planChangePanel.appendChild(actions);
+      planChangePanel.hidden = false;
       return;
     }
     if (res.status === 'choose_provider') {
@@ -1731,6 +1753,7 @@ function renderRenew(target, data) {
   };
   pay.onclick = () => doRenew('');
   wrap.appendChild(pay);
+  wrap.appendChild(planChangePanel);
   wrap.appendChild(choicePanel);
   wrap.appendChild(receiptBox);
   wrap.appendChild(checkPanel);
