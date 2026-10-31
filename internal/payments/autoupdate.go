@@ -210,27 +210,32 @@ func (s *Service) handleUpdateInstall(ctx context.Context, cb *tg.CallbackQuery)
 }
 
 func (s *Service) runUpdateTrigger(ctx context.Context, adminID int64, trigger func(context.Context) error, delay time.Duration) {
+	defer s.finishUpdateTrigger()
 	if delay > 0 {
 		timer := time.NewTimer(delay)
 		defer timer.Stop()
 		select {
 		case <-ctx.Done():
-			s.finishUpdateTrigger()
 			return
 		case <-timer.C:
 		}
 	}
 
-	err := trigger(ctx)
-	s.finishUpdateTrigger()
-	if err == nil {
+	if err := s.AdminSendBackup(ctx, adminID); err != nil {
+		s.logger.Error("autoupdate: pre-update backup failed", "err", err.Error())
+		if sendErr := s.bot.SendPlain(ctx, adminID,
+			i18n.T("Обновление отменено: не удалось создать или отправить резервную копию в Telegram. Попробуйте снова позже или обновите вручную:\ndocker compose pull && docker compose up -d")); sendErr != nil {
+			s.logger.Error("autoupdate: send backup failure failed", "admin_id", adminID, "err", sendErr.Error())
+		}
 		return
 	}
 
-	s.logger.Error("autoupdate: trigger failed", "err", err.Error())
-	if sendErr := s.bot.SendPlain(ctx, adminID,
-		i18n.T("Не удалось запустить обновление. Попробуйте снова позже или обновите вручную:\ndocker compose pull && docker compose up -d")); sendErr != nil {
-		s.logger.Error("autoupdate: send trigger failure failed", "admin_id", adminID, "err", sendErr.Error())
+	if err := trigger(ctx); err != nil {
+		s.logger.Error("autoupdate: trigger failed", "err", err.Error())
+		if sendErr := s.bot.SendPlain(ctx, adminID,
+			i18n.T("Не удалось запустить обновление. Попробуйте снова позже или обновите вручную:\ndocker compose pull && docker compose up -d")); sendErr != nil {
+			s.logger.Error("autoupdate: send trigger failure failed", "admin_id", adminID, "err", sendErr.Error())
+		}
 	}
 }
 

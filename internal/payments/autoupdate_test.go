@@ -57,6 +57,15 @@ func TestUpdateInstallTriggersWatchtower(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("trigger did not start asynchronously")
 	}
+	if bot.documentUploads != 1 {
+		t.Fatalf("backup uploads before trigger = %d, want 1", bot.documentUploads)
+	}
+	if len(bot.docs) != 1 || bot.docs[0].ChatID != 1000 {
+		t.Fatalf("backup should be sent to the requesting admin: %+v", bot.docs)
+	}
+	if len(bot.docUploadNames) != 1 || !strings.HasSuffix(bot.docUploadNames[0], ".zip") {
+		t.Fatalf("backup upload should be a ZIP archive: %+v", bot.docUploadNames)
+	}
 	close(release)
 }
 
@@ -130,6 +139,33 @@ func TestUpdateInstallIgnoresRepeatedTapWhileRunning(t *testing.T) {
 		t.Fatalf("expected already-running answer: %+v", bot.answers)
 	}
 	close(release)
+}
+
+func TestRunUpdateTriggerAbortsWhenBackupDeliveryFails(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	bot.documentUploadErr = errors.New("upload failed")
+	called := 0
+
+	svc.runUpdateTrigger(context.Background(), 1000, func(ctx context.Context) error {
+		called++
+		return nil
+	}, 0)
+
+	if called != 0 {
+		t.Fatal("update must not run when the pre-update backup fails")
+	}
+	if bot.documentUploads != 0 {
+		t.Fatalf("failed backup produced %d uploads, want 0", bot.documentUploads)
+	}
+	if len(bot.sent) != 1 || !strings.Contains(bot.sent[0].Text, "Обновление отменено") {
+		t.Fatalf("admin should be told the update was cancelled: %+v", bot.sent)
+	}
+	svc.mu.Lock()
+	inProgress := svc.updateInProgress
+	svc.mu.Unlock()
+	if inProgress {
+		t.Fatal("update state should reset after a backup failure")
+	}
 }
 
 func TestUpdateInstallReportsTriggerError(t *testing.T) {

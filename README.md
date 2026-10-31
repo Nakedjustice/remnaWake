@@ -350,6 +350,10 @@ shared `WATCHTOWER_TOKEN`. The bot POSTs to Watchtower's `/v1/update` on
 empty the feature is notify-only and shows the manual
 `docker compose pull && docker compose up -d` command.
 
+Before invoking Watchtower, the bot sends a ZIP database backup to the Telegram
+chat of the admin who pressed **Install now**, regardless of the scheduled-backup
+settings. If the backup cannot be created or delivered, the update is cancelled.
+
 The generated Watchtower service uses `nickfedor/watchtower:latest` with
 `pull_policy: always`. The original `containrrr/watchtower` image was archived
 by its authors in December 2025 and no longer works against current Docker

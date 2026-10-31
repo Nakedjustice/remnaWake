@@ -301,7 +301,8 @@ func (s *Service) cmdBackup(ctx context.Context, chatID int64) {
 
 // AdminSendBackup creates a one-off ZIP archive and sends it only to the
 // requesting admin's Telegram chat. It is shared by /backup, the Telegram
-// admin-menu callback, and the authenticated Mini App admin endpoint.
+// admin-menu callback, the authenticated Mini App admin endpoint, and the
+// mandatory pre-update backup.
 func (s *Service) AdminSendBackup(ctx context.Context, telegramID int64) error {
 	if err := s.adminGuard(telegramID); err != nil {
 		return err
