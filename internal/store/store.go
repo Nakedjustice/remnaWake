@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS invite_requests (
   created_at          TEXT NOT NULL,
   resolved_at         TEXT
 );
+-- Read on every cabinet open (chat and mini app), so it must not scan the table.
+CREATE INDEX IF NOT EXISTS idx_invite_requests_inviter ON invite_requests(inviter_telegram_id);
 CREATE TABLE IF NOT EXISTS trial_requests (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   telegram_id INTEGER NOT NULL,
@@ -109,6 +111,8 @@ CREATE TABLE IF NOT EXISTS gift_codes (
   issued_at            TEXT,
   resolved_at          TEXT
 );
+-- Same: "мои подарки" is part of every cabinet payload.
+CREATE INDEX IF NOT EXISTS idx_gift_codes_buyer ON gift_codes(buyer_telegram_id);
 CREATE TABLE IF NOT EXISTS settings (
   key        TEXT PRIMARY KEY,
   value      TEXT NOT NULL,

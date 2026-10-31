@@ -835,12 +835,11 @@ write_override_file() {
     if [ -n "$WATCHTOWER_URL" ]; then
       printf '\n'
       printf '  watchtower:\n'
-      printf '    image: containrrr/watchtower:latest\n'
+      printf '    image: nickfedor/watchtower:latest\n'
       printf '    pull_policy: always\n'
       printf '    container_name: remnaWake-watchtower\n'
       printf '    restart: unless-stopped\n'
       printf '    environment:\n'
-      printf '      DOCKER_API_VERSION: "1.40"\n'
       printf '      WATCHTOWER_HTTP_API_UPDATE: "true"\n'
       printf '      WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_TOKEN}"\n'
       printf '      WATCHTOWER_SCOPE: "remnawake"\n'
@@ -1791,9 +1790,9 @@ doctor_mode() {
       [ -n "$(env_default WATCHTOWER_TOKEN "")" ] && check_ok "WATCHTOWER_TOKEN" "set" "non-empty when WATCHTOWER_URL is set" "no action needed" || check_fail "WATCHTOWER_TOKEN" "missing" "non-empty when WATCHTOWER_URL is set" "./install.sh configure"
       if has_override '^  watchtower:'; then
         check_ok "Watchtower service" "present in override" "watchtower sidecar is generated when WATCHTOWER_URL is set" "no action needed"
-        has_override 'image: containrrr/watchtower:latest' && check_ok "Watchtower image" "containrrr/watchtower:latest" "containrrr/watchtower:latest" "no action needed" || check_warn "Watchtower image" "missing or stale" "containrrr/watchtower:latest" "./install.sh configure"
+        has_override 'image: nickfedor/watchtower:latest' && check_ok "Watchtower image" "nickfedor/watchtower:latest" "nickfedor/watchtower:latest" "no action needed" || check_warn "Watchtower image" "missing or stale" "nickfedor/watchtower:latest" "./install.sh configure"
         has_override 'pull_policy: always' && check_ok "Watchtower pull policy" "always" "pull_policy: always" "no action needed" || check_warn "Watchtower pull policy" "missing" "pull_policy: always" "./install.sh configure"
-        has_override 'DOCKER_API_VERSION: "1.40"' && check_ok "Watchtower Docker API" "1.40" "DOCKER_API_VERSION: \"1.40\"" "no action needed" || check_warn "Watchtower Docker API" "missing" "DOCKER_API_VERSION: \"1.40\"" "./install.sh configure"
+        has_override 'DOCKER_API_VERSION' && check_warn "Watchtower Docker API" "pinned in override" "unset so Watchtower negotiates with the daemon" "./install.sh configure" || check_ok "Watchtower Docker API" "negotiated" "unset so Watchtower negotiates with the daemon" "no action needed"
       else
         check_fail "Watchtower service" "missing in override" "watchtower sidecar is generated when WATCHTOWER_URL is set" "./install.sh configure"
       fi

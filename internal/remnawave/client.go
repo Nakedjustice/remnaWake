@@ -22,12 +22,22 @@ type Client struct {
 	http     *http.Client
 }
 
+// panelMaxIdleConns is how many warm connections to keep to the panel. Every
+// call goes to a single host, and http.DefaultTransport keeps only 2 idle
+// connections per host — anything beyond that pays a fresh TCP+TLS handshake on
+// every concurrent request.
+const panelMaxIdleConns = 32
+
 func NewClient(baseURL, apiToken string, timeout time.Duration) (*Client, error) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = panelMaxIdleConns
+	transport.MaxIdleConnsPerHost = panelMaxIdleConns
 	return &Client{
 		baseURL:  strings.TrimRight(baseURL, "/"),
 		apiToken: apiToken,
 		http: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: transport,
 		},
 	}, nil
 }

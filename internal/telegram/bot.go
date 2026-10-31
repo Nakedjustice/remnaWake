@@ -21,8 +21,21 @@ type Bot struct {
 	apiBase   string
 	parseMode string
 	http      *http.Client
-	wait      func(ctx context.Context, d time.Duration) error
+	// pollHTTP serves getUpdates only. Long polling deliberately holds the
+	// request open for LongPollSeconds, which has nothing to do with how long an
+	// ordinary API call may take, so it gets its own budget.
+	pollHTTP *http.Client
+	wait     func(ctx context.Context, d time.Duration) error
 }
+
+// LongPollSeconds is how long Telegram holds a getUpdates request open when it
+// has nothing to deliver. Longer means fewer requests at idle; the caller's
+// context still aborts the wait immediately on shutdown.
+const LongPollSeconds = 10
+
+// telegramMaxIdleConns keeps connections to api.telegram.org warm: broadcasts
+// and the notification sweep fire many sends at one host in a row.
+const telegramMaxIdleConns = 32
 
 type sendMessageRequest struct {
 	ChatID      int64  `json:"chat_id"`
@@ -257,12 +270,22 @@ type getUpdatesResponse struct {
 }
 
 func NewBot(token, parseMode string, timeout time.Duration) *Bot {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = telegramMaxIdleConns
+	transport.MaxIdleConnsPerHost = telegramMaxIdleConns
 	return &Bot{
 		token:     token,
 		apiBase:   "https://api.telegram.org/bot" + token,
 		parseMode: parseMode,
 		http: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: transport,
+		},
+		pollHTTP: &http.Client{
+			// The server-side wait plus the same allowance the caller granted an
+			// ordinary call, so a small HTTP_TIMEOUT cannot break polling.
+			Timeout:   LongPollSeconds*time.Second + timeout,
+			Transport: transport,
 		},
 		wait: func(ctx context.Context, d time.Duration) error {
 			t := time.NewTimer(d)
@@ -644,7 +667,7 @@ func (b *Bot) GetUpdates(ctx context.Context, offset int64, timeout int) ([]Upda
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := b.http.Do(req)
+	resp, err := b.pollHTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("telegram get updates: %w", err)
 	}

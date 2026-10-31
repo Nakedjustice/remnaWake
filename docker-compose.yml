@@ -51,13 +51,16 @@ services:
   # it only pulls the new image and recreates remnaWake-bot when the bot calls
   # its /v1/update endpoint (after an admin taps "Install now"). Watchtower —
   # not the bot — holds the docker socket, so the bot stays unprivileged.
+  # The maintained fork of Watchtower — the original containrrr image was
+  # archived in December 2025 and does not work against current Docker daemons.
   # watchtower:
-  #   image: containrrr/watchtower:latest
+  #   image: nickfedor/watchtower:latest
   #   pull_policy: always
   #   container_name: remnaWake-watchtower
   #   restart: unless-stopped
   #   environment:
-  #     DOCKER_API_VERSION: "1.40"
+  #     # DOCKER_API_VERSION is deliberately unset: Watchtower then negotiates
+  #     # the API version with the host daemon instead of being pinned to one.
   #     WATCHTOWER_HTTP_API_UPDATE: "true"
   #     WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_TOKEN}"
   #     # Only touch this project's container, not every container on the host:

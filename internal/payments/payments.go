@@ -319,7 +319,13 @@ type Service struct {
 	finder    Finder
 	squads    SquadLister
 	mu        sync.Mutex
-	invites   map[int64]*inviteState
+	// broadcasting is set while a broadcast run is in flight; both transports
+	// start one detached and would otherwise happily start a second.
+	broadcasting bool
+	// background tracks work that outlives the request that started it, so a
+	// test (and, later, a graceful shutdown) can wait for it.
+	background sync.WaitGroup
+	invites    map[int64]*inviteState
 	registers map[int64]*registerState
 	giftCodes map[int64]*giftCodeState
 	redeems   map[int64]*redeemState

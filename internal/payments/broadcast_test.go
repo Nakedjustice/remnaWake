@@ -84,16 +84,77 @@ func TestAdminBroadcastGuards(t *testing.T) {
 	}
 
 	res, err := svc.AdminBroadcast(context.Background(), 1000, "hi")
-	if err != nil || res.Sent != 1 || res.Failed != 0 {
-		t.Fatalf("res=%+v err=%v, want sent=1", res, err)
+	if err != nil || !res.Started {
+		t.Fatalf("res=%+v err=%v, want started", res, err)
+	}
+	svc.background.Wait()
+}
+
+// TestAdminBroadcastReturnsBeforeSending is the point of the change: the mini
+// app admin used to hold an HTTP request open for the whole run (50ms per
+// recipient), which no browser waits out on a real panel.
+func TestAdminBroadcastReturnsBeforeSending(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	release := make(chan struct{})
+	bot.beforeSend = func(int64) { <-release }
+	svc.finder = &fakeFinder{all: []Subscriber{{TelegramID: 10}, {TelegramID: 20}}}
+
+	res, err := svc.AdminBroadcast(context.Background(), 1000, "hi")
+	if err != nil {
+		t.Fatalf("AdminBroadcast: %v", err)
+	}
+	if !res.Started {
+		t.Fatal("want started=true")
+	}
+	// The call returned while the very first send is still blocked.
+	if got := bot.sentCount(); got != 0 {
+		t.Fatalf("%d messages already sent, want the call to return first", got)
+	}
+	close(release)
+	svc.background.Wait()
+	if got := bot.sentCount(); got != 3 { // 2 recipients + the completion report
+		t.Fatalf("sent %d messages, want 2 recipients plus the report", got)
 	}
 }
 
-func TestAdminBroadcastListError(t *testing.T) {
-	svc, _, _, _ := newTestService(t)
+// TestBroadcastRefusesToRunTwiceAtOnce: returning immediately makes a second
+// tap trivial, and every user would get the message twice.
+func TestBroadcastRefusesToRunTwiceAtOnce(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
+	release := make(chan struct{})
+	bot.beforeSend = func(int64) { <-release }
+	svc.finder = &fakeFinder{all: []Subscriber{{TelegramID: 10}}}
+
+	if _, err := svc.AdminBroadcast(context.Background(), 1000, "hi"); err != nil {
+		t.Fatalf("first broadcast: %v", err)
+	}
+	if _, err := svc.AdminBroadcast(context.Background(), 1000, "hi again"); !errors.Is(err, ErrBroadcastInProgress) {
+		t.Fatalf("second broadcast: err=%v, want ErrBroadcastInProgress", err)
+	}
+	close(release)
+	svc.background.Wait()
+
+	// Once it finishes, a new broadcast is allowed again.
+	if _, err := svc.AdminBroadcast(context.Background(), 1000, "later"); err != nil {
+		t.Fatalf("broadcast after completion: %v", err)
+	}
+	svc.background.Wait()
+}
+
+// TestAdminBroadcastListErrorIsReportedToTheChat: the panel failure can no
+// longer come back on the HTTP response, so it must reach the admin some way.
+func TestAdminBroadcastListErrorIsReportedToTheChat(t *testing.T) {
+	svc, bot, _, _ := newTestService(t)
 	svc.finder = &fakeFinder{listErr: errors.New("panel down")}
-	if _, err := svc.AdminBroadcast(context.Background(), 1000, "hi"); err == nil {
-		t.Fatal("expected error when listing users fails")
+
+	if _, err := svc.AdminBroadcast(context.Background(), 1000, "hi"); err != nil {
+		t.Fatalf("AdminBroadcast: %v", err)
+	}
+	svc.background.Wait()
+
+	last := bot.sent[len(bot.sent)-1]
+	if last.ChatID != 1000 || !strings.Contains(last.Text, "рассылка не выполнена") {
+		t.Fatalf("admin was not told the broadcast failed: %+v", last)
 	}
 }
 

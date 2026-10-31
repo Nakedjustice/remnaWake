@@ -117,9 +117,11 @@ grep -q '^REFERRAL_ENABLED=true$' "$REMNAWAKE_DIR/.env"
 grep -q '^AUTOUPDATE_IMAGE=ghcr.io/nakedjustice/remnawake:main$' "$REMNAWAKE_DIR/.env"
 grep -q '127.0.0.1:9090:8080' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q '^  watchtower:$' "$REMNAWAKE_DIR/docker-compose.override.yml"
-grep -q 'image: containrrr/watchtower:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
+grep -q 'image: nickfedor/watchtower:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'pull_policy: always' "$REMNAWAKE_DIR/docker-compose.override.yml"
-grep -q 'DOCKER_API_VERSION: "1.40"' "$REMNAWAKE_DIR/docker-compose.override.yml"
+# Watchtower must be left to negotiate the Docker API version with the daemon.
+# Pinning it is what stranded the old sidecar on new daemons in the first place.
+! grep -q 'DOCKER_API_VERSION' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q '^XRAY_CHECKER_URL=http://xray-checker:2112/checker$' "$REMNAWAKE_DIR/.env"
 grep -q '^XRAY_CHECKER_SUB_URL=https://panel.example.com/sub$' "$REMNAWAKE_DIR/.env"
 grep -q '^XRAY_CHECKER_PUBLIC_URL=https://bot.example.com/checker/$' "$REMNAWAKE_DIR/.env"
@@ -142,16 +144,26 @@ grep -q '127.0.0.1:9090:8080' "$TMP/doctor-stable.log"
 grep -q 'OK: base bot image' "$TMP/doctor-stable.log"
 grep -q 'ghcr.io/nakedjustice/remnawake:main' "$TMP/doctor-stable.log"
 grep -q 'OK: Watchtower image' "$TMP/doctor-stable.log"
-grep -q 'containrrr/watchtower:latest' "$TMP/doctor-stable.log"
+grep -q 'nickfedor/watchtower:latest' "$TMP/doctor-stable.log"
+grep -q 'OK: Watchtower Docker API' "$TMP/doctor-stable.log"
 grep -q 'OK: XRAY_CHECKER_URL base path' "$TMP/doctor-stable.log"
 grep -q 'OK: xray-checker METRICS_BASE_PATH' "$TMP/doctor-stable.log"
 grep -q 'WARN: backup directory' "$TMP/doctor-stable.log"
 grep -q './install.sh backup' "$TMP/doctor-stable.log"
 
 cp "$REMNAWAKE_DIR/docker-compose.override.yml" "$TMP/override.good"
-sed 's#containrrr/watchtower:latest#containrrr/watchtower:old#' "$TMP/override.good" >"$REMNAWAKE_DIR/docker-compose.override.yml"
+sed 's#nickfedor/watchtower:latest#nickfedor/watchtower:old#' "$TMP/override.good" >"$REMNAWAKE_DIR/docker-compose.override.yml"
 bash "$ROOT/install.sh" doctor >"$TMP/doctor-watchtower-drift.log" 2>&1
 grep -q 'WARN: Watchtower image' "$TMP/doctor-watchtower-drift.log"
+
+# An install still on the archived containrrr sidecar must be told to migrate,
+# and a leftover pinned Docker API version must be flagged too.
+sed 's#image: nickfedor/watchtower:latest#image: containrrr/watchtower:latest#' "$TMP/override.good" >"$REMNAWAKE_DIR/docker-compose.override.yml"
+bash "$ROOT/install.sh" doctor >"$TMP/doctor-watchtower-legacy.log" 2>&1
+grep -q 'WARN: Watchtower image' "$TMP/doctor-watchtower-legacy.log"
+sed 's#      WATCHTOWER_HTTP_API_UPDATE: "true"#      DOCKER_API_VERSION: "1.40"\n      WATCHTOWER_HTTP_API_UPDATE: "true"#' "$TMP/override.good" >"$REMNAWAKE_DIR/docker-compose.override.yml"
+bash "$ROOT/install.sh" doctor >"$TMP/doctor-watchtower-apipin.log" 2>&1
+grep -q 'WARN: Watchtower Docker API' "$TMP/doctor-watchtower-apipin.log"
 cp "$TMP/override.good" "$REMNAWAKE_DIR/docker-compose.override.yml"
 
 bash "$ROOT/install.sh" update
@@ -189,7 +201,7 @@ grep -q '^REMNAWAKE_CHANNEL=dev$' "$REMNAWAKE_DIR/.env"
 grep -q '^AUTOUPDATE_IMAGE=ghcr.io/nakedjustice/remnawake-dev:latest$' "$REMNAWAKE_DIR/.env"
 grep -q 'image: ghcr.io/nakedjustice/remnawake-dev:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
 bash "$ROOT/install.sh" doctor >"$TMP/doctor-dev.log" 2>&1
-! grep -q 'containrrr/watchtower' "$TMP/doctor-dev.log"
+! grep -q 'nickfedor/watchtower' "$TMP/doctor-dev.log"
 
 # Reconfigure menu: editing a single section against the first install must
 # change only that section and preserve the inferred override (host proxy port,
@@ -208,7 +220,7 @@ grep -q '^TZ=Asia/Tokyo$' "$REMNAWAKE_DIR/.env"
 grep -q '^RUN_AT=10:30$' "$REMNAWAKE_DIR/.env"
 grep -q '^TELEGRAM_BOT_TOKEN=123456789:' "$REMNAWAKE_DIR/.env"
 grep -q '127.0.0.1:9090:8080' "$REMNAWAKE_DIR/docker-compose.override.yml"
-grep -q 'image: containrrr/watchtower:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
+grep -q 'image: nickfedor/watchtower:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
 grep -q 'image: kutovoys/xray-checker:latest' "$REMNAWAKE_DIR/docker-compose.override.yml"
 # A partial reconfigure must NOT drop the checker's base path. METRICS_BASE_PATH
 # is what mounts the sidecar (and the bot's /checker/metrics poll) under /checker;

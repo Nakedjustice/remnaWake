@@ -372,6 +372,7 @@ var enPayments = map[string]string{
 	"Профиль с таким именем не найден. Попробуйте ещё раз.":                                 "No profile with that name. Try again.",
 	"Профиль создан, но привязать Telegram не удалось. Используйте /register для привязки.": "Profile created, but linking Telegram failed. Use /register to link it.",
 	"Рассылка завершена: отправлено %d, ошибок %d.":                                         "Broadcast finished: sent %d, failed %d.",
+	"Рассылка уже выполняется. Дождитесь её завершения.":                                    "A broadcast is already running. Wait for it to finish.",
 	"Рассылка запущена…":                                 "Broadcast started…",
 	"Рассылка отменена.":                                 "Broadcast cancelled.",
 	"Реквизиты для оплаты:\n\n":                          "Payment details:\n\n",
