@@ -45,19 +45,20 @@ type sentInvoice struct {
 	MsgID   int64
 }
 type fakeBot struct {
-	sent            []sentMsg
-	photos          []sentPhoto
-	docs            []sentPhoto // same shape: chat, file_id, caption, keyboard
-	answers         []string
-	edits           []editCall
-	invoices        []sentInvoice
-	invoiceLinks    []sentInvoice
-	precheckoutAck  []bool
-	msgIDSeq        int64
-	photoUploads    int
-	documentUploads int
-	docUploadNames  []string
-	docUploadData   [][]byte
+	sent              []sentMsg
+	photos            []sentPhoto
+	docs              []sentPhoto // same shape: chat, file_id, caption, keyboard
+	answers           []string
+	edits             []editCall
+	invoices          []sentInvoice
+	invoiceLinks      []sentInvoice
+	precheckoutAck    []bool
+	msgIDSeq          int64
+	photoUploads      int
+	documentUploads   int
+	docUploadNames    []string
+	docUploadData     [][]byte
+	documentUploadErr error
 	// sendErrs makes every send method fail for specific chat IDs.
 	sendErrs map[int64]error
 	// invoiceErr makes SendInvoice / CreateInvoiceLink fail when set.
@@ -140,6 +141,9 @@ func (f *fakeBot) SendPhotoUpload(_ context.Context, chatID int64, _ string, _ [
 	return f.msgIDSeq, fileID, nil
 }
 func (f *fakeBot) SendDocumentUpload(_ context.Context, chatID int64, filename string, data []byte, caption string, kb *tg.InlineKeyboardMarkup) (int64, string, error) {
+	if f.documentUploadErr != nil {
+		return 0, "", f.documentUploadErr
+	}
 	if err := f.sendErrs[chatID]; err != nil {
 		return 0, "", err
 	}
