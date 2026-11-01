@@ -321,9 +321,8 @@ func (c *Config) validate() error {
 		return errors.New("TELEGRAM_BOT_TOKEN is required")
 	}
 	if c.WebApp.Enabled() {
-		u, err := url.Parse(c.WebApp.PublicURL)
-		if err != nil || u.Scheme != "https" || u.Host == "" {
-			return fmt.Errorf("invalid WEBAPP_URL (Telegram Mini Apps require an https URL): %q", c.WebApp.PublicURL)
+		if err := requireMiniAppURL(c.WebApp.PublicURL); err != nil {
+			return err
 		}
 	}
 	if _, err := time.Parse("15:04", c.Scheduler.RunAt); err != nil {
@@ -372,8 +371,8 @@ func (c *Config) validate() error {
 		return errors.New("DB_BACKUP_INTERVAL_DAYS must be a positive integer when DB_BACKUP_ENABLED is true")
 	}
 	if c.XrayChecker.Enabled() {
-		if u, err := url.Parse(c.XrayChecker.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("invalid XRAY_CHECKER_URL (expected an http(s) URL): %q", c.XrayChecker.URL)
+		if err := requireHTTPURL("XRAY_CHECKER_URL", c.XrayChecker.URL); err != nil {
+			return err
 		}
 		if c.XrayChecker.PollInterval <= 0 {
 			return fmt.Errorf("XRAY_CHECKER_POLL_INTERVAL must be positive: %v", c.XrayChecker.PollInterval)
@@ -381,9 +380,26 @@ func (c *Config) validate() error {
 	}
 	// The dashboard link is independent of metrics polling, so validate it on its own.
 	if c.XrayChecker.PublicURL != "" {
-		if u, err := url.Parse(c.XrayChecker.PublicURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("invalid XRAY_CHECKER_PUBLIC_URL (expected an http(s) URL): %q", c.XrayChecker.PublicURL)
+		if err := requireHTTPURL("XRAY_CHECKER_PUBLIC_URL", c.XrayChecker.PublicURL); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// requireMiniAppURL checks the strict https URL a Telegram Mini App requires.
+func requireMiniAppURL(raw string) error {
+	if u, err := url.Parse(raw); err != nil || u.Scheme != "https" || u.Host == "" {
+		return fmt.Errorf("invalid WEBAPP_URL (Telegram Mini Apps require an https URL): %q", raw)
+	}
+	return nil
+}
+
+// requireHTTPURL checks a generic http(s) service URL; env names the
+// environment variable in the error message.
+func requireHTTPURL(env, raw string) error {
+	if u, err := url.Parse(raw); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("invalid %s (expected an http(s) URL): %q", env, raw)
 	}
 	return nil
 }

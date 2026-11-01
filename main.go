@@ -294,99 +294,100 @@ func handleUpdate(ctx context.Context, bot *tgbot.Bot, pay *payments.Service, lo
 		logger.Debug("ignored telegram callback", "data", u.CallbackQuery.Data)
 		return
 	}
-	if u.Message != nil && u.Message.SuccessfulPayment != nil {
-		if pay.HandleSuccessfulPayment(ctx, u.Message) {
+	m := u.Message
+	if m == nil {
+		return
+	}
+	if m.SuccessfulPayment != nil && pay.HandleSuccessfulPayment(ctx, m) {
+		return
+	}
+	if len(m.Photo) > 0 && pay.HandlePhoto(ctx, m) {
+		return
+	}
+	if m.Document != nil && pay.HandleDocument(ctx, m) {
+		return
+	}
+	if m.Text == "" {
+		return
+	}
+	text := strings.TrimSpace(m.Text)
+	if text == "/start" || strings.HasPrefix(text, "/start ") {
+		handleStart(ctx, bot, pay, logger, m, text)
+		return
+	}
+	if pay.HandleBlockedRegistrationMessage(ctx, m) {
+		return
+	}
+	if text == "/me" || text == "/cabinet" || tgbot.IsCabinetButton(text) {
+		if pay.SendCabinet(ctx, m.Chat.ID) {
 			return
 		}
 	}
-	if u.Message != nil && len(u.Message.Photo) > 0 {
-		if pay.HandlePhoto(ctx, u.Message) {
-			return
-		}
+	if handleCommand(ctx, pay, m, text) {
+		return
 	}
-	if u.Message != nil && u.Message.Document != nil {
-		if pay.HandleDocument(ctx, u.Message) {
-			return
-		}
+	if pay.HandleText(ctx, m) {
+		return
 	}
-	if u.Message != nil && u.Message.Text != "" {
-		text := strings.TrimSpace(u.Message.Text)
-		if text == "/start" || strings.HasPrefix(text, "/start ") {
-			if pay.GuardNewTelegramUser(ctx, u.Message.From) {
-				return
-			}
-			payload := strings.TrimSpace(strings.TrimPrefix(text, "/start"))
-			if code, ok := strings.CutPrefix(payload, "gift_"); ok && code != "" {
-				logger.Info("received gift deep link", "chat_id", u.Message.Chat.ID)
-				pay.StartGiftRedemption(ctx, u.Message.Chat.ID, code)
-				return
-			}
-			if id, ok := strings.CutPrefix(payload, "ref_"); ok && id != "" {
-				logger.Info("received referral deep link", "chat_id", u.Message.Chat.ID)
-				pay.StartReferral(ctx, u.Message.Chat.ID, id)
-				// Fall through to the normal welcome + reply keyboard so the
-				// referred user still sees the start screen and trial offer.
-			}
-			logger.Info("received /start command", "chat_id", u.Message.Chat.ID)
-			if err := bot.SendWelcome(ctx, u.Message.Chat.ID, pay.TrialOffered()); err != nil {
-				logger.Error("send welcome message failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
-			}
-			if err := bot.SendPlainWithReplyKeyboard(ctx, u.Message.Chat.ID,
-				fmt.Sprintf(i18n.T("Кнопка «%s» теперь всегда под полем ввода 👇"), tgbot.CabinetButtonLabel()), tgbot.MainReplyKeyboard()); err != nil {
-				logger.Error("send reply keyboard failed", "err", err.Error(), "chat_id", u.Message.Chat.ID)
-			}
-			return
-		}
-		if pay.HandleBlockedRegistrationMessage(ctx, u.Message) {
-			return
-		}
-		if text == "/me" || text == "/cabinet" || tgbot.IsCabinetButton(text) {
-			if pay.SendCabinet(ctx, u.Message.Chat.ID) {
-				return
-			}
-		}
-		switch text {
-		case "/menu", "/help":
-			pay.SendMenu(ctx, u.Message.Chat.ID)
-			return
-		case "/devices":
-			if pay.SendDevices(ctx, u.Message.Chat.ID) {
-				return
-			}
-		case "/tariff":
-			pay.SendTariffs(ctx, u.Message.Chat.ID)
-			return
-		case "/gift":
-			if pay.StartGiftCodeFlow(ctx, u.Message) {
-				return
-			}
-		case "/mygifts":
-			pay.SendMyGifts(ctx, u.Message.Chat.ID)
-			return
-		case "/invite":
-			if pay.StartInviteFlow(ctx, u.Message) {
-				return
-			}
-		case "/register":
-			if pay.StartRegisterFlow(ctx, u.Message) {
-				return
-			}
-		case "/trial":
-			if pay.StartTrialFlow(ctx, u.Message) {
-				return
-			}
-		case "/support":
-			if pay.StartSupport(ctx, u.Message.Chat.ID) {
-				return
-			}
-		}
-		if pay.HandleText(ctx, u.Message) {
-			return
-		}
-		if pay.HandleAdminCommand(ctx, u.Message) {
-			return
-		}
+	pay.HandleAdminCommand(ctx, m)
+}
+
+// handleStart serves /start: gift and referral deep links first, then the
+// welcome message and the main reply keyboard.
+func handleStart(ctx context.Context, bot *tgbot.Bot, pay *payments.Service, logger *slog.Logger, m *tgbot.Message, text string) {
+	if pay.GuardNewTelegramUser(ctx, m.From) {
+		return
 	}
+	payload := strings.TrimSpace(strings.TrimPrefix(text, "/start"))
+	if code, ok := strings.CutPrefix(payload, "gift_"); ok && code != "" {
+		logger.Info("received gift deep link", "chat_id", m.Chat.ID)
+		pay.StartGiftRedemption(ctx, m.Chat.ID, code)
+		return
+	}
+	if id, ok := strings.CutPrefix(payload, "ref_"); ok && id != "" {
+		logger.Info("received referral deep link", "chat_id", m.Chat.ID)
+		pay.StartReferral(ctx, m.Chat.ID, id)
+		// Fall through to the normal welcome + reply keyboard so the
+		// referred user still sees the start screen and trial offer.
+	}
+	logger.Info("received /start command", "chat_id", m.Chat.ID)
+	if err := bot.SendWelcome(ctx, m.Chat.ID, pay.TrialOffered()); err != nil {
+		logger.Error("send welcome message failed", "err", err.Error(), "chat_id", m.Chat.ID)
+	}
+	if err := bot.SendPlainWithReplyKeyboard(ctx, m.Chat.ID,
+		fmt.Sprintf(i18n.T("Кнопка «%s» теперь всегда под полем ввода 👇"), tgbot.CabinetButtonLabel()), tgbot.MainReplyKeyboard()); err != nil {
+		logger.Error("send reply keyboard failed", "err", err.Error(), "chat_id", m.Chat.ID)
+	}
+}
+
+// handleCommand routes the bot's slash commands. Returning true means the
+// message was fully handled; false lets the text fall through to the
+// conversational handlers.
+func handleCommand(ctx context.Context, pay *payments.Service, m *tgbot.Message, text string) bool {
+	switch text {
+	case "/menu", "/help":
+		pay.SendMenu(ctx, m.Chat.ID)
+		return true
+	case "/devices":
+		return pay.SendDevices(ctx, m.Chat.ID)
+	case "/tariff":
+		pay.SendTariffs(ctx, m.Chat.ID)
+		return true
+	case "/gift":
+		return pay.StartGiftCodeFlow(ctx, m)
+	case "/mygifts":
+		pay.SendMyGifts(ctx, m.Chat.ID)
+		return true
+	case "/invite":
+		return pay.StartInviteFlow(ctx, m)
+	case "/register":
+		return pay.StartRegisterFlow(ctx, m)
+	case "/trial":
+		return pay.StartTrialFlow(ctx, m)
+	case "/support":
+		return pay.StartSupport(ctx, m.Chat.ID)
+	}
+	return false
 }
 
 // adminBotCommands returns the command menu for the admin chat (user commands + /admin).
