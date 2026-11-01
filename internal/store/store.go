@@ -260,6 +260,26 @@ func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
 func parseTime(s string) (time.Time, error) { return time.Parse(time.RFC3339, s) }
 
+// parseNullTime decodes an optional RFC3339 column; NULL and unparseable
+// values yield nil.
+func parseNullTime(ns sql.NullString) *time.Time {
+	if !ns.Valid {
+		return nil
+	}
+	if ts, e := parseTime(ns.String); e == nil {
+		return &ts
+	}
+	return nil
+}
+
+// applyRequestTimes decodes the shared timestamp columns of a
+// payment_requests row.
+func applyRequestTimes(r *PaymentRequest, exp, created string, confirmed sql.NullString) {
+	r.ExpireAt, _ = parseTime(exp)
+	r.CreatedAt, _ = parseTime(created)
+	r.ConfirmedAt = parseNullTime(confirmed)
+}
+
 // tableColumns returns the set of column names of table.
 func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
 	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)

@@ -223,12 +223,6 @@ func scanPaymentRequestRow(rows *sql.Rows) (*PaymentRequest, error) {
 		newNullTimeScanner(&r.ExtensionExpiresAt), newNullTimeScanner(&r.ExtensionRestoredAt)); err != nil {
 		return nil, err
 	}
-	r.ExpireAt, _ = parseTime(exp)
-	r.CreatedAt, _ = parseTime(created)
-	if confirmed.Valid {
-		if ts, e := parseTime(confirmed.String); e == nil {
-			r.ConfirmedAt = &ts
-		}
-	}
+	applyRequestTimes(&r, exp, created, confirmed)
 	return &r, nil
 }

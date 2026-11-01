@@ -143,13 +143,7 @@ func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentReques
 	if err != nil {
 		return nil, err
 	}
-	r.ExpireAt, _ = parseTime(exp)
-	r.CreatedAt, _ = parseTime(created)
-	if confirmed.Valid {
-		if ts, e := parseTime(confirmed.String); e == nil {
-			r.ConfirmedAt = &ts
-		}
-	}
+	applyRequestTimes(&r, exp, created, confirmed)
 	return &r, nil
 }
 
@@ -183,13 +177,7 @@ func (s *Store) GetPaymentRequestByProviderTxn(ctx context.Context, txnID string
 	if err != nil {
 		return nil, err
 	}
-	r.ExpireAt, _ = parseTime(exp)
-	r.CreatedAt, _ = parseTime(created)
-	if confirmed.Valid {
-		if ts, e := parseTime(confirmed.String); e == nil {
-			r.ConfirmedAt = &ts
-		}
-	}
+	applyRequestTimes(&r, exp, created, confirmed)
 	return &r, nil
 }
 
@@ -223,13 +211,7 @@ func (s *Store) LatestConfirmedPaymentRequestByUser(ctx context.Context, remnawa
 	if err != nil {
 		return nil, err
 	}
-	r.ExpireAt, _ = parseTime(exp)
-	r.CreatedAt, _ = parseTime(created)
-	if confirmed.Valid {
-		if ts, e := parseTime(confirmed.String); e == nil {
-			r.ConfirmedAt = &ts
-		}
-	}
+	applyRequestTimes(&r, exp, created, confirmed)
 	return &r, nil
 }
 
@@ -278,13 +260,7 @@ func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) 
 			newNullTimeScanner(&r.ExtensionExpiresAt), newNullTimeScanner(&r.ExtensionRestoredAt)); err != nil {
 			return nil, err
 		}
-		r.ExpireAt, _ = parseTime(exp)
-		r.CreatedAt, _ = parseTime(created)
-		if confirmed.Valid {
-			if ts, e := parseTime(confirmed.String); e == nil {
-				r.ConfirmedAt = &ts
-			}
-		}
+		applyRequestTimes(&r, exp, created, confirmed)
 		out = append(out, r)
 	}
 	return out, rows.Err()

@@ -216,7 +216,9 @@ func (c *Client) GetUserByShortUUID(ctx context.Context, shortUUID string) (*Use
 	return c.getUser(ctx, endpoint, "get user by short uuid")
 }
 
-func (c *Client) getUser(ctx context.Context, endpoint, op string) (*User, error) {
+// doGet performs an authenticated GET and returns the response body. A nil
+// body with a nil error means the panel answered 404 (resource not found).
+func (c *Client) doGet(ctx context.Context, endpoint, op string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -239,9 +241,12 @@ func (c *Client) getUser(ctx context.Context, endpoint, op string) (*User, error
 		b, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
 	}
+	return io.ReadAll(resp.Body)
+}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
+func (c *Client) getUser(ctx context.Context, endpoint, op string) (*User, error) {
+	body, err := c.doGet(ctx, endpoint, op)
+	if err != nil || body == nil {
 		return nil, err
 	}
 	var payload userResponse
@@ -413,31 +418,8 @@ type usersStreamPage struct {
 }
 
 func (c *Client) fetchUsersStreamPage(ctx context.Context, endpoint, op string) (*usersStreamPage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	c.setRequestHeaders(req)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("%s: unauthorized (status=%d)", op, resp.StatusCode)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
+	body, err := c.doGet(ctx, endpoint, op)
+	if err != nil || body == nil {
 		return nil, err
 	}
 	var payload usersStreamResponse
@@ -462,22 +444,15 @@ var ErrHwidDeviceNotFound = errors.New("hwid device not found")
 // useful reading of "no such user record here" is "no devices".
 func (c *Client) GetHwidDevices(ctx context.Context, userID int64) ([]HwidDevice, error) {
 	endpoint := fmt.Sprintf("%s/api/hwid/devices/%d", c.baseURL, userID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
+	body, err := c.doGet(ctx, endpoint, "get hwid devices")
+	if err != nil || body == nil {
 		return nil, err
 	}
-	c.setRequestHeaders(req)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("get hwid devices: %w", err)
+	var payload hwidDevicesResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("decode hwid devices: %w (body=%s)", err, textutil.Truncate(string(body), 300))
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-	return decodeHwidDevices(resp, "get hwid devices")
+	return payload.Response.Devices, nil
 }
 
 // DeleteHwidDevice frees one HWID slot and returns the devices still registered

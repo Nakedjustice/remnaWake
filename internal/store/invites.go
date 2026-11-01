@@ -51,11 +51,7 @@ func (s *Store) GetInviteRequest(ctx context.Context, id int64) (*InviteRequest,
 		return nil, err
 	}
 	r.CreatedAt, _ = parseTime(created)
-	if resolvedAt.Valid {
-		if ts, e := parseTime(resolvedAt.String); e == nil {
-			r.ResolvedAt = &ts
-		}
-	}
+	r.ResolvedAt = parseNullTime(resolvedAt)
 	return &r, nil
 }
 
@@ -94,11 +90,7 @@ func (s *Store) listInviteRequests(ctx context.Context, where string, arg any) (
 			return nil, err
 		}
 		r.CreatedAt, _ = parseTime(created)
-		if resolvedAt.Valid {
-			if ts, e := parseTime(resolvedAt.String); e == nil {
-				r.ResolvedAt = &ts
-			}
-		}
+		r.ResolvedAt = parseNullTime(resolvedAt)
 		out = append(out, r)
 	}
 	return out, rows.Err()

@@ -950,7 +950,3 @@ func (b *Bot) EndpointHost() string {
 	u, _ := url.Parse(b.apiBase)
 	return u.Host
 }
-
-func ParseChatID(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
-}

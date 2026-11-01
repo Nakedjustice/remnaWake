@@ -63,11 +63,7 @@ func (s *Store) scanTrialRequest(row *sql.Row) (*TrialRequest, error) {
 		return nil, err
 	}
 	r.CreatedAt, _ = parseTime(created)
-	if resolvedAt.Valid {
-		if ts, e := parseTime(resolvedAt.String); e == nil {
-			r.ResolvedAt = &ts
-		}
-	}
+	r.ResolvedAt = parseNullTime(resolvedAt)
 	return &r, nil
 }
 
@@ -94,11 +90,7 @@ func (s *Store) ListTrialRequestsByStatus(ctx context.Context, status string) ([
 			return nil, err
 		}
 		r.CreatedAt, _ = parseTime(created)
-		if resolvedAt.Valid {
-			if ts, e := parseTime(resolvedAt.String); e == nil {
-				r.ResolvedAt = &ts
-			}
-		}
+		r.ResolvedAt = parseNullTime(resolvedAt)
 		out = append(out, r)
 	}
 	return out, rows.Err()

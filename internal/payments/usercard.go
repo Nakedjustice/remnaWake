@@ -146,14 +146,8 @@ func (s *Service) handleUserExpiryDelta(ctx context.Context, chatID int64, data 
 	if err != nil {
 		return
 	}
-	username, ok := s.userCtlTarget(chatID)
+	sub, ok := s.managedUserForCtl(ctx, chatID)
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
-		return
-	}
-	sub, err := s.findManagedUser(ctx, username)
-	if err != nil || sub == nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return
 	}
 	if _, err := s.applyUserExpiryDelta(ctx, sub.RemnawaveID, sub.ExpireAt, days); err != nil {
@@ -188,14 +182,8 @@ func (s *Service) consumeUserHwid(ctx context.Context, chatID int64, text string
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 0 (0 — без ограничения)."))
 		return true
 	}
-	username, ok := s.userCtlTarget(chatID)
+	sub, ok := s.managedUserForCtl(ctx, chatID)
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
-		return true
-	}
-	sub, err := s.findManagedUser(ctx, username)
-	if err != nil || sub == nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return true
 	}
 	if err := s.setUserHwidLimit(ctx, sub.RemnawaveID, n); err != nil {
@@ -216,14 +204,8 @@ func (s *Service) consumeUserTraffic(ctx context.Context, chatID int64, text str
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 0 GB (0 — без ограничения)."))
 		return true
 	}
-	username, ok := s.userCtlTarget(chatID)
+	sub, ok := s.managedUserForCtl(ctx, chatID)
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
-		return true
-	}
-	sub, err := s.findManagedUser(ctx, username)
-	if err != nil || sub == nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return true
 	}
 	if err := s.setUserTrafficLimitGB(ctx, sub.RemnawaveID, gb); err != nil {
@@ -244,14 +226,8 @@ func (s *Service) consumeUserExpiry(ctx context.Context, chatID int64, text stri
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число дней (можно со знаком «−» для уменьшения)."))
 		return true
 	}
-	username, ok := s.userCtlTarget(chatID)
+	sub, ok := s.managedUserForCtl(ctx, chatID)
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
-		return true
-	}
-	sub, err := s.findManagedUser(ctx, username)
-	if err != nil || sub == nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return true
 	}
 	if _, err := s.applyUserExpiryDelta(ctx, sub.RemnawaveID, sub.ExpireAt, days); err != nil {
@@ -264,14 +240,8 @@ func (s *Service) consumeUserExpiry(ctx context.Context, chatID int64, text stri
 
 // handleUserStatusToggle flips ACTIVE⇄DISABLED for the current target.
 func (s *Service) handleUserStatusToggle(ctx context.Context, chatID int64) {
-	username, ok := s.userCtlTarget(chatID)
+	sub, ok := s.managedUserForCtl(ctx, chatID)
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
-		return
-	}
-	sub, err := s.findManagedUser(ctx, username)
-	if err != nil || sub == nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return
 	}
 	if _, err := s.toggleUserStatus(ctx, sub.RemnawaveID, sub.Status); err != nil {
@@ -283,14 +253,8 @@ func (s *Service) handleUserStatusToggle(ctx context.Context, chatID int64) {
 
 // sendUserResetStrategies shows the per-user traffic-reset strategy picker.
 func (s *Service) sendUserResetStrategies(ctx context.Context, chatID int64) {
-	username, ok := s.userCtlTarget(chatID)
+	sub, ok := s.managedUserForCtl(ctx, chatID)
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
-		return
-	}
-	sub, err := s.findManagedUser(ctx, username)
-	if err != nil || sub == nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return
 	}
 	rows := make([][]tg.InlineKeyboardButton, 0, len(TrafficResetStrategies)+1)
@@ -310,14 +274,8 @@ func (s *Service) sendUserResetStrategies(ctx context.Context, chatID int64) {
 // handleUserResetPick applies a per-user reset strategy from adm:u:reset:<S>.
 func (s *Service) handleUserResetPick(ctx context.Context, chatID int64, data string) {
 	strategy := strings.TrimPrefix(data, "adm:u:reset:")
-	username, ok := s.userCtlTarget(chatID)
+	sub, ok := s.managedUserForCtl(ctx, chatID)
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
-		return
-	}
-	sub, err := s.findManagedUser(ctx, username)
-	if err != nil || sub == nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return
 	}
 	if err := s.setUserResetStrategy(ctx, sub.RemnawaveID, strategy); err != nil {
@@ -329,14 +287,8 @@ func (s *Service) handleUserResetPick(ctx context.Context, chatID int64, data st
 
 // sendUserSquads shows the per-user squad toggle list.
 func (s *Service) sendUserSquads(ctx context.Context, chatID int64) {
-	username, ok := s.userCtlTarget(chatID)
+	sub, ok := s.managedUserForCtl(ctx, chatID)
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
-		return
-	}
-	sub, err := s.findManagedUser(ctx, username)
-	if err != nil || sub == nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return
 	}
 	if s.squads == nil {
@@ -372,14 +324,8 @@ func (s *Service) sendUserSquads(ctx context.Context, chatID int64) {
 // handleUserSquadToggle adds/removes one squad for the current target.
 func (s *Service) handleUserSquadToggle(ctx context.Context, chatID int64, data string) {
 	squadUUID := strings.TrimPrefix(data, "adm:u:sq:")
-	username, ok := s.userCtlTarget(chatID)
+	sub, ok := s.managedUserForCtl(ctx, chatID)
 	if !ok {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
-		return
-	}
-	sub, err := s.findManagedUser(ctx, username)
-	if err != nil || sub == nil {
-		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
 		return
 	}
 	if err := s.toggleUserSquad(ctx, sub.RemnawaveID, sub.SquadUUIDs, squadUUID); err != nil {
@@ -387,6 +333,22 @@ func (s *Service) handleUserSquadToggle(ctx context.Context, chatID int64, data 
 		return
 	}
 	s.sendUserSquads(ctx, chatID)
+}
+
+// managedUserForCtl resolves the current "Manage user" target, answering the
+// admin itself when the control session expired or the panel lookup failed.
+func (s *Service) managedUserForCtl(ctx context.Context, chatID int64) (*Subscriber, bool) {
+	username, ok := s.userCtlTarget(chatID)
+	if !ok {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
+		return nil, false
+	}
+	sub, err := s.findManagedUser(ctx, username)
+	if err != nil || sub == nil {
+		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось обновить карточку пользователя. Попробуйте позже."))
+		return nil, false
+	}
+	return sub, true
 }
 
 // reportUserCtlError maps a "Manage user" mutation error to an admin reply.
