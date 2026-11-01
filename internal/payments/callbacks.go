@@ -23,125 +23,96 @@ func (s *Service) HandleCallback(ctx context.Context, cb *tg.CallbackQuery) bool
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Доступ к боту ограничен. Обратитесь в поддержку."))
 		return true
 	}
-	switch {
-	case strings.HasPrefix(cb.Data, "pay:"):
-		return s.handlePay(ctx, cb)
-	case strings.HasPrefix(cb.Data, "pick:"):
-		return s.handlePick(ctx, cb)
-	case strings.HasPrefix(cb.Data, "pln:"):
-		return s.handlePlanPick(ctx, cb)
-	case strings.HasPrefix(cb.Data, "back:"):
-		return s.handleBack(ctx, cb)
-	case strings.HasPrefix(cb.Data, "ok:"):
-		return s.handleConfirm(ctx, cb)
-	case strings.HasPrefix(cb.Data, "rej:"):
-		return s.handleReject(ctx, cb)
-	case cb.Data == "menu:tariffs":
-		return s.handleMenuTariffs(ctx, cb)
-	case cb.Data == "menu:cabinet":
-		return s.handleMenuCabinet(ctx, cb)
-	case strings.HasPrefix(cb.Data, "cab:pay:"):
-		return s.handleCabinetPay(ctx, cb)
-	case strings.HasPrefix(cb.Data, "tex:pay:"):
-		return s.handleTrafficExtensionPay(ctx, cb)
-	case strings.HasPrefix(cb.Data, "tex:pick:"):
-		return s.handleTrafficExtensionPick(ctx, cb)
-	case strings.HasPrefix(cb.Data, "dev:"):
-		return s.handleDeviceCallback(ctx, cb)
-	case strings.HasPrefix(cb.Data, "plcheck:"):
-		return s.handlePlategaCheck(ctx, cb)
-	case strings.HasPrefix(cb.Data, "chg:"):
-		return s.handlePlanChangeConfirm(ctx, cb)
-	case strings.HasPrefix(cb.Data, "chgv:"):
-		return s.handlePlanChangeProviderConfirm(ctx, cb)
-	case strings.HasPrefix(cb.Data, "payvia:"):
-		return s.handlePayVia(ctx, cb)
-	case cb.Data == "cab:cancel":
-		return s.handleCabinetCancel(ctx, cb)
-	case cb.Data == "menu:invite":
-		return s.handleMenuInvite(ctx, cb)
-	case cb.Data == "inv_submit":
-		return s.handleInviteSubmit(ctx, cb)
-	case strings.HasPrefix(cb.Data, "inv_ok:"):
-		return s.handleInviteApprove(ctx, cb)
-	case strings.HasPrefix(cb.Data, "inv_rej:"):
-		return s.handleInviteReject(ctx, cb)
-	case cb.Data == "inv_cancel":
-		return s.handleInviteCancel(ctx, cb)
-	case cb.Data == "menu:register":
-		return s.handleMenuRegister(ctx, cb)
-	case cb.Data == "menu:trial":
-		return s.handleMenuTrial(ctx, cb)
-	case cb.Data == "menu:referral":
-		return s.handleMenuReferral(ctx, cb)
-	case cb.Data == "notif:menu":
-		return s.handleNotifMenu(ctx, cb)
-	case cb.Data == "notif:expiry":
-		return s.handleNotifToggle(ctx, cb, store.NotificationExpiry)
-	case cb.Data == "notif:winback":
-		return s.handleNotifToggle(ctx, cb, store.NotificationWinback)
-	case cb.Data == "reg_confirm":
-		return s.handleRegisterConfirm(ctx, cb)
-	case cb.Data == "reg_cancel":
-		return s.handleRegisterCancel(ctx, cb)
-	case cb.Data == "menu:gift":
-		return s.handleMenuGift(ctx, cb)
-	case cb.Data == "menu:mygifts":
-		return s.handleMenuMyGifts(ctx, cb)
-	case cb.Data == "mg:menu":
-		return s.handleMyGiftsMenu(ctx, cb)
-	case strings.HasPrefix(cb.Data, "mg:list:"):
-		return s.handleMyGiftsList(ctx, cb)
-	case cb.Data == "mg:noop":
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
-		return true
-	case strings.HasPrefix(cb.Data, "gc_link:"):
-		return s.handleGiftCodeResend(ctx, cb)
-	case strings.HasPrefix(cb.Data, "gc_pick:"):
-		return s.handleGiftCodePick(ctx, cb)
-	case cb.Data == "gc_cancel":
-		return s.handleGiftCodeCancel(ctx, cb)
-	case strings.HasPrefix(cb.Data, "gc_ok:"):
-		return s.handleGiftCodeApprove(ctx, cb)
-	case strings.HasPrefix(cb.Data, "gc_rej:"):
-		return s.handleGiftCodeReject(ctx, cb)
-	case strings.HasPrefix(cb.Data, "tr_ok:"):
-		return s.handleTrialApprove(ctx, cb)
-	case strings.HasPrefix(cb.Data, "tr_rej:"):
-		return s.handleTrialReject(ctx, cb)
-	case strings.HasPrefix(cb.Data, "gc_use:"):
-		return s.handleGiftUse(ctx, cb)
-	case cb.Data == "gc_redeem_cancel":
-		return s.handleGiftRedeemCancel(ctx, cb)
-	case cb.Data == "upd:install":
-		return s.handleUpdateInstall(ctx, cb)
-	case cb.Data == "upd:dismiss":
-		return s.handleUpdateDismiss(ctx, cb)
-	case cb.Data == "menu:support":
-		return s.handleMenuSupport(ctx, cb)
-	case cb.Data == "sup:close":
-		return s.handleSupportClose(ctx, cb)
-	case strings.HasPrefix(cb.Data, "sup:reply:"):
-		return s.handleSupportReplyStart(ctx, cb)
-	case cb.Data == "sup:list":
-		return s.handleSupportTicketList(ctx, cb)
-	case cb.Data == "sup:new":
-		return s.handleSupportTicketNew(ctx, cb)
-	case strings.HasPrefix(cb.Data, "sup:t:"):
-		return s.handleSupportTicketOpen(ctx, cb)
-	case strings.HasPrefix(cb.Data, "sup:re:"):
-		return s.handleSupportTicketReplyStart(ctx, cb)
-	case strings.HasPrefix(cb.Data, "sup:cl:"):
-		return s.handleSupportTicketClose(ctx, cb)
-	case strings.HasPrefix(cb.Data, guardUnblockCallbackPrefix):
-		return s.handleRegistrationUnblock(ctx, cb)
-	case strings.HasPrefix(cb.Data, "adm:infrapaid:"):
-		return s.handleInfraPaid(ctx, cb)
-	case strings.HasPrefix(cb.Data, "adm:"):
-		return s.handleAdminMenu(ctx, cb)
-	default:
-		return false
+	for _, r := range callbackRoutes {
+		if (r.exact && cb.Data == r.match) || (!r.exact && strings.HasPrefix(cb.Data, r.match)) {
+			return r.fn(s, ctx, cb)
+		}
 	}
+	return false
+}
+
+// callbackRoutes maps inline-keyboard callback data to its handler in
+// dispatch order: the first match wins, exactly like the switch this
+// replaces. exact compares the whole payload; otherwise the payload must
+// carry the match as a prefix. Keep the order when adding routes.
+var callbackRoutes = []struct {
+	match string
+	exact bool
+	fn    func(*Service, context.Context, *tg.CallbackQuery) bool
+}{
+	{"pay:", false, (*Service).handlePay},
+	{"pick:", false, (*Service).handlePick},
+	{"pln:", false, (*Service).handlePlanPick},
+	{"back:", false, (*Service).handleBack},
+	{"ok:", false, (*Service).handleConfirm},
+	{"rej:", false, (*Service).handleReject},
+	{"menu:tariffs", true, (*Service).handleMenuTariffs},
+	{"menu:cabinet", true, (*Service).handleMenuCabinet},
+	{"cab:pay:", false, (*Service).handleCabinetPay},
+	{"tex:pay:", false, (*Service).handleTrafficExtensionPay},
+	{"tex:pick:", false, (*Service).handleTrafficExtensionPick},
+	{"dev:", false, (*Service).handleDeviceCallback},
+	{"plcheck:", false, (*Service).handlePlategaCheck},
+	{"chg:", false, (*Service).handlePlanChangeConfirm},
+	{"chgv:", false, (*Service).handlePlanChangeProviderConfirm},
+	{"payvia:", false, (*Service).handlePayVia},
+	{"cab:cancel", true, (*Service).handleCabinetCancel},
+	{"menu:invite", true, (*Service).handleMenuInvite},
+	{"inv_submit", true, (*Service).handleInviteSubmit},
+	{"inv_ok:", false, (*Service).handleInviteApprove},
+	{"inv_rej:", false, (*Service).handleInviteReject},
+	{"inv_cancel", true, (*Service).handleInviteCancel},
+	{"menu:register", true, (*Service).handleMenuRegister},
+	{"menu:trial", true, (*Service).handleMenuTrial},
+	{"menu:referral", true, (*Service).handleMenuReferral},
+	{"notif:menu", true, (*Service).handleNotifMenu},
+	{"notif:expiry", true, (*Service).handleNotifExpiry},
+	{"notif:winback", true, (*Service).handleNotifWinback},
+	{"reg_confirm", true, (*Service).handleRegisterConfirm},
+	{"reg_cancel", true, (*Service).handleRegisterCancel},
+	{"menu:gift", true, (*Service).handleMenuGift},
+	{"menu:mygifts", true, (*Service).handleMenuMyGifts},
+	{"mg:menu", true, (*Service).handleMyGiftsMenu},
+	{"mg:list:", false, (*Service).handleMyGiftsList},
+	{"mg:noop", true, (*Service).handleNoop},
+	{"gc_link:", false, (*Service).handleGiftCodeResend},
+	{"gc_pick:", false, (*Service).handleGiftCodePick},
+	{"gc_cancel", true, (*Service).handleGiftCodeCancel},
+	{"gc_ok:", false, (*Service).handleGiftCodeApprove},
+	{"gc_rej:", false, (*Service).handleGiftCodeReject},
+	{"tr_ok:", false, (*Service).handleTrialApprove},
+	{"tr_rej:", false, (*Service).handleTrialReject},
+	{"gc_use:", false, (*Service).handleGiftUse},
+	{"gc_redeem_cancel", true, (*Service).handleGiftRedeemCancel},
+	{"upd:install", true, (*Service).handleUpdateInstall},
+	{"upd:dismiss", true, (*Service).handleUpdateDismiss},
+	{"menu:support", true, (*Service).handleMenuSupport},
+	{"sup:close", true, (*Service).handleSupportClose},
+	{"sup:reply:", false, (*Service).handleSupportReplyStart},
+	{"sup:list", true, (*Service).handleSupportTicketList},
+	{"sup:new", true, (*Service).handleSupportTicketNew},
+	{"sup:t:", false, (*Service).handleSupportTicketOpen},
+	{"sup:re:", false, (*Service).handleSupportTicketReplyStart},
+	{"sup:cl:", false, (*Service).handleSupportTicketClose},
+	{guardUnblockCallbackPrefix, false, (*Service).handleRegistrationUnblock},
+	{"adm:infrapaid:", false, (*Service).handleInfraPaid},
+	{"adm:", false, (*Service).handleAdminMenu},
+}
+
+// handleNoop acknowledges pagination label buttons that carry no action.
+func (s *Service) handleNoop(ctx context.Context, cb *tg.CallbackQuery) bool {
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	return true
+}
+
+// handleNotifExpiry and handleNotifWinback bind the notification kind for the
+// two toggle buttons so they fit the shared route-table signature.
+func (s *Service) handleNotifExpiry(ctx context.Context, cb *tg.CallbackQuery) bool {
+	return s.handleNotifToggle(ctx, cb, store.NotificationExpiry)
+}
+
+func (s *Service) handleNotifWinback(ctx context.Context, cb *tg.CallbackQuery) bool {
+	return s.handleNotifToggle(ctx, cb, store.NotificationWinback)
 }
 
 // assertCallbackOwner resolves the remembered profile a callback targets and
@@ -284,6 +255,23 @@ func (s *Service) planKeyboard(userID int64, plans []store.Plan) *tg.InlineKeybo
 	return &tg.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
 
+// tariffPrice resolves the tariff for a callback and, when it fails to load
+// or is gone, acknowledges the button with the matching user-visible answer.
+// ok=false means the caller must stop and return true.
+func (s *Service) tariffPrice(ctx context.Context, cb *tg.CallbackQuery, plan string, months int) (int, bool) {
+	tariff, err := s.store.GetTariff(ctx, plan, months)
+	if err != nil {
+		s.logger.Error("get tariff failed", "err", err.Error())
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+		return 0, false
+	}
+	if tariff == nil {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
+		return 0, false
+	}
+	return tariff.Price, true
+}
+
 func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
 	// pick:<userID>:<months> (standard, incl. stale keyboards) or
 	// pick:<userID>:<months>:<plan> for custom presets.
@@ -307,18 +295,12 @@ func (s *Service) handlePick(ctx context.Context, cb *tg.CallbackQuery) bool {
 		return true
 	}
 
-	tariff, err := s.store.GetTariff(ctx, plan, months)
-	if err != nil {
-		s.logger.Error("get tariff failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
-		return true
-	}
-	if tariff == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
+	price, ok := s.tariffPrice(ctx, cb, plan, months)
+	if !ok {
 		return true
 	}
 
-	s.createRequestAndNotify(ctx, cb, u, months, tariff.Price, plan, false)
+	s.createRequestAndNotify(ctx, cb, u, months, price, plan, false)
 	return true
 }
 
@@ -531,17 +513,11 @@ func (s *Service) handlePayVia(ctx context.Context, cb *tg.CallbackQuery) bool {
 		return true
 	}
 
-	tariff, err := s.store.GetTariff(ctx, plan, months)
-	if err != nil {
-		s.logger.Error("get tariff failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+	price, ok := s.tariffPrice(ctx, cb, plan, months)
+	if !ok {
 		return true
 	}
-	if tariff == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
-		return true
-	}
-	s.routeProviderWithPlanChangeGate(ctx, cb, u, userID, months, tariff.Price, plan, provider, planChangeConfirmed)
+	s.routeProviderWithPlanChangeGate(ctx, cb, u, userID, months, price, plan, provider, planChangeConfirmed)
 	return true
 }
 
@@ -564,17 +540,11 @@ func (s *Service) handlePlanChangeConfirm(ctx context.Context, cb *tg.CallbackQu
 		return true
 	}
 
-	tariff, err := s.store.GetTariff(ctx, plan, months)
-	if err != nil {
-		s.logger.Error("get tariff failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+	price, ok := s.tariffPrice(ctx, cb, plan, months)
+	if !ok {
 		return true
 	}
-	if tariff == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
-		return true
-	}
-	s.createRequestAndNotify(ctx, cb, u, months, tariff.Price, plan, true)
+	s.createRequestAndNotify(ctx, cb, u, months, price, plan, true)
 	return true
 }
 
@@ -601,17 +571,11 @@ func (s *Service) handlePlanChangeProviderConfirm(ctx context.Context, cb *tg.Ca
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот способ оплаты больше недоступен."))
 		return true
 	}
-	tariff, err := s.store.GetTariff(ctx, plan, months)
-	if err != nil {
-		s.logger.Error("get tariff failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
+	price, ok := s.tariffPrice(ctx, cb, plan, months)
+	if !ok {
 		return true
 	}
-	if tariff == nil {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Этот тариф больше недоступен."))
-		return true
-	}
-	s.routeProvider(ctx, cb, u, userID, months, tariff.Price, plan, provider)
+	s.routeProvider(ctx, cb, u, userID, months, price, plan, provider)
 	return true
 }
 
@@ -831,142 +795,100 @@ func (s *Service) handleAdminMenu(ctx context.Context, cb *tg.CallbackQuery) boo
 		return true
 	}
 	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
-	chatID := cb.From.ID
-	switch {
-	case cb.Data == "adm:menu":
-		s.SendAdminMenu(ctx, chatID)
-	case cb.Data == "adm:pending":
-		s.sendPendingSummary(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:pd:"):
-		s.sendPendingCategory(ctx, chatID, strings.TrimPrefix(cb.Data, "adm:pd:"))
-	case cb.Data == "adm:tariffs":
-		s.sendAdminTariffs(ctx, chatID)
-	case cb.Data == "adm:stats":
-		s.sendAdminStats(ctx, chatID)
-	case cb.Data == "adm:backup":
-		s.cmdBackup(ctx, chatID)
-	case cb.Data == "adm:del_list":
-		s.sendAdminDelList(ctx, chatID)
-	case cb.Data == "adm:traffic_ext":
-		s.cmdListTrafficExtensions(ctx, chatID)
-	case cb.Data == "adm:req":
-		s.sendAdminRequisites(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:del:"):
-		s.handleAdminDelTariff(ctx, chatID, cb.Data)
-	case cb.Data == "adm:setreq":
-		s.startSetRequisitesFlow(ctx, chatID)
-	case cb.Data == "adm:shot_toggle":
-		s.handleAdminScreenshotToggle(ctx, chatID)
-	case cb.Data == "adm:guard":
-		s.sendRegistrationGuardPatternSettings(ctx, chatID)
-	case cb.Data == "adm:guard:add":
-		s.startRegistrationGuardPatternInput(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:guard:del:"):
-		s.handleRegistrationGuardPatternDelete(ctx, chatID, cb.Data)
-	case cb.Data == "adm:providers":
-		s.sendAdminProviderList(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:provtog:"):
-		s.handleAdminProviderToggle(ctx, chatID, cb.Data)
-	case cb.Data == "adm:addtariff":
-		s.startAddTariffFlow(ctx, chatID)
-	case cb.Data == "adm:gifts":
-		s.sendAdminGiftList(ctx, chatID)
-	case cb.Data == "adm:gbuyers":
-		s.handleAdminGiftBuyers(ctx, cb)
-	case strings.HasPrefix(cb.Data, "adm:gbuyer:"):
-		s.handleAdminGiftBuyer(ctx, cb)
-	case strings.HasPrefix(cb.Data, "adm:glist:"):
-		s.handleAdminGiftList(ctx, cb)
-	case cb.Data == "adm:gnoop":
-		// no-op: pagination label button
-	case strings.HasPrefix(cb.Data, "adm:grev:"):
-		s.handleAdminGiftRevoke(ctx, cb)
-	case cb.Data == "adm:squad":
-		s.sendAdminSquadList(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:sq:"):
-		s.handleAdminSquadPick(ctx, chatID, cb.Data)
-	case cb.Data == "adm:user":
-		s.startUserLookup(ctx, chatID)
-	case cb.Data == "adm:treset":
-		s.sendDefaultTrafficResetPicker(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:treset:"):
-		s.handleDefaultTrafficResetPick(ctx, chatID, cb.Data)
-	case cb.Data == "adm:u:card":
-		s.reloadUserCard(ctx, chatID)
-	case cb.Data == "adm:u:extset":
-		s.startUserInput(ctx, chatID, adminInputUserExpiry, i18n.T("Введите количество дней (можно со знаком «−» для уменьшения):"))
-	case strings.HasPrefix(cb.Data, "adm:u:ext:"):
-		s.handleUserExpiryDelta(ctx, chatID, cb.Data)
-	case cb.Data == "adm:u:hwid":
-		s.startUserInput(ctx, chatID, adminInputUserHwid, i18n.T("Введите лимит устройств (целое ≥ 0, 0 — без ограничения):"))
-	case cb.Data == "adm:u:traffic":
-		s.startUserInput(ctx, chatID, adminInputUserTraffic, i18n.T("Введите лимит трафика в GB (целое ≥ 0, 0 — без ограничения):"))
-	case cb.Data == "adm:u:status":
-		s.handleUserStatusToggle(ctx, chatID)
-	case cb.Data == "adm:u:reset":
-		s.sendUserResetStrategies(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:u:reset:"):
-		s.handleUserResetPick(ctx, chatID, cb.Data)
-	case cb.Data == "adm:u:squads":
-		s.sendUserSquads(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:u:sq:"):
-		s.handleUserSquadToggle(ctx, chatID, cb.Data)
-	case cb.Data == "adm:trial":
-		s.sendTrialAdminCard(ctx, chatID)
-	case cb.Data == "adm:trial:toggle":
-		s.handleTrialToggle(ctx, chatID)
-	case cb.Data == "adm:trial:approval":
-		s.handleTrialApprovalToggle(ctx, chatID)
-	case cb.Data == "adm:trial:days":
-		s.startTrialDaysInput(ctx, chatID)
-	case cb.Data == "adm:trial:traffic":
-		s.startTrialLimitInput(ctx, chatID, adminInputTrialTraffic, i18n.T("Введите лимит трафика пробного периода в GB (целое ≥ 0, 0 — без ограничения):"))
-	case cb.Data == "adm:trial:hwid":
-		s.startTrialLimitInput(ctx, chatID, adminInputTrialHwid, i18n.T("Введите лимит устройств пробного периода (целое ≥ 0, 0 — без ограничения):"))
-	case cb.Data == "adm:trial:squad":
-		s.sendTrialSquadList(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:trial:sq:"):
-		s.handleTrialSquadPick(ctx, chatID, cb.Data)
-	case cb.Data == "adm:referral":
-		s.sendReferralAdminCard(ctx, chatID)
-	case cb.Data == "adm:referral:toggle":
-		s.handleReferralToggle(ctx, chatID)
-	case cb.Data == "adm:referral:inviter":
-		s.startReferralBonusInput(ctx, chatID, adminInputReferralInviter)
-	case cb.Data == "adm:referral:invitee":
-		s.startReferralBonusInput(ctx, chatID, adminInputReferralInvitee)
-	case cb.Data == "adm:upd":
-		s.sendUpdateSettings(ctx, chatID)
-	case cb.Data == "adm:upd:check":
-		s.manualUpdateCheck(ctx, chatID)
-	case cb.Data == "adm:upd:interval":
-		s.startUpdateIntervalInput(ctx, chatID)
-	case cb.Data == "adm:backup_settings":
-		s.sendBackupSettings(ctx, chatID)
-	case cb.Data == "adm:backup:toggle":
-		s.handleBackupToggle(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:backup:days:"):
-		s.applyBackupInterval(ctx, chatID, strings.TrimPrefix(cb.Data, "adm:backup:days:"))
-	case cb.Data == "adm:backup:custom":
-		s.startBackupIntervalInput(ctx, chatID)
-	case cb.Data == "adm:checker":
-		s.sendProxyHealth(ctx, chatID)
-	case cb.Data == "adm:sup":
-		s.sendAdminTicketInbox(ctx, chatID)
-	case strings.HasPrefix(cb.Data, "adm:sup:t:"):
-		s.sendAdminTicketThread(ctx, chatID, cb.Data)
-	case strings.HasPrefix(cb.Data, "adm:sup:re:"):
-		s.startAdminTicketReply(ctx, chatID, cb.Data)
-	case strings.HasPrefix(cb.Data, "adm:sup:cl:"):
-		s.handleAdminTicketClose(ctx, chatID, cb.Data)
-	case cb.Data == "adm:bcast":
-		s.startBroadcastFlow(ctx, chatID)
-	case cb.Data == "adm:bc_send":
-		s.handleBroadcastSend(ctx, chatID, cb)
-	case cb.Data == "adm:bc_cancel":
-		s.handleBroadcastCancel(ctx, chatID, cb)
+	for _, r := range admRoutes {
+		if (r.exact && cb.Data == r.match) || (!r.exact && strings.HasPrefix(cb.Data, r.match)) {
+			r.fn(s, ctx, cb)
+			return true
+		}
 	}
 	return true
+}
+
+// admRoutes maps admin "adm:" callback data to its handler; the first match
+// wins, preserving the order of the switch this table replaces. Handlers see
+// the whole callback: the chat is cb.From.ID and payload-carrying handlers
+// read cb.Data themselves.
+var admRoutes = []struct {
+	match string
+	exact bool
+	fn    func(*Service, context.Context, *tg.CallbackQuery)
+}{
+	{"adm:menu", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.SendAdminMenu(ctx, cb.From.ID) }},
+	{"adm:pending", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendPendingSummary(ctx, cb.From.ID) }},
+	{"adm:pd:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendPendingCategory(ctx, cb.From.ID, strings.TrimPrefix(cb.Data, "adm:pd:")) }},
+	{"adm:tariffs", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendAdminTariffs(ctx, cb.From.ID) }},
+	{"adm:stats", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendAdminStats(ctx, cb.From.ID) }},
+	{"adm:backup", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.cmdBackup(ctx, cb.From.ID) }},
+	{"adm:del_list", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendAdminDelList(ctx, cb.From.ID) }},
+	{"adm:traffic_ext", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.cmdListTrafficExtensions(ctx, cb.From.ID) }},
+	{"adm:req", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendAdminRequisites(ctx, cb.From.ID) }},
+	{"adm:del:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleAdminDelTariff(ctx, cb.From.ID, cb.Data) }},
+	{"adm:setreq", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startSetRequisitesFlow(ctx, cb.From.ID) }},
+	{"adm:shot_toggle", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleAdminScreenshotToggle(ctx, cb.From.ID) }},
+	{"adm:guard", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendRegistrationGuardPatternSettings(ctx, cb.From.ID) }},
+	{"adm:guard:add", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startRegistrationGuardPatternInput(ctx, cb.From.ID) }},
+	{"adm:guard:del:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleRegistrationGuardPatternDelete(ctx, cb.From.ID, cb.Data) }},
+	{"adm:providers", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendAdminProviderList(ctx, cb.From.ID) }},
+	{"adm:provtog:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleAdminProviderToggle(ctx, cb.From.ID, cb.Data) }},
+	{"adm:addtariff", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startAddTariffFlow(ctx, cb.From.ID) }},
+	{"adm:gifts", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendAdminGiftList(ctx, cb.From.ID) }},
+	{"adm:gbuyers", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleAdminGiftBuyers(ctx, cb) }},
+	{"adm:gbuyer:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleAdminGiftBuyer(ctx, cb) }},
+	{"adm:glist:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleAdminGiftList(ctx, cb) }},
+	{"adm:gnoop", true, func(_ *Service, _ context.Context, _ *tg.CallbackQuery) { /* pagination label button */ }},
+	{"adm:grev:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleAdminGiftRevoke(ctx, cb) }},
+	{"adm:squad", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendAdminSquadList(ctx, cb.From.ID) }},
+	{"adm:sq:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleAdminSquadPick(ctx, cb.From.ID, cb.Data) }},
+	{"adm:user", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startUserLookup(ctx, cb.From.ID) }},
+	{"adm:treset", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendDefaultTrafficResetPicker(ctx, cb.From.ID) }},
+	{"adm:treset:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleDefaultTrafficResetPick(ctx, cb.From.ID, cb.Data) }},
+	{"adm:u:card", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.reloadUserCard(ctx, cb.From.ID) }},
+	{"adm:u:extset", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) {
+		s.startUserInput(ctx, cb.From.ID, adminInputUserExpiry, i18n.T("Введите количество дней (можно со знаком «−» для уменьшения):"))
+	}},
+	{"adm:u:ext:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleUserExpiryDelta(ctx, cb.From.ID, cb.Data) }},
+	{"adm:u:hwid", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) {
+		s.startUserInput(ctx, cb.From.ID, adminInputUserHwid, i18n.T("Введите лимит устройств (целое ≥ 0, 0 — без ограничения):"))
+	}},
+	{"adm:u:traffic", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) {
+		s.startUserInput(ctx, cb.From.ID, adminInputUserTraffic, i18n.T("Введите лимит трафика в GB (целое ≥ 0, 0 — без ограничения):"))
+	}},
+	{"adm:u:status", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleUserStatusToggle(ctx, cb.From.ID) }},
+	{"adm:u:reset", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendUserResetStrategies(ctx, cb.From.ID) }},
+	{"adm:u:reset:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleUserResetPick(ctx, cb.From.ID, cb.Data) }},
+	{"adm:u:squads", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendUserSquads(ctx, cb.From.ID) }},
+	{"adm:u:sq:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleUserSquadToggle(ctx, cb.From.ID, cb.Data) }},
+	{"adm:trial", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendTrialAdminCard(ctx, cb.From.ID) }},
+	{"adm:trial:toggle", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleTrialToggle(ctx, cb.From.ID) }},
+	{"adm:trial:approval", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleTrialApprovalToggle(ctx, cb.From.ID) }},
+	{"adm:trial:days", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startTrialDaysInput(ctx, cb.From.ID) }},
+	{"adm:trial:traffic", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) {
+		s.startTrialLimitInput(ctx, cb.From.ID, adminInputTrialTraffic, i18n.T("Введите лимит трафика пробного периода в GB (целое ≥ 0, 0 — без ограничения):"))
+	}},
+	{"adm:trial:hwid", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) {
+		s.startTrialLimitInput(ctx, cb.From.ID, adminInputTrialHwid, i18n.T("Введите лимит устройств пробного периода (целое ≥ 0, 0 — без ограничения):"))
+	}},
+	{"adm:trial:squad", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendTrialSquadList(ctx, cb.From.ID) }},
+	{"adm:trial:sq:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleTrialSquadPick(ctx, cb.From.ID, cb.Data) }},
+	{"adm:referral", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendReferralAdminCard(ctx, cb.From.ID) }},
+	{"adm:referral:toggle", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleReferralToggle(ctx, cb.From.ID) }},
+	{"adm:referral:inviter", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startReferralBonusInput(ctx, cb.From.ID, adminInputReferralInviter) }},
+	{"adm:referral:invitee", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startReferralBonusInput(ctx, cb.From.ID, adminInputReferralInvitee) }},
+	{"adm:upd", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendUpdateSettings(ctx, cb.From.ID) }},
+	{"adm:upd:check", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.manualUpdateCheck(ctx, cb.From.ID) }},
+	{"adm:upd:interval", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startUpdateIntervalInput(ctx, cb.From.ID) }},
+	{"adm:backup_settings", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendBackupSettings(ctx, cb.From.ID) }},
+	{"adm:backup:toggle", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleBackupToggle(ctx, cb.From.ID) }},
+	{"adm:backup:days:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.applyBackupInterval(ctx, cb.From.ID, strings.TrimPrefix(cb.Data, "adm:backup:days:")) }},
+	{"adm:backup:custom", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startBackupIntervalInput(ctx, cb.From.ID) }},
+	{"adm:checker", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendProxyHealth(ctx, cb.From.ID) }},
+	{"adm:sup", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendAdminTicketInbox(ctx, cb.From.ID) }},
+	{"adm:sup:t:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.sendAdminTicketThread(ctx, cb.From.ID, cb.Data) }},
+	{"adm:sup:re:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startAdminTicketReply(ctx, cb.From.ID, cb.Data) }},
+	{"adm:sup:cl:", false, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleAdminTicketClose(ctx, cb.From.ID, cb.Data) }},
+	{"adm:bcast", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.startBroadcastFlow(ctx, cb.From.ID) }},
+	{"adm:bc_send", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleBroadcastSend(ctx, cb.From.ID, cb) }},
+	{"adm:bc_cancel", true, func(s *Service, ctx context.Context, cb *tg.CallbackQuery) { s.handleBroadcastCancel(ctx, cb.From.ID, cb) }},
 }
 
 func (s *Service) sendAdminTariffs(ctx context.Context, chatID int64) {
