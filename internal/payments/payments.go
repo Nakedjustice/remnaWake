@@ -1052,7 +1052,7 @@ func (s *Service) isEnabled() bool {
 	return len(s.adminIDs) > 0
 }
 
-// PaymentButton returns the single «Я оплатил» keyboard, or nil when the
+// PaymentButton returns the single «Оплатить» keyboard, or nil when the
 // payment flow is disabled (no admin configured).
 func (s *Service) PaymentButton(userID int64) *tg.InlineKeyboardMarkup {
 	if !s.isEnabled() {
@@ -1060,7 +1060,7 @@ func (s *Service) PaymentButton(userID int64) *tg.InlineKeyboardMarkup {
 	}
 	return &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: i18n.T("Я оплатил"), CallbackData: fmt.Sprintf("pay:%d", userID)}},
+			{{Text: i18n.T("Оплатить"), CallbackData: fmt.Sprintf("pay:%d", userID)}},
 		},
 	}
 }

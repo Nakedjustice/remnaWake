@@ -218,7 +218,7 @@ func TestSendWelcomeLocalizedEN(t *testing.T) {
 		t.Fatalf("SendWelcome: %v", err)
 	}
 	text, _ := body["text"].(string)
-	if !strings.Contains(text, "Link account") || !strings.Contains(text, "I paid") {
+	if !strings.Contains(text, "Link account") || !strings.Contains(text, "Pay") {
 		t.Fatalf("welcome not translated (dictionary key mismatch?): %q", text)
 	}
 	// With the trial enabled both the trial and register buttons are offered.
