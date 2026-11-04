@@ -37,7 +37,7 @@ var en = map[string]string{
 const WelcomeRU = `👋 Привет! Я бот для управления вашей подпиской. Вот что я умею:
 
 ⏰ Напоминания — предупрежу об окончании подписки за 7, 3 и 1 день.
-💳 Продление — после оплаты нажмите «Я оплатил» под напоминанием, и администратор подтвердит продление.
+💳 Продление — после оплаты нажмите «Оплатить» под напоминанием, и администратор подтвердит продление.
 👤 Личный кабинет — статус подписки, ссылка и подарки: /me.
 🎁 Пробный период (/trial) — создать пробный профиль, если у вас ещё нет активной подписки.
 🎁 Подарок (/gift) — подарить подписку человеку, у которого есть Telegram: он сам активирует подарок в этом боте.
@@ -69,7 +69,7 @@ const WelcomeRU = `👋 Привет! Я бот для управления ва
 const welcomeEN = `👋 Hi! I'm a bot for managing your subscription. Here's what I can do:
 
 ⏰ Reminders — I'll warn you 7, 3 and 1 day before your subscription expires.
-💳 Renewal — after paying, tap “I paid” under the reminder and the administrator will confirm the renewal.
+💳 Renewal — after paying, tap “Pay” under the reminder and the administrator will confirm the renewal.
 👤 My account — subscription status, link and gifts: /me.
 🎁 Free trial (/trial) — create a trial profile if you do not have an active subscription yet.
 🎁 Gift (/gift) — gift a subscription to someone who has Telegram: they activate the gift in this bot themselves.

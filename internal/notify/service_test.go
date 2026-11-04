@@ -219,7 +219,7 @@ func TestRunWinbackMilestones(t *testing.T) {
 			t.Fatalf("chat %d missing win-back text: %q", chatID, got[chatID])
 		}
 	}
-	// Snapshots persisted so the «Я оплатил» flow works for expired users too.
+	// Snapshots persisted so the «Оплатить» flow works for expired users too.
 	if len(pay.remembered) != 3 {
 		t.Fatalf("RememberUser calls: %+v", pay.remembered)
 	}

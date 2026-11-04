@@ -18,7 +18,7 @@ extends the subscription by the chosen number of months.
 
 - ⏰ **Expiry reminders** 7 / 3 / 1 days before expiry, plus **win-back**
   messages 1 and 3 days *after* expiry (`WINBACK_DAYS` / `WINBACK_ENABLED`).
-- 💳 **Payment confirmation** — user taps **«Я оплатил»**, admin confirms, the
+- 💳 **Payment confirmation** — user taps **«Оплатить»**, admin confirms, the
   bot extends the subscription via `PATCH /api/users`. Optional automatic
   online payments via **Platega** (SBP / cards) and/or **Telegram Stars** (⭐).
 - 👤 **Personal cabinet** (`/me`) — linked profiles, status, expiry,
@@ -81,7 +81,7 @@ number. Only `ACTIVE` users with a `telegramId` are notified;
 `DISABLED` / `LIMITED` accounts are never contacted.
 
 If `TELEGRAM_ADMIN_ID` is set (use the admin's **Telegram user ID**, not a
-group/channel ID), an inline **«Я оплатил»** button is attached. Every reminder
+group/channel ID), an inline **«Оплатить»** button is attached. Every reminder
 is recorded in SQLite before sending, so a restart can never deliver the same
 notice twice; failed sends are retried on the next daily run.
 
@@ -98,7 +98,7 @@ button 1 and 3 days later; confirmation extends from `max(now, old expiry)`.
 
 Enabled only when `TELEGRAM_ADMIN_ID` is set:
 
-1. User taps **«Я оплатил»**. If **payment requisites** are set
+1. User taps **«Оплатить»**. If **payment requisites** are set
    (`/setrequisites`), the bot sends them first (e.g. card / SBP details).
 2. If tariffs are configured, the bot shows month/price options
    (`1 мес. — 150₽`, …); otherwise it falls back to a single 1-month request.
@@ -176,7 +176,7 @@ The bot chat and Mini App both support this step. JPEG/PNG photos are limited to
 | `/traffic`                    | List traffic-extension packages |
 | `/settraffic <GB> <price>`    | Add or update a 30-day traffic package |
 | `/deltraffic <GB>`            | Remove a traffic package      |
-| `/setrequisites`              | Set payment requisites shown after «Я оплатил» (two-step) |
+| `/setrequisites`              | Set payment requisites shown after «Оплатить» (two-step) |
 | `/requisites`                 | Show the saved payment requisites |
 | `/stats`                      | 📊 Panel users, 30-day payments & revenue, pending requests, gift codes, pending invites |
 | `/pending`                    | 🚨 Action center: pending payments/gifts/invites/trials with inline ✅/❌ buttons, plus panel/proxy/infra/update alerts |
