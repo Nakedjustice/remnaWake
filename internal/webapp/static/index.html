@@ -1139,6 +1139,7 @@ const EN = {
   'Стоимость': 'Cost',
   'Оценка в мес.': 'Est. per month',
   'Следующая оплата': 'Next payment',
+  'Ближайшая оплата': 'Nearest payment',
   'не задана': 'not set',
   '✅ Оплачен': '✅ Paid',
   '✏️ Изменить': '✏️ Edit',
@@ -4442,6 +4443,40 @@ function isDueWithinLimit(iso) {
 }
 function round2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
 
+// infraDueRank orders the server list by payment urgency: overdue first, then
+// due-soon, then the rest; servers without a due date sink to the bottom.
+function infraDueRank(srv) {
+  if (!srv.next_due || srv.due_status === 'none') return 3;
+  if (srv.due_status === 'overdue') return 0;
+  if (srv.due_status === 'soon') return 1;
+  return 2;
+}
+function infraDueMs(srv) {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(srv.next_due || '');
+  return m ? Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : Number.MAX_SAFE_INTEGER;
+}
+
+// infraDueBadge shows the next payment date right on the collapsed row,
+// coloured by the backend's due_status (ok|soon|overdue), so admins see when
+// each server's invoice is due without expanding every card.
+function infraDueBadge(srv) {
+  if (!srv.next_due || srv.due_status === 'none') return null;
+  const badge = el('span', null);
+  badge.style.whiteSpace = 'nowrap';
+  if (srv.due_status === 'overdue') {
+    badge.textContent = ' · ⚠️ ' + srv.next_due;
+    badge.style.color = 'var(--tone-expired)';
+  } else if (srv.due_status === 'soon') {
+    badge.textContent = ' · ⏳ ' + srv.next_due;
+    badge.style.color = 'var(--tone-expiring)';
+  } else {
+    badge.textContent = ' · 📅 ' + srv.next_due;
+    badge.style.color = 'var(--hint)';
+    badge.style.fontWeight = '400';
+  }
+  return badge;
+}
+
 // Infrastructure monitoring: list of rented servers (tap to expand details),
 // an add/edit form, and the FX card. Server-sent labels (price_label,
 // period_cost_label, monthly_base_label, ram_label) stay in BOT_LANG like other
@@ -4458,13 +4493,19 @@ async function showAdminServers() {
   appEl.textContent = '';
   appEl.appendChild(adminPageTop(t('Инфраструктура')));
 
+  // Most urgent payments first: overdue, then due-soon, then by date; the
+  // find below then reads as "the payment the admin must handle next".
+  servers.sort((a, b) => infraDueRank(a) - infraDueRank(b) || infraDueMs(a) - infraDueMs(b));
   let totalBase = 0;
   servers.forEach((s) => { if (s.converted) totalBase += s.monthly_base; });
   const totalLabel = '≈ ' + Math.round(totalBase) + (fx.base_symbol || '') + t('/мес');
-  appEl.appendChild(paymentStatsCard(t('Инфраструктура'), [
+  const statsRows = [
     [t('Серверов'), servers.length],
     [t('Расходы в месяц'), totalLabel],
-  ]));
+  ];
+  const soonestDue = servers.find((s) => s.next_due && s.due_status !== 'none');
+  if (soonestDue) statsRows.push([t('Ближайшая оплата'), soonestDue.name + ' — ' + soonestDue.next_due]);
+  appEl.appendChild(paymentStatsCard(t('Инфраструктура'), statsRows));
 
   if (servers.length) {
     const card = el('div', 'admin-card');
@@ -4484,8 +4525,11 @@ async function showAdminServers() {
 
 function renderInfraServer(srv) {
   const box = el('details', 'gift-buyer');
-  const title = `${srv.name}${srv.country ? ' · ' + srv.country : ''} — ${srv.price_label}`;
-  box.appendChild(el('summary', null, title));
+  const summary = el('summary');
+  summary.appendChild(el('span', null, `${srv.name}${srv.country ? ' · ' + srv.country : ''} — ${srv.price_label}`));
+  const dueBadge = infraDueBadge(srv);
+  if (dueBadge) summary.appendChild(dueBadge);
+  box.appendChild(summary);
 
   const detail = el('div');
   detail.style.cssText = 'padding:6px 0';
