@@ -44,6 +44,7 @@ var enPayments = map[string]string{
 	"Прокси недоступны":                                "Proxies are down",
 	"Просрочены оплаты серверов":                       "Server payments are overdue",
 	"Скоро нужно оплатить серверы":                     "Server payments are due soon",
+	"Нажмите, чтобы развернуть список серверов ниже.":  "Tap to expand the server list below.",
 	"Доступно обновление":                              "Update available",
 
 	// Database backup
