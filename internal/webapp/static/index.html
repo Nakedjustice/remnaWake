@@ -373,6 +373,15 @@
   .action-timing { margin-top: 4px; color: var(--hint); font-size: 11.5px; font-weight: 700; line-height: 1.3; }
   .action-meta { display: grid; justify-items: end; gap: 6px; flex: none; }
   .action-severity { color: var(--hint); font-size: 10px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+  .action-infra-detail { padding: 4px 14px 12px; }
+  .action-infra-state { padding: 8px 0 6px; }
+  .action-infra-warn { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-bottom: 4px;
+    color: var(--tone-expiring); font-size: 12.5px; font-weight: 800; line-height: 1.35; }
+  .action-infra-warn .hint { flex-basis: 100%; font-weight: 400; }
+  .action-infra-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
+  .action-infra-copy { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+  .action-infra-cost { margin-top: 2px; font-size: 12px; font-weight: 400; }
+  .action-infra-paid { flex: none; min-width: 0; margin: 0; padding: 7px 10px; border-radius: 10px; font-size: 12.5px; white-space: nowrap; }
   .admin-page-title { font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
   .admin-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-bottom: 12px; }
   .admin-card-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
@@ -958,8 +967,12 @@ const EN = {
   'Прокси недоступны': 'Proxies are down',
   'Откройте состояние прокси.': 'Open proxy health.',
   'Просрочены оплаты серверов': 'Server payments are overdue',
-  'Откройте инфраструктуру.': 'Open infrastructure.',
+  'Нажмите, чтобы развернуть список серверов ниже.': 'Tap to expand the server list below.',
   'Скоро нужно оплатить серверы': 'Server payments are due soon',
+  'Загружаю списки серверов…': 'Loading server list…',
+  'Список серверов не загрузился. {error}': "Couldn't load the server list. {error}",
+  'Показаны данные, загруженные ранее.': 'Showing previously loaded data.',
+  'Нет серверов по этому условию.': 'No servers match this filter.',
   'Доступно обновление': 'Update available',
   'Откройте настройки обновлений.': 'Open update settings.',
   'Есть непрочитанные обращения в поддержку': 'Support messages need a reply',
@@ -2707,6 +2720,16 @@ let adminActionCenter = null;
 let adminActionCenterError = '';
 let adminPaymentFilters = { days: 30, status: 'all', provider: 'all', kind: 'all', query: '', page: 1 };
 
+// infraActionOpen tracks which Action Center infrastructure item is expanded
+// inline on the hub (one at a time). It survives in-place re-renders so a
+// refresh or language switch keeps the panel open.
+let infraActionOpen = null; // { id, dueStatus: 'overdue' | 'soon' }
+// Cache behind the expanded panel: the last /api/admin/servers payload and any
+// fetch error, so a failed refresh shows an in-panel warning instead of
+// blanking the list or losing the rest of the home screen.
+let infraPanelServers = [];
+let infraPanelError = '';
+
 // showAdmin (re)loads the admin payloads and renders the admin hub.
 async function showAdmin() {
   hideDock();
@@ -4205,7 +4228,7 @@ function openActionCenterItem(item, button) {
       showAdminProxyHealth();
       return;
     case 'infra':
-      showAdminServers();
+      toggleInfraActionItem(item);
       return;
     case 'payments':
       adminPaymentFilters = {
@@ -4335,11 +4358,115 @@ function renderActionCenter(center) {
       button.appendChild(el('span', 'admin-chevron', '›'));
       button.onclick = () => openActionCenterItem(item, button);
       panel.appendChild(button);
+      if (item.target === 'infra' && infraActionOpen && infraActionOpen.id === item.id) {
+        panel.appendChild(renderInfraActionDetail());
+      }
     });
     wrap.appendChild(panel);
     section.appendChild(wrap);
   });
   return section;
+}
+
+// infraPanelDueStatus maps an Action Center infrastructure item to the server
+// due_status its inline panel lists: overdue for infra_overdue, soon otherwise.
+function infraPanelDueStatus(item) {
+  return (item.filter && item.filter.due_status === 'soon') ? 'soon' : 'overdue';
+}
+
+// toggleInfraActionItem opens or closes the inline server list under an Action
+// Center infrastructure item. Only one item expands at a time: opening another
+// replaces the state, re-clicking the open item collapses it. The panel renders
+// from infraPanelServers (fetched on expand), so every home re-render — refresh
+// button, language switch, post-payment update — restores exactly this view.
+async function toggleInfraActionItem(item) {
+  if (infraActionOpen && infraActionOpen.id === item.id) {
+    infraActionOpen = null;
+    renderAdminHome();
+    return;
+  }
+  const dueStatus = infraPanelDueStatus(item);
+  infraActionOpen = { id: item.id, dueStatus };
+  // Render immediately (cached rows or the loading row), then refresh in place;
+  // skip the second render if the panel was collapsed or swapped mid-flight.
+  renderAdminHome();
+  await loadInfraPanelServers();
+  if (infraActionOpen && infraActionOpen.id === item.id) renderAdminHome();
+}
+
+// loadInfraPanelServers refreshes the cached list behind the expanded panel. A
+// failure keeps the last known rows and surfaces an in-panel warning instead of
+// blanking the section or losing the rest of the home screen.
+async function loadInfraPanelServers() {
+  try {
+    infraPanelServers = (await api('/api/admin/servers')) || [];
+    infraPanelError = '';
+  } catch (e) {
+    infraPanelError = e.message;
+  }
+}
+
+// refreshInfraActionPanel re-fetches the server list and the Action Center after
+// an in-panel mutation, then re-renders the hub so counts, timing and item
+// presence update. The expanded panel survives unless its item dropped out of
+// the refreshed center (its servers were all cleared).
+async function refreshInfraActionPanel() {
+  const [serversResult, centerResult] = await Promise.allSettled([
+    api('/api/admin/servers'),
+    api('/api/admin/action-center'),
+  ]);
+  if (serversResult.status === 'fulfilled') infraPanelServers = serversResult.value || [];
+  else infraPanelError = serversResult.reason.message;
+  if (centerResult.status === 'fulfilled') {
+    adminActionCenter = centerResult.value;
+    adminActionCenterError = '';
+  }
+  if (infraActionOpen && !(adminActionCenter || {}).items.some(i => i.id === infraActionOpen.id)) {
+    infraActionOpen = null;
+  }
+  renderAdminHome();
+}
+
+// renderInfraActionDetail builds the expanded body under an open infrastructure
+// Action Center item: loading row, in-panel error (degraded fetch), or the
+// matching servers sorted by urgency with a ✅ Оплачен button per row.
+function renderInfraActionDetail() {
+  const box = el('div', 'action-infra-detail');
+  if (!infraPanelServers.length) {
+    box.appendChild(el('div', 'hint action-infra-state', infraPanelError
+      ? t('Список серверов не загрузился. {error}', { error: infraPanelError })
+      : t('Загружаю списки серверов…')));
+    return box;
+  }
+  if (infraPanelError) {
+    const warn = el('div', 'action-infra-warn');
+    warn.appendChild(el('span', null, t('Список серверов не загрузился. {error}', { error: infraPanelError })));
+    warn.appendChild(el('span', 'hint', t('Показаны данные, загруженные ранее.')));
+    box.appendChild(warn);
+  }
+  const rows = infraPanelServers
+    .filter((s) => s.due_status === infraActionOpen.dueStatus)
+    .sort((a, b) => infraDueRank(a) - infraDueRank(b) || infraDueMs(a) - infraDueMs(b));
+  if (!rows.length) {
+    box.appendChild(el('div', 'hint action-infra-state', t('Нет серверов по этому условию.')));
+    return box;
+  }
+  rows.forEach((srv) => {
+    const row = el('div', 'action-infra-row');
+    const copy = el('div', 'action-infra-copy');
+    const title = el('div', null, `${srv.name}${srv.country ? ' · ' + srv.country : ''}`);
+    const dueBadge = infraDueBadge(srv);
+    if (dueBadge) title.appendChild(dueBadge);
+    copy.appendChild(title);
+    const cost = [srv.price_label, srv.monthly_base_label].filter(Boolean).join(' · ');
+    if (cost) copy.appendChild(el('div', 'hint action-infra-cost', cost));
+    row.appendChild(copy);
+    const btn = el('button', 'secondary action-infra-paid', t('✅ Оплачен'));
+    btn.onclick = () => infraPost('/api/admin/server/paid', { id: srv.id }, btn, refreshInfraActionPanel);
+    row.appendChild(btn);
+    box.appendChild(row);
+  });
+  return box;
 }
 
 // renderAdminHome is the compact, grouped admin navigation hub.
@@ -4568,17 +4695,20 @@ function renderInfraServer(srv) {
   return box;
 }
 
-// infraPost mutates server/FX state then re-renders the infra screen in place.
+// infraPost mutates server/FX state then re-renders in place. onDone picks the
+// post-success view: Infrastructure-screen callers pass nothing and keep their
+// full-screen refresh, while the Action Center inline panel passes a callback
+// that updates the hub instead of navigating away.
 // Callers pass their own button: a tap does not focus a button in the Telegram
 // WebView, so activeButton() is null there and the control would never show the
 // loading state or disable — inviting a second tap on a request in flight.
-async function infraPost(path, payload, button) {
+async function infraPost(path, payload, button, onDone) {
   button = button || activeButton();
   if (button && button.dataset.loading === '1') return;
   setButtonLoading(button, true, t('Сохранение…'));
   try {
     await api(path, { method: 'POST', body: JSON.stringify(payload) });
-    showAdminServers();
+    (onDone || showAdminServers)();
   } catch (e) {
     setButtonLoading(button, false);
     tg.showAlert(e.message);
