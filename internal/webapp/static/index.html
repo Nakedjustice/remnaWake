@@ -381,7 +381,10 @@
   .action-infra-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
   .action-infra-copy { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
   .action-infra-cost { margin-top: 2px; font-size: 12px; font-weight: 400; }
-  .action-infra-paid { flex: none; min-width: 0; margin: 0; padding: 7px 10px; border-radius: 10px; font-size: 12.5px; white-space: nowrap; }
+  /* width:auto overrides the base button rule (width:100%): without it the
+     paid button claims the whole flex row and squeezes .action-infra-copy to
+     zero width, wrapping every letter of the server name onto its own line. */
+  .action-infra-paid { width: auto; flex: none; min-width: 0; margin: 0; padding: 7px 10px; border-radius: 10px; font-size: 12.5px; white-space: nowrap; }
   .admin-page-title { font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
   .admin-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-bottom: 12px; }
   .admin-card-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
