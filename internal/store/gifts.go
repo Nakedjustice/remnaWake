@@ -31,6 +31,36 @@ type GiftBuyer struct {
 	Used            int // redeemed
 }
 
+// giftCodeColumns is the gift_codes column list in scanGiftCode order.
+const giftCodeColumns = `id, code, buyer_telegram_id, buyer_username, months, price, status,
+	redeemer_telegram_id, redeemed_username, created_at, issued_at, resolved_at`
+
+// scanGiftCode reads one row in giftCodeColumns order.
+func scanGiftCode(sc rowScanner) (GiftCode, error) {
+	var (
+		g          GiftCode
+		created    string
+		issuedAt   sql.NullString
+		resolvedAt sql.NullString
+	)
+	if err := sc.Scan(&g.ID, &g.Code, &g.BuyerTelegramID, &g.BuyerUsername, &g.Months, &g.Price,
+		&g.Status, &g.RedeemerTelegramID, &g.RedeemedUsername, &created, &issuedAt, &resolvedAt); err != nil {
+		return GiftCode{}, err
+	}
+	g.CreatedAt, _ = parseTime(created)
+	if issuedAt.Valid {
+		if ts, e := parseTime(issuedAt.String); e == nil {
+			g.IssuedAt = &ts
+		}
+	}
+	if resolvedAt.Valid {
+		if ts, e := parseTime(resolvedAt.String); e == nil {
+			g.ResolvedAt = &ts
+		}
+	}
+	return g, nil
+}
+
 func (s *Store) CreateGiftCode(ctx context.Context, g GiftCode) (int64, error) {
 	now := formatTime(time.Now())
 	res, err := s.db.ExecContext(ctx, `
@@ -53,34 +83,13 @@ func (s *Store) GetGiftCodeByCode(ctx context.Context, code string) (*GiftCode, 
 }
 
 func (s *Store) getGiftCode(ctx context.Context, where string, arg any) (*GiftCode, error) {
-	var (
-		g          GiftCode
-		created    string
-		issuedAt   sql.NullString
-		resolvedAt sql.NullString
-	)
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, code, buyer_telegram_id, buyer_username, months, price, status,
-			redeemer_telegram_id, redeemed_username, created_at, issued_at, resolved_at
-		FROM gift_codes `+where, arg,
-	).Scan(&g.ID, &g.Code, &g.BuyerTelegramID, &g.BuyerUsername, &g.Months, &g.Price,
-		&g.Status, &g.RedeemerTelegramID, &g.RedeemedUsername, &created, &issuedAt, &resolvedAt)
+	g, err := scanGiftCode(s.db.QueryRowContext(ctx,
+		`SELECT `+giftCodeColumns+` FROM gift_codes `+where, arg))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
-	}
-	g.CreatedAt, _ = parseTime(created)
-	if issuedAt.Valid {
-		if ts, e := parseTime(issuedAt.String); e == nil {
-			g.IssuedAt = &ts
-		}
-	}
-	if resolvedAt.Valid {
-		if ts, e := parseTime(resolvedAt.String); e == nil {
-			g.ResolvedAt = &ts
-		}
 	}
 	return &g, nil
 }
@@ -242,40 +251,11 @@ func (s *Store) ListGiftBuyers(ctx context.Context) ([]GiftBuyer, error) {
 }
 
 func (s *Store) listGiftCodes(ctx context.Context, where string, args ...any) ([]GiftCode, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, code, buyer_telegram_id, buyer_username, months, price, status,
-			redeemer_telegram_id, redeemed_username, created_at, issued_at, resolved_at
-		FROM gift_codes `+where, args...)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+giftCodeColumns+` FROM gift_codes `+where, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	var out []GiftCode
-	for rows.Next() {
-		var (
-			g          GiftCode
-			created    string
-			issuedAt   sql.NullString
-			resolvedAt sql.NullString
-		)
-		if err := rows.Scan(&g.ID, &g.Code, &g.BuyerTelegramID, &g.BuyerUsername, &g.Months,
-			&g.Price, &g.Status, &g.RedeemerTelegramID, &g.RedeemedUsername,
-			&created, &issuedAt, &resolvedAt); err != nil {
-			return nil, err
-		}
-		g.CreatedAt, _ = parseTime(created)
-		if issuedAt.Valid {
-			if ts, e := parseTime(issuedAt.String); e == nil {
-				g.IssuedAt = &ts
-			}
-		}
-		if resolvedAt.Valid {
-			if ts, e := parseTime(resolvedAt.String); e == nil {
-				g.ResolvedAt = &ts
-			}
-		}
-		out = append(out, g)
-	}
-	return out, rows.Err()
+	return scanList(rows, scanGiftCode)
 }

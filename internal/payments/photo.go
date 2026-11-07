@@ -167,7 +167,7 @@ func (s *Service) startPayPhotoFlow(ctx context.Context, chatID, userID int64, m
 func (s *Service) startTrafficPayPhotoFlow(ctx context.Context, chatID, userID int64, trafficGB, price int, baseBytes int64) {
 	s.setPayPhoto(chatID, &payPhotoState{
 		userID: userID, price: price, kind: store.PaymentKindTrafficExtension,
-		trafficGB: trafficGB, baseBytes: baseBytes, extraBytes: int64(trafficGB) * bytesPerGB,
+		trafficGB: trafficGB, baseBytes: baseBytes,
 		createdAt: s.now(),
 	})
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("📸 Отправьте фото, скриншот или PDF-файл чека об оплате следующим сообщением — после этого заявка уйдёт администратору.\n\nОтменить: /cancel"))

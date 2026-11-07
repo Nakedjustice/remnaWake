@@ -15,9 +15,6 @@ func TestSupportConversationLifecycle(t *testing.T) {
 	if msgs, err := st.ListSupportMessages(ctx, userID); err != nil || len(msgs) != 0 {
 		t.Fatalf("empty list: got %v err %v", msgs, err)
 	}
-	if n, err := st.CountUnreadForUser(ctx, userID); err != nil || n != 0 {
-		t.Fatalf("empty unread: got %d err %v", n, err)
-	}
 
 	// User sends two messages.
 	if _, err := st.AddSupportMessage(ctx, SupportMessage{UserTelegramID: userID, UserUsername: "alice", Text: "hello"}); err != nil {
@@ -53,22 +50,20 @@ func TestSupportConversationLifecycle(t *testing.T) {
 		t.Fatalf("after admin reply: %+v err %v", convs, err)
 	}
 
-	// The user has one unread admin reply until they read it.
-	if n, err := st.CountUnreadForUser(ctx, userID); err != nil || n != 1 {
-		t.Fatalf("user unread: got %d err %v", n, err)
+	// The admin reply is unread for the user until they read it.
+	msgs, err := st.ListSupportMessages(ctx, userID)
+	if err != nil || len(msgs) != 3 || msgs[2].ReadByUser {
+		t.Fatalf("admin reply should start unread: %+v err %v", msgs, err)
 	}
 	if err := st.MarkSupportReadByUser(ctx, userID); err != nil {
 		t.Fatalf("mark read by user: %v", err)
 	}
-	if n, err := st.CountUnreadForUser(ctx, userID); err != nil || n != 0 {
-		t.Fatalf("user unread after read: got %d err %v", n, err)
+	msgs, err = st.ListSupportMessages(ctx, userID)
+	if err != nil || !msgs[2].ReadByUser {
+		t.Fatalf("admin reply should be read after mark: %+v err %v", msgs, err)
 	}
 
 	// Full thread is preserved in order.
-	msgs, err := st.ListSupportMessages(ctx, userID)
-	if err != nil || len(msgs) != 3 {
-		t.Fatalf("list messages: got %d err %v", len(msgs), err)
-	}
 	if msgs[0].Text != "hello" || msgs[2].FromAdmin != true {
 		t.Fatalf("message order/flags: %+v", msgs)
 	}

@@ -272,26 +272,15 @@ func Load() (*Config, error) {
 		Currency:   getenv("CURRENCY", "₽"),
 	}
 
-	timeout := getenv("HTTP_TIMEOUT", "15s")
-	d, err := time.ParseDuration(timeout)
-	if err != nil {
-		return nil, fmt.Errorf("invalid HTTP_TIMEOUT: %w", err)
+	if cfg.HTTP.Timeout, err = getenvDuration("HTTP_TIMEOUT", "15s"); err != nil {
+		return nil, err
 	}
-	cfg.HTTP.Timeout = d
-
-	interval := getenv("AUTOUPDATE_CHECK_INTERVAL", "6h")
-	iv, err := time.ParseDuration(interval)
-	if err != nil {
-		return nil, fmt.Errorf("invalid AUTOUPDATE_CHECK_INTERVAL: %w", err)
+	if cfg.AutoUpdate.CheckInterval, err = getenvDuration("AUTOUPDATE_CHECK_INTERVAL", "6h"); err != nil {
+		return nil, err
 	}
-	cfg.AutoUpdate.CheckInterval = iv
-
-	pollInterval := getenv("XRAY_CHECKER_POLL_INTERVAL", "2m")
-	pi, err := time.ParseDuration(pollInterval)
-	if err != nil {
-		return nil, fmt.Errorf("invalid XRAY_CHECKER_POLL_INTERVAL: %w", err)
+	if cfg.XrayChecker.PollInterval, err = getenvDuration("XRAY_CHECKER_POLL_INTERVAL", "2m"); err != nil {
+		return nil, err
 	}
-	cfg.XrayChecker.PollInterval = pi
 
 	if rate := strings.TrimSpace(os.Getenv("TELEGRAM_STARS_RATE")); rate != "" {
 		r, err := strconv.Atoi(rate)
@@ -372,8 +361,8 @@ func (c *Config) validate() error {
 		return errors.New("DB_BACKUP_INTERVAL_DAYS must be a positive integer when DB_BACKUP_ENABLED is true")
 	}
 	if c.XrayChecker.Enabled() {
-		if u, err := url.Parse(c.XrayChecker.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("invalid XRAY_CHECKER_URL (expected an http(s) URL): %q", c.XrayChecker.URL)
+		if err := checkHTTPURL(c.XrayChecker.URL, "XRAY_CHECKER_URL"); err != nil {
+			return err
 		}
 		if c.XrayChecker.PollInterval <= 0 {
 			return fmt.Errorf("XRAY_CHECKER_POLL_INTERVAL must be positive: %v", c.XrayChecker.PollInterval)
@@ -381,9 +370,18 @@ func (c *Config) validate() error {
 	}
 	// The dashboard link is independent of metrics polling, so validate it on its own.
 	if c.XrayChecker.PublicURL != "" {
-		if u, err := url.Parse(c.XrayChecker.PublicURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("invalid XRAY_CHECKER_PUBLIC_URL (expected an http(s) URL): %q", c.XrayChecker.PublicURL)
+		if err := checkHTTPURL(c.XrayChecker.PublicURL, "XRAY_CHECKER_PUBLIC_URL"); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// checkHTTPURL validates an absolute http(s) URL with a host.
+func checkHTTPURL(raw, name string) error {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("invalid %s (expected an http(s) URL): %q", name, raw)
 	}
 	return nil
 }
@@ -408,30 +406,38 @@ func getenv(key, def string) string {
 	return def
 }
 
+// getenvParsed reads an env var and parses it with parse, falling back to def
+// when unset, empty or unparseable.
+func getenvParsed[T any](key string, def T, parse func(string) (T, error)) T {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return def
+	}
+	p, err := parse(v)
+	if err != nil {
+		return def
+	}
+	return p
+}
+
 // getenvInt reads an integer env var, falling back to def when unset, empty or
 // unparseable.
 func getenvInt(key string, def int) int {
-	v, ok := os.LookupEnv(key)
-	if !ok || v == "" {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return def
-	}
-	return n
+	return getenvParsed(key, def, strconv.Atoi)
 }
 
 func getenvBool(key string, def bool) bool {
-	v, ok := os.LookupEnv(key)
-	if !ok || v == "" {
-		return def
-	}
-	b, err := strconv.ParseBool(v)
+	return getenvParsed(key, def, strconv.ParseBool)
+}
+
+// getenvDuration parses a duration env var, wrapping parse errors like the
+// per-key blocks it replaces.
+func getenvDuration(key, def string) (time.Duration, error) {
+	d, err := time.ParseDuration(getenv(key, def))
 	if err != nil {
-		return def
+		return 0, fmt.Errorf("invalid %s: %w", key, err)
 	}
-	return b
+	return d, nil
 }
 
 // parseDaysList parses a comma-separated list of positive day numbers

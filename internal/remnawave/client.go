@@ -541,11 +541,3 @@ func (c *Client) setRequestHeaders(req *http.Request) {
 func (c *Client) BaseURL() string {
 	return c.baseURL
 }
-
-func (c *Client) RedactedURL() string {
-	u, err := url.Parse(c.baseURL)
-	if err != nil {
-		return ""
-	}
-	return u.Host
-}

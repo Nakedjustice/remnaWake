@@ -31,16 +31,7 @@ func (s *Store) ListFxRates(ctx context.Context) ([]FxRate, error) {
 		return nil, err
 	}
 	defer rows.Close()
-
-	var out []FxRate
-	for rows.Next() {
-		fx, err := scanFxRate(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, fx)
-	}
-	return out, rows.Err()
+	return scanList(rows, scanFxRate)
 }
 
 // GetFxRate returns the cached rate for currency, or (nil, nil) when absent.
@@ -87,7 +78,7 @@ func (s *Store) UpsertManualFxRate(ctx context.Context, currency string, rate fl
 	return err
 }
 
-func scanFxRate(sc interface{ Scan(...any) error }) (FxRate, error) {
+func scanFxRate(sc rowScanner) (FxRate, error) {
 	var (
 		fx         FxRate
 		autoRate   sql.NullFloat64

@@ -227,29 +227,21 @@ func New(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	if err := ensurePaymentRequestColumns(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("migrate payment request columns: %w", err)
-	}
-	if err := ensureTariffPlanColumn(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("migrate tariffs plan column: %w", err)
-	}
-	if err := ensurePlanColumns(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("migrate plan columns: %w", err)
-	}
-	if err := ensureTrafficExtensionColumns(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("migrate traffic extension columns: %w", err)
-	}
-	if err := ensurePaymentRequestIndexes(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("migrate payment request indexes: %w", err)
-	}
-	if err := ensureSupportTicketSchema(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("migrate support tickets: %w", err)
+	for _, m := range []struct {
+		name string
+		fn   func(*sql.DB) error
+	}{
+		{"payment request columns", ensurePaymentRequestColumns},
+		{"tariffs plan column", ensureTariffPlanColumn},
+		{"plan columns", ensurePlanColumns},
+		{"traffic extension columns", ensureTrafficExtensionColumns},
+		{"payment request indexes", ensurePaymentRequestIndexes},
+		{"support tickets", ensureSupportTicketSchema},
+	} {
+		if err := m.fn(db); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("migrate %s: %w", m.name, err)
+		}
 	}
 	return &Store{db: db}, nil
 }
@@ -283,45 +275,37 @@ func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
 	return existing, rows.Err()
 }
 
-// ensurePaymentRequestColumns adds the payer_* columns to payment_requests when
-// an older database created the table without them. Idempotent.
-func ensurePaymentRequestColumns(db *sql.DB) error {
-	existing, err := tableColumns(db, "payment_requests")
+// columnDef is one additive column: name plus its ALTER TABLE definition.
+type columnDef struct{ name, def string }
+
+// ensureColumns adds every missing column to a table in order. Idempotent.
+func ensureColumns(db *sql.DB, table string, cols ...columnDef) error {
+	existing, err := tableColumns(db, table)
 	if err != nil {
 		return err
 	}
-
-	if !existing["payer_telegram_id"] {
-		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN payer_telegram_id INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return err
+	for _, c := range cols {
+		if existing[c.name] {
+			continue
 		}
-	}
-	if !existing["payer_username"] {
-		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN payer_username TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	if !existing["screenshot_file_id"] {
-		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN screenshot_file_id TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	if !existing["screenshot_is_document"] {
-		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN screenshot_is_document INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return err
-		}
-	}
-	if !existing["provider"] {
-		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN provider TEXT NOT NULL DEFAULT 'p2p'`); err != nil {
-			return err
-		}
-	}
-	if !existing["provider_txn_id"] {
-		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN provider_txn_id TEXT NOT NULL DEFAULT ''`); err != nil {
+		if _, err := db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + c.name + ` ` + c.def); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ensurePaymentRequestColumns adds the payer_* columns to payment_requests when
+// an older database created the table without them. Idempotent.
+func ensurePaymentRequestColumns(db *sql.DB) error {
+	return ensureColumns(db, "payment_requests",
+		columnDef{"payer_telegram_id", "INTEGER NOT NULL DEFAULT 0"},
+		columnDef{"payer_username", "TEXT NOT NULL DEFAULT ''"},
+		columnDef{"screenshot_file_id", "TEXT NOT NULL DEFAULT ''"},
+		columnDef{"screenshot_is_document", "INTEGER NOT NULL DEFAULT 0"},
+		columnDef{"provider", "TEXT NOT NULL DEFAULT 'p2p'"},
+		columnDef{"provider_txn_id", "TEXT NOT NULL DEFAULT ''"},
+	)
 }
 
 // ensureTariffPlanColumn rebuilds the tariffs table with the composite
@@ -373,14 +357,7 @@ func ensureTariffPlanColumn(db *sql.DB) error {
 // database created them without it. Idempotent.
 func ensurePlanColumns(db *sql.DB) error {
 	for _, table := range []string{"payment_requests", "invite_requests", "gift_codes"} {
-		existing, err := tableColumns(db, table)
-		if err != nil {
-			return err
-		}
-		if existing["plan"] {
-			continue
-		}
-		if _, err := db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN plan TEXT NOT NULL DEFAULT 'standard'`); err != nil {
+		if err := ensureColumns(db, table, columnDef{"plan", "TEXT NOT NULL DEFAULT 'standard'"}); err != nil {
 			return err
 		}
 	}
@@ -388,30 +365,14 @@ func ensurePlanColumns(db *sql.DB) error {
 }
 
 func ensureTrafficExtensionColumns(db *sql.DB) error {
-	existing, err := tableColumns(db, "payment_requests")
-	if err != nil {
-		return err
-	}
-	cols := []struct {
-		name string
-		def  string
-	}{
-		{"kind", "TEXT NOT NULL DEFAULT 'subscription'"},
-		{"traffic_gb", "INTEGER NOT NULL DEFAULT 0"},
-		{"base_traffic_limit_bytes", "INTEGER NOT NULL DEFAULT 0"},
-		{"extra_traffic_bytes", "INTEGER NOT NULL DEFAULT 0"},
-		{"extension_expires_at", "TEXT"},
-		{"extension_restored_at", "TEXT"},
-	}
-	for _, c := range cols {
-		if existing[c.name] {
-			continue
-		}
-		if _, err := db.Exec(`ALTER TABLE payment_requests ADD COLUMN ` + c.name + ` ` + c.def); err != nil {
-			return err
-		}
-	}
-	return nil
+	return ensureColumns(db, "payment_requests",
+		columnDef{"kind", "TEXT NOT NULL DEFAULT 'subscription'"},
+		columnDef{"traffic_gb", "INTEGER NOT NULL DEFAULT 0"},
+		columnDef{"base_traffic_limit_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		columnDef{"extra_traffic_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		columnDef{"extension_expires_at", "TEXT"},
+		columnDef{"extension_restored_at", "TEXT"},
+	)
 }
 
 // ensureSupportTicketSchema adds the ticket_id column to support_messages when

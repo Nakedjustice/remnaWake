@@ -31,36 +31,18 @@ func (s *Store) CreateTrialRequest(ctx context.Context, telegramID int64, userna
 	return res.LastInsertId()
 }
 
-func (s *Store) GetTrialRequest(ctx context.Context, id int64) (*TrialRequest, error) {
-	return s.scanTrialRequest(s.db.QueryRowContext(ctx, `
-		SELECT id, telegram_id, username, status, created_at, resolved_at
-		FROM trial_requests WHERE id = ?
-	`, id))
-}
+// trialRequestColumns is the trial_requests column list in scanTrialRequest order.
+const trialRequestColumns = `id, telegram_id, username, status, created_at, resolved_at`
 
-// GetPendingTrialRequestByTelegramID returns the user's pending trial request,
-// or nil when none is awaiting a decision. Used to give a friendly "already
-// under review" message on a duplicate submit.
-func (s *Store) GetPendingTrialRequestByTelegramID(ctx context.Context, telegramID int64) (*TrialRequest, error) {
-	return s.scanTrialRequest(s.db.QueryRowContext(ctx, `
-		SELECT id, telegram_id, username, status, created_at, resolved_at
-		FROM trial_requests WHERE telegram_id = ? AND status = 'pending'
-		ORDER BY id DESC LIMIT 1
-	`, telegramID))
-}
-
-func (s *Store) scanTrialRequest(row *sql.Row) (*TrialRequest, error) {
+// scanTrialRequest reads one row in trialRequestColumns order.
+func scanTrialRequest(sc rowScanner) (TrialRequest, error) {
 	var (
 		r          TrialRequest
 		created    string
 		resolvedAt sql.NullString
 	)
-	err := row.Scan(&r.ID, &r.TelegramID, &r.Username, &r.Status, &created, &resolvedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
+	if err := sc.Scan(&r.ID, &r.TelegramID, &r.Username, &r.Status, &created, &resolvedAt); err != nil {
+		return TrialRequest{}, err
 	}
 	r.CreatedAt, _ = parseTime(created)
 	if resolvedAt.Valid {
@@ -68,40 +50,46 @@ func (s *Store) scanTrialRequest(row *sql.Row) (*TrialRequest, error) {
 			r.ResolvedAt = &ts
 		}
 	}
+	return r, nil
+}
+
+func (s *Store) getTrialRequest(row *sql.Row) (*TrialRequest, error) {
+	r, err := scanTrialRequest(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	return &r, nil
+}
+
+func (s *Store) GetTrialRequest(ctx context.Context, id int64) (*TrialRequest, error) {
+	return s.getTrialRequest(s.db.QueryRowContext(ctx,
+		`SELECT `+trialRequestColumns+` FROM trial_requests WHERE id = ?`, id))
+}
+
+// GetPendingTrialRequestByTelegramID returns the user's pending trial request,
+// or nil when none is awaiting a decision. Used to give a friendly "already
+// under review" message on a duplicate submit.
+func (s *Store) GetPendingTrialRequestByTelegramID(ctx context.Context, telegramID int64) (*TrialRequest, error) {
+	return s.getTrialRequest(s.db.QueryRowContext(ctx, `
+		SELECT `+trialRequestColumns+`
+		FROM trial_requests WHERE telegram_id = ? AND status = 'pending'
+		ORDER BY id DESC LIMIT 1
+	`, telegramID))
 }
 
 // ListTrialRequestsByStatus returns every trial request in the given status,
 // newest first.
 func (s *Store) ListTrialRequestsByStatus(ctx context.Context, status string) ([]TrialRequest, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, telegram_id, username, status, created_at, resolved_at
-		FROM trial_requests WHERE status = ? ORDER BY id DESC
-	`, status)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+trialRequestColumns+` FROM trial_requests WHERE status = ? ORDER BY id DESC`, status)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	var out []TrialRequest
-	for rows.Next() {
-		var (
-			r          TrialRequest
-			created    string
-			resolvedAt sql.NullString
-		)
-		if err := rows.Scan(&r.ID, &r.TelegramID, &r.Username, &r.Status, &created, &resolvedAt); err != nil {
-			return nil, err
-		}
-		r.CreatedAt, _ = parseTime(created)
-		if resolvedAt.Valid {
-			if ts, e := parseTime(resolvedAt.String); e == nil {
-				r.ResolvedAt = &ts
-			}
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return scanList(rows, scanTrialRequest)
 }
 
 // ResolveTrialRequest transitions a pending request to approved or rejected

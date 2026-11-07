@@ -253,10 +253,6 @@ func paymentProviderClause(provider string) (string, []any) {
 	return " AND provider = ?", []any{provider}
 }
 
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
 func scanPaymentHistoryItem(scanner rowScanner) (*PaymentHistoryItem, error) {
 	var (
 		it       PaymentHistoryItem

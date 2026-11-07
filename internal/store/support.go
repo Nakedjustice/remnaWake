@@ -122,24 +122,24 @@ func (s *Store) listSupportMessages(ctx context.Context, where string, arg any) 
 		return nil, err
 	}
 	defer rows.Close()
-	var out []SupportMessage
-	for rows.Next() {
-		var (
-			m                            SupportMessage
-			created                      string
-			fromAdmin, readUser, readAdm int
-		)
-		if err := rows.Scan(&m.ID, &m.TicketID, &m.UserTelegramID, &m.UserUsername, &fromAdmin,
-			&m.AuthorTelegramID, &m.Text, &created, &readUser, &readAdm); err != nil {
-			return nil, err
-		}
-		m.FromAdmin = fromAdmin != 0
-		m.ReadByUser = readUser != 0
-		m.ReadByAdmin = readAdm != 0
-		m.CreatedAt, _ = parseTime(created)
-		out = append(out, m)
+	return scanList(rows, scanSupportMessage)
+}
+
+func scanSupportMessage(sc rowScanner) (SupportMessage, error) {
+	var (
+		m                            SupportMessage
+		created                      string
+		fromAdmin, readUser, readAdm int
+	)
+	if err := sc.Scan(&m.ID, &m.TicketID, &m.UserTelegramID, &m.UserUsername, &fromAdmin,
+		&m.AuthorTelegramID, &m.Text, &created, &readUser, &readAdm); err != nil {
+		return SupportMessage{}, err
 	}
-	return out, rows.Err()
+	m.FromAdmin = fromAdmin != 0
+	m.ReadByUser = readUser != 0
+	m.ReadByAdmin = readAdm != 0
+	m.CreatedAt, _ = parseTime(created)
+	return m, nil
 }
 
 // ListSupportConversations returns one entry per open conversation, ordered by
@@ -200,16 +200,6 @@ func (s *Store) MarkSupportReadByAdmin(ctx context.Context, userTelegramID int64
 		WHERE user_telegram_id = ? AND from_admin = 0 AND read_by_admin = 0
 	`, userTelegramID)
 	return err
-}
-
-// CountUnreadForUser returns how many admin replies the user has not seen yet.
-func (s *Store) CountUnreadForUser(ctx context.Context, userTelegramID int64) (int, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM support_messages
-		WHERE user_telegram_id = ? AND from_admin = 1 AND read_by_user = 0
-	`, userTelegramID).Scan(&n)
-	return n, err
 }
 
 // CloseSupportConversation deletes the whole thread. It reports whether any
@@ -334,29 +324,29 @@ func (s *Store) listSupportTickets(ctx context.Context, query string, args ...an
 		return nil, err
 	}
 	defer rows.Close()
-	var out []SupportTicket
-	for rows.Next() {
-		var (
-			tk              SupportTicket
-			created, lastAt string
-			closedAt        sql.NullString
-			lastFromAdmin   int
-		)
-		if err := rows.Scan(&tk.ID, &tk.UserTelegramID, &tk.UserUsername, &tk.Subject, &tk.Status,
-			&created, &closedAt, &tk.ClosedBy, &tk.LastText, &lastAt, &lastFromAdmin, &tk.Unread); err != nil {
-			return nil, err
-		}
-		tk.CreatedAt, _ = parseTime(created)
-		tk.LastAt, _ = parseTime(lastAt)
-		tk.LastFromAdmin = lastFromAdmin != 0
-		if closedAt.Valid {
-			if at, err := parseTime(closedAt.String); err == nil {
-				tk.ClosedAt = &at
-			}
-		}
-		out = append(out, tk)
+	return scanList(rows, scanSupportTicketRow)
+}
+
+func scanSupportTicketRow(sc rowScanner) (SupportTicket, error) {
+	var (
+		tk              SupportTicket
+		created, lastAt string
+		closedAt        sql.NullString
+		lastFromAdmin   int
+	)
+	if err := sc.Scan(&tk.ID, &tk.UserTelegramID, &tk.UserUsername, &tk.Subject, &tk.Status,
+		&created, &closedAt, &tk.ClosedBy, &tk.LastText, &lastAt, &lastFromAdmin, &tk.Unread); err != nil {
+		return SupportTicket{}, err
 	}
-	return out, rows.Err()
+	tk.CreatedAt, _ = parseTime(created)
+	tk.LastAt, _ = parseTime(lastAt)
+	tk.LastFromAdmin = lastFromAdmin != 0
+	if closedAt.Valid {
+		if at, err := parseTime(closedAt.String); err == nil {
+			tk.ClosedAt = &at
+		}
+	}
+	return tk, nil
 }
 
 func scanSupportTicketBase(row *sql.Row) (*SupportTicket, error) {

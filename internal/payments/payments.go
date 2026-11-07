@@ -294,7 +294,6 @@ type payPhotoState struct {
 	kind       string
 	trafficGB  int
 	baseBytes  int64
-	extraBytes int64
 	createdAt  time.Time
 }
 

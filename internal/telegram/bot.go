@@ -8,7 +8,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -300,68 +299,57 @@ func NewBot(token, parseMode string, timeout time.Duration) *Bot {
 	}
 }
 
-func (b *Bot) Send(ctx context.Context, chatID int64, text string) error {
-	return b.SendWithKeyboard(ctx, chatID, text, nil)
+// messageRequest builds a sendMessage payload; markup must already be an
+// untyped nil or a non-nil keyboard (see inlineMarkup/replyMarkup).
+func (b *Bot) messageRequest(chatID int64, text string, formatted bool, markup any) sendMessageRequest {
+	p := sendMessageRequest{ChatID: chatID, Text: text}
+	if formatted {
+		p.ParseMode = b.parseMode
+	}
+	if markup != nil {
+		p.ReplyMarkup = markup
+	}
+	return p
+}
+
+func inlineMarkup(k *InlineKeyboardMarkup) any {
+	if k == nil {
+		return nil
+	}
+	return k
+}
+
+func replyMarkup(k *ReplyKeyboardMarkup) any {
+	if k == nil {
+		return nil
+	}
+	return k
 }
 
 func (b *Bot) SendPlain(ctx context.Context, chatID int64, text string) error {
-	payload := sendMessageRequest{
-		ChatID: chatID,
-		Text:   text,
-	}
-	_, err := b.sendMessage(ctx, payload)
+	_, err := b.sendMessage(ctx, b.messageRequest(chatID, text, false, nil))
 	return err
 }
 
 func (b *Bot) SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) (int64, error) {
-	payload := sendMessageRequest{
-		ChatID: chatID,
-		Text:   text,
-	}
-	if keyboard != nil {
-		payload.ReplyMarkup = keyboard
-	}
-	return b.sendMessage(ctx, payload)
+	return b.sendMessage(ctx, b.messageRequest(chatID, text, false, inlineMarkup(keyboard)))
 }
 
 // SendFormattedWithKeyboard sends text using the bot's configured parse mode.
 // Callers must escape every untrusted value interpolated into text.
 func (b *Bot) SendFormattedWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) (int64, error) {
-	payload := sendMessageRequest{
-		ChatID:    chatID,
-		Text:      text,
-		ParseMode: b.parseMode,
-	}
-	if keyboard != nil {
-		payload.ReplyMarkup = keyboard
-	}
-	return b.sendMessage(ctx, payload)
+	return b.sendMessage(ctx, b.messageRequest(chatID, text, true, inlineMarkup(keyboard)))
 }
 
 // SendPlainWithReplyKeyboard sends a plain message carrying a persistent reply
 // keyboard (the buttons shown under the input field).
 func (b *Bot) SendPlainWithReplyKeyboard(ctx context.Context, chatID int64, text string, keyboard *ReplyKeyboardMarkup) error {
-	payload := sendMessageRequest{
-		ChatID: chatID,
-		Text:   text,
-	}
-	if keyboard != nil {
-		payload.ReplyMarkup = keyboard
-	}
-	_, err := b.sendMessage(ctx, payload)
+	_, err := b.sendMessage(ctx, b.messageRequest(chatID, text, false, replyMarkup(keyboard)))
 	return err
 }
 
 func (b *Bot) SendWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) error {
-	payload := sendMessageRequest{
-		ChatID:    chatID,
-		Text:      text,
-		ParseMode: b.parseMode,
-	}
-	if keyboard != nil {
-		payload.ReplyMarkup = keyboard
-	}
-	_, err := b.sendMessage(ctx, payload)
+	_, err := b.sendMessage(ctx, b.messageRequest(chatID, text, true, inlineMarkup(keyboard)))
 	return err
 }
 
@@ -944,13 +932,4 @@ func (b *Bot) GetMe(ctx context.Context) (*User, error) {
 		return nil, fmt.Errorf("telegram get me not ok: %s", ar.Description)
 	}
 	return &ar.Result, nil
-}
-
-func (b *Bot) EndpointHost() string {
-	u, _ := url.Parse(b.apiBase)
-	return u.Host
-}
-
-func ParseChatID(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
 }
