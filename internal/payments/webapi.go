@@ -379,21 +379,17 @@ type RenewResult struct {
 	PlanChange *PlanChangePreview `json:"plan_change,omitempty"`
 }
 
-func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider, plan string, planChangeConfirmed bool) (*RenewResult, error) {
-	if !s.isEnabled() {
-		return nil, ErrPaymentsDisabled
-	}
-	planDef, err := s.getPlan(ctx, plan)
-	if err != nil {
-		return nil, err
-	}
-	plan = planDef.Code
+// webProfile resolves the caller's panel profile among their linked profiles
+// (ErrNotLinked/ErrProfileUnknown keep foreign and missing profiles
+// indistinguishable per the ownership invariant) and snapshots it into
+// notified_users for the later confirmation step.
+func (s *Service) webProfile(ctx context.Context, telegramID, remnawaveID int64) (*Subscriber, *store.NotifiedUser, error) {
 	subs, err := s.finder.FindByTelegramID(ctx, telegramID)
 	if err != nil {
-		return nil, fmt.Errorf("find by telegram id: %w", err)
+		return nil, nil, fmt.Errorf("find by telegram id: %w", err)
 	}
 	if len(subs) == 0 {
-		return nil, ErrNotLinked
+		return nil, nil, ErrNotLinked
 	}
 	var sub *Subscriber
 	for i := range subs {
@@ -403,7 +399,32 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 		}
 	}
 	if sub == nil {
-		return nil, ErrProfileUnknown
+		return nil, nil, ErrProfileUnknown
+	}
+	u := &store.NotifiedUser{
+		RemnawaveID: sub.RemnawaveID,
+		Username:    sub.Username,
+		TelegramID:  telegramID,
+		ExpireAt:    sub.ExpireAt,
+	}
+	if err := s.store.UpsertNotifiedUser(ctx, *u); err != nil {
+		s.logger.Error("webapp: remember user failed", "err", err.Error(), "user_id", sub.RemnawaveID)
+	}
+	return sub, u, nil
+}
+
+func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveID int64, months int, provider, plan string, planChangeConfirmed bool) (*RenewResult, error) {
+	if !s.isEnabled() {
+		return nil, ErrPaymentsDisabled
+	}
+	planDef, err := s.getPlan(ctx, plan)
+	if err != nil {
+		return nil, err
+	}
+	plan = planDef.Code
+	sub, u, err := s.webProfile(ctx, telegramID, remnawaveID)
+	if err != nil {
+		return nil, err
 	}
 
 	// The months=1/price=0 fallback for an empty grid is a legacy standard-only
@@ -427,16 +448,6 @@ func (s *Service) CreateRenewRequest(ctx context.Context, telegramID, remnawaveI
 		return nil, ErrTariffUnknown
 	case months < 1:
 		months = 1
-	}
-
-	u := &store.NotifiedUser{
-		RemnawaveID: sub.RemnawaveID,
-		Username:    sub.Username,
-		TelegramID:  telegramID,
-		ExpireAt:    sub.ExpireAt,
-	}
-	if err := s.store.UpsertNotifiedUser(ctx, *u); err != nil {
-		s.logger.Error("webapp: remember user failed", "err", err.Error(), "user_id", sub.RemnawaveID)
 	}
 
 	previewReq := &store.PaymentRequest{
@@ -508,34 +519,12 @@ func (s *Service) CreateTrafficExtensionRequest(ctx context.Context, telegramID,
 	if opt == nil {
 		return nil, ErrTrafficExtensionUnknown
 	}
-	subs, err := s.finder.FindByTelegramID(ctx, telegramID)
+	sub, u, err := s.webProfile(ctx, telegramID, remnawaveID)
 	if err != nil {
-		return nil, fmt.Errorf("find by telegram id: %w", err)
-	}
-	if len(subs) == 0 {
-		return nil, ErrNotLinked
-	}
-	var sub *Subscriber
-	for i := range subs {
-		if subs[i].RemnawaveID == remnawaveID {
-			sub = &subs[i]
-			break
-		}
-	}
-	if sub == nil {
-		return nil, ErrProfileUnknown
+		return nil, err
 	}
 	if sub.TrafficLimitBytes <= 0 {
 		return nil, ErrTrafficExtensionUnavailable
-	}
-	u := &store.NotifiedUser{
-		RemnawaveID: sub.RemnawaveID,
-		Username:    sub.Username,
-		TelegramID:  telegramID,
-		ExpireAt:    sub.ExpireAt,
-	}
-	if err := s.store.UpsertNotifiedUser(ctx, *u); err != nil {
-		s.logger.Error("webapp: remember user failed", "err", err.Error(), "user_id", sub.RemnawaveID)
 	}
 
 	enabled := s.enabledProviders()

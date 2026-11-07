@@ -647,9 +647,24 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 			{Text: i18n.T("❌ Отклонить"), CallbackData: fmt.Sprintf("rej:%d", reqID)},
 		}},
 	}
+	if err := s.notifyAdminsWithReceipt(ctx, reqID, text, kb, att, fileID, isDoc,
+		"withdraw unnotified request failed", "payment request"); err != nil {
+		return 0, err
+	}
+	return reqID, nil
+}
+
+// notifyAdminsWithReceipt DMs every admin the pending-request notification: a
+// photo/document upload when att carries fresh bytes (storing the resulting
+// file_id once), a file_id resend when the receipt is already stored, or a
+// plain message otherwise. When no admin receives it the request is withdrawn
+// (reporting success would strand it) and an error is returned. withdrawLog
+// names the withdrawal failure; kind names the request in the returned error.
+func (s *Service) notifyAdminsWithReceipt(ctx context.Context, reqID int64, text string, kb *tg.InlineKeyboardMarkup, att *receiptAttachment, fileID string, isDoc bool, withdrawLog, kind string) error {
 	var refs []adminMsgRef
 	for _, adminID := range s.adminIDs {
 		var msgID int64
+		var err error
 		switch {
 		case att != nil && len(att.data) > 0 && fileID == "" && isDoc:
 			msgID, fileID, err = s.bot.SendDocumentUpload(ctx, adminID, att.filename, att.data, text, kb)
@@ -674,15 +689,13 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
 	}
 	if len(refs) == 0 && len(s.adminIDs) > 0 {
-		// No admin got a confirm button, so reporting success would strand the
-		// request: withdraw it and let the caller ask the user to retry.
 		if _, derr := s.store.DeletePendingPaymentRequest(ctx, reqID); derr != nil {
-			s.logger.Error("withdraw unnotified request failed", "request_id", reqID, "err", derr.Error())
+			s.logger.Error(withdrawLog, "request_id", reqID, "err", derr.Error())
 		}
-		return 0, fmt.Errorf("payment request %d: notifying every admin failed", reqID)
+		return fmt.Errorf("%s %d: notifying every admin failed", kind, reqID)
 	}
 	s.putAdminMsgs(s.payMsgs, reqID, refs)
-	return reqID, nil
+	return nil
 }
 
 func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool {
@@ -792,12 +805,7 @@ func (s *Service) handleReject(ctx context.Context, cb *tg.CallbackQuery) bool {
 // clearPayButtons removes the confirm button from every admin's copy of the
 // payment notification for reqID, then forgets the stored refs.
 func (s *Service) clearPayButtons(ctx context.Context, reqID int64) {
-	refs := s.takeAdminMsgs(s.payMsgs, reqID)
-	for _, ref := range refs {
-		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
-			s.logger.Warn("clear admin confirm button failed", "chat_id", ref.chatID, "err", err.Error())
-		}
-	}
+	s.clearAdminButtons(ctx, s.payMsgs, reqID, "clear admin confirm button failed")
 }
 
 func (s *Service) tariffKeyboard(userID int64, plan string, tariffs []store.Tariff) *tg.InlineKeyboardMarkup {

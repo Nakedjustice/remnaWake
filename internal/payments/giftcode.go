@@ -234,16 +234,7 @@ func (s *Service) notifyAdminsGiftRequest(ctx context.Context, giftID int64, cod
 			{Text: i18n.T("❌ Отклонить"), CallbackData: fmt.Sprintf("gc_rej:%d", giftID)},
 		}},
 	}
-	var refs []adminMsgRef
-	for _, adminID := range s.adminIDs {
-		msgID, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
-		if err != nil {
-			s.logger.Error("gift: notify admin failed", "admin_id", adminID, "err", err.Error())
-			continue
-		}
-		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
-	}
-	s.putAdminMsgs(s.giftMsgs, giftID, refs)
+	s.notifyAdminsWithKeyboard(ctx, s.giftMsgs, giftID, text, kb, "gift: notify admin failed")
 }
 
 // createGiftCodeRow generates a unique code and inserts the pending row,
@@ -423,12 +414,7 @@ func (s *Service) rejectGiftRequest(ctx context.Context, giftID int64) (*store.G
 // clearGiftButtons removes the approve/reject buttons from every admin's copy
 // of the gift notification, then forgets the stored refs.
 func (s *Service) clearGiftButtons(ctx context.Context, giftID int64) {
-	refs := s.takeAdminMsgs(s.giftMsgs, giftID)
-	for _, ref := range refs {
-		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
-			s.logger.Warn("clear admin gift button failed", "chat_id", ref.chatID, "err", err.Error())
-		}
-	}
+	s.clearAdminButtons(ctx, s.giftMsgs, giftID, "clear admin gift button failed")
 }
 
 // myGiftsPageSize is how many gifts one list page shows.
@@ -523,11 +509,38 @@ func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) b
 	}
 	chatID := cb.Message.Chat.ID
 
-	counts, err := s.store.CountGiftCodesByBuyer(ctx, chatID)
-	if err != nil {
-		s.logger.Error("gift: count by buyer failed", "err", err.Error())
+	itemRow := func(g store.GiftCode) *tg.InlineKeyboardButton {
+		if g.Status != "issued" {
+			return nil
+		}
+		return &tg.InlineKeyboardButton{
+			Text:         fmt.Sprintf(i18n.T("🔗 Ссылка для %s"), g.Code),
+			CallbackData: fmt.Sprintf("gc_link:%d", g.ID),
+		}
+	}
+	backRow := []tg.InlineKeyboardButton{{Text: i18n.T("← К статусам"), CallbackData: "mg:menu"}}
+	ok := s.renderGiftPage(ctx, chatID, cb.Message.MessageID, chatID, status, page, label,
+		backRow, itemRow, func(p int) string { return fmt.Sprintf("mg:list:%s:%d", status, p) },
+		"mg:noop", "gift: count by buyer failed", "gift: list by buyer failed")
+	if !ok {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
-		return true
+	} else {
+		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
+	}
+	return true
+}
+
+// renderGiftPage edits a message to show one page of a buyer's gifts in the
+// given status bucket, falling back to page 0 when the list shrank. itemRow
+// builds the per-gift action button (nil = none), navData formats the
+// prev/next callback data and noop labels the page counter. Returns false when
+// a store read failed (already logged with the given labels).
+func (s *Service) renderGiftPage(ctx context.Context, chatID, messageID, buyerID int64, status string, page int, label string,
+	backRow []tg.InlineKeyboardButton, itemRow func(store.GiftCode) *tg.InlineKeyboardButton, navData func(page int) string, noop, countLog, listLog string) bool {
+	counts, err := s.store.CountGiftCodesByBuyer(ctx, buyerID)
+	if err != nil {
+		s.logger.Error(countLog, "err", err.Error())
+		return false
 	}
 	total := counts[status]
 	pages := (total + myGiftsPageSize - 1) / myGiftsPageSize
@@ -536,21 +549,17 @@ func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) b
 	if page >= pages {
 		page = 0
 	}
-
-	backRow := []tg.InlineKeyboardButton{{Text: i18n.T("← К статусам"), CallbackData: "mg:menu"}}
 	if total == 0 {
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
-		_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID,
+		_ = s.bot.EditMessageText(ctx, chatID, messageID,
 			fmt.Sprintf(i18n.T("🎁 %s: подарков нет."), label),
 			&tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{backRow}})
 		return true
 	}
 
-	gifts, err := s.store.ListGiftCodesByBuyerStatus(ctx, chatID, status, myGiftsPageSize, page*myGiftsPageSize)
+	gifts, err := s.store.ListGiftCodesByBuyerStatus(ctx, buyerID, status, myGiftsPageSize, page*myGiftsPageSize)
 	if err != nil {
-		s.logger.Error("gift: list by buyer failed", "err", err.Error())
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Ошибка, попробуйте позже."))
-		return true
+		s.logger.Error(listLog, "err", err.Error())
+		return false
 	}
 
 	var b strings.Builder
@@ -559,28 +568,24 @@ func (s *Service) handleMyGiftsList(ctx context.Context, cb *tg.CallbackQuery) b
 	for _, g := range gifts {
 		b.WriteString(fmt.Sprintf(i18n.T("\n%s — %d мес. (заявка от %s)\n%s\n"),
 			g.Code, g.Months, g.CreatedAt.Format("02.01.2006"), giftStatusLabel(&g)))
-		if g.Status == "issued" {
-			rows = append(rows, []tg.InlineKeyboardButton{{
-				Text:         fmt.Sprintf(i18n.T("🔗 Ссылка для %s"), g.Code),
-				CallbackData: fmt.Sprintf("gc_link:%d", g.ID),
-			}})
+		if btn := itemRow(g); btn != nil {
+			rows = append(rows, []tg.InlineKeyboardButton{*btn})
 		}
 	}
 	if pages > 1 {
 		nav := []tg.InlineKeyboardButton{}
 		if page > 0 {
-			nav = append(nav, tg.InlineKeyboardButton{Text: "◀️", CallbackData: fmt.Sprintf("mg:list:%s:%d", status, page-1)})
+			nav = append(nav, tg.InlineKeyboardButton{Text: "◀️", CallbackData: navData(page - 1)})
 		}
-		nav = append(nav, tg.InlineKeyboardButton{Text: fmt.Sprintf(i18n.T("стр. %d/%d"), page+1, pages), CallbackData: "mg:noop"})
+		nav = append(nav, tg.InlineKeyboardButton{Text: fmt.Sprintf(i18n.T("стр. %d/%d"), page+1, pages), CallbackData: noop})
 		if page < pages-1 {
-			nav = append(nav, tg.InlineKeyboardButton{Text: "▶️", CallbackData: fmt.Sprintf("mg:list:%s:%d", status, page+1)})
+			nav = append(nav, tg.InlineKeyboardButton{Text: "▶️", CallbackData: navData(page + 1)})
 		}
 		rows = append(rows, nav)
 	}
 	rows = append(rows, backRow)
 
-	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, "")
-	_ = s.bot.EditMessageText(ctx, chatID, cb.Message.MessageID,
+	_ = s.bot.EditMessageText(ctx, chatID, messageID,
 		strings.TrimRight(b.String(), "\n"), &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
 	return true
 }
@@ -803,60 +808,18 @@ func (s *Service) editAdminGiftList(ctx context.Context, chatID int64, messageID
 		return
 	}
 	backRow := []tg.InlineKeyboardButton{{Text: i18n.T("← Назад"), CallbackData: fmt.Sprintf("adm:gbuyer:%d", buyerID)}}
-
-	counts, err := s.store.CountGiftCodesByBuyer(ctx, buyerID)
-	if err != nil {
-		s.logger.Error("admin: count gifts by buyer failed", "err", err.Error())
-		return
-	}
-	total := counts[status]
-	pages := (total + myGiftsPageSize - 1) / myGiftsPageSize
-	// The list may have changed since the buttons were drawn: fall back to the
-	// first page rather than showing an empty one.
-	if page >= pages {
-		page = 0
-	}
-	if total == 0 {
-		_ = s.bot.EditMessageText(ctx, chatID, messageID,
-			fmt.Sprintf(i18n.T("🎁 %s: подарков нет."), label),
-			&tg.InlineKeyboardMarkup{InlineKeyboard: [][]tg.InlineKeyboardButton{backRow}})
-		return
-	}
-
-	gifts, err := s.store.ListGiftCodesByBuyerStatus(ctx, buyerID, status, myGiftsPageSize, page*myGiftsPageSize)
-	if err != nil {
-		s.logger.Error("admin: list gifts by buyer failed", "err", err.Error())
-		return
-	}
-
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf(i18n.T("🎁 %s — стр. %d/%d:\n"), label, page+1, pages))
-	var rows [][]tg.InlineKeyboardButton
-	for _, g := range gifts {
-		b.WriteString(fmt.Sprintf(i18n.T("\n%s — %d мес. (заявка от %s)\n%s\n"),
-			g.Code, g.Months, g.CreatedAt.Format("02.01.2006"), giftStatusLabel(&g)))
-		if g.Status == "issued" {
-			rows = append(rows, []tg.InlineKeyboardButton{{
-				Text:         fmt.Sprintf(i18n.T("🚫 Отозвать %s"), g.Code),
-				CallbackData: fmt.Sprintf("adm:grev:%d", g.ID),
-			}})
+	itemRow := func(g store.GiftCode) *tg.InlineKeyboardButton {
+		if g.Status != "issued" {
+			return nil
+		}
+		return &tg.InlineKeyboardButton{
+			Text:         fmt.Sprintf(i18n.T("🚫 Отозвать %s"), g.Code),
+			CallbackData: fmt.Sprintf("adm:grev:%d", g.ID),
 		}
 	}
-	if pages > 1 {
-		nav := []tg.InlineKeyboardButton{}
-		if page > 0 {
-			nav = append(nav, tg.InlineKeyboardButton{Text: "◀️", CallbackData: fmt.Sprintf("adm:glist:%d:%s:%d", buyerID, status, page-1)})
-		}
-		nav = append(nav, tg.InlineKeyboardButton{Text: fmt.Sprintf(i18n.T("стр. %d/%d"), page+1, pages), CallbackData: "adm:gnoop"})
-		if page < pages-1 {
-			nav = append(nav, tg.InlineKeyboardButton{Text: "▶️", CallbackData: fmt.Sprintf("adm:glist:%d:%s:%d", buyerID, status, page+1)})
-		}
-		rows = append(rows, nav)
-	}
-	rows = append(rows, backRow)
-
-	_ = s.bot.EditMessageText(ctx, chatID, messageID,
-		strings.TrimRight(b.String(), "\n"), &tg.InlineKeyboardMarkup{InlineKeyboard: rows})
+	s.renderGiftPage(ctx, chatID, messageID, buyerID, status, page, label, backRow, itemRow,
+		func(p int) string { return fmt.Sprintf("adm:glist:%d:%s:%d", buyerID, status, p) },
+		"adm:gnoop", "admin: count gifts by buyer failed", "admin: list gifts by buyer failed")
 }
 
 // handleAdminGiftRevoke revokes an issued gift code from the admin list, then
