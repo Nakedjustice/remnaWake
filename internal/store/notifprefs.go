@@ -36,10 +36,7 @@ func (s *Store) SetNotificationPref(ctx context.Context, telegramID int64, kind 
 	default:
 		return fmt.Errorf("unknown notification kind: %q", kind)
 	}
-	val := 0
-	if muted {
-		val = 1
-	}
+	val := boolToInt(muted)
 	// On insert, default the non-target column to 0; on conflict, update only the
 	// target column. col is a fixed string (never user input), safe to inline.
 	em, wm := 0, 0

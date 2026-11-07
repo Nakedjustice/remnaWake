@@ -8,7 +8,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -264,11 +263,6 @@ type sendMessageResponse struct {
 	Result Message `json:"result"`
 }
 
-type getUpdatesResponse struct {
-	apiResponse
-	Result []Update `json:"result,omitempty"`
-}
-
 func NewBot(token, parseMode string, timeout time.Duration) *Bot {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = telegramMaxIdleConns
@@ -300,68 +294,57 @@ func NewBot(token, parseMode string, timeout time.Duration) *Bot {
 	}
 }
 
-func (b *Bot) Send(ctx context.Context, chatID int64, text string) error {
-	return b.SendWithKeyboard(ctx, chatID, text, nil)
+// messageRequest builds a sendMessage payload; markup must already be an
+// untyped nil or a non-nil keyboard (see inlineMarkup/replyMarkup).
+func (b *Bot) messageRequest(chatID int64, text string, formatted bool, markup any) sendMessageRequest {
+	p := sendMessageRequest{ChatID: chatID, Text: text}
+	if formatted {
+		p.ParseMode = b.parseMode
+	}
+	if markup != nil {
+		p.ReplyMarkup = markup
+	}
+	return p
+}
+
+func inlineMarkup(k *InlineKeyboardMarkup) any {
+	if k == nil {
+		return nil
+	}
+	return k
+}
+
+func replyMarkup(k *ReplyKeyboardMarkup) any {
+	if k == nil {
+		return nil
+	}
+	return k
 }
 
 func (b *Bot) SendPlain(ctx context.Context, chatID int64, text string) error {
-	payload := sendMessageRequest{
-		ChatID: chatID,
-		Text:   text,
-	}
-	_, err := b.sendMessage(ctx, payload)
+	_, err := b.sendMessage(ctx, b.messageRequest(chatID, text, false, nil))
 	return err
 }
 
 func (b *Bot) SendPlainWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) (int64, error) {
-	payload := sendMessageRequest{
-		ChatID: chatID,
-		Text:   text,
-	}
-	if keyboard != nil {
-		payload.ReplyMarkup = keyboard
-	}
-	return b.sendMessage(ctx, payload)
+	return b.sendMessage(ctx, b.messageRequest(chatID, text, false, inlineMarkup(keyboard)))
 }
 
 // SendFormattedWithKeyboard sends text using the bot's configured parse mode.
 // Callers must escape every untrusted value interpolated into text.
 func (b *Bot) SendFormattedWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) (int64, error) {
-	payload := sendMessageRequest{
-		ChatID:    chatID,
-		Text:      text,
-		ParseMode: b.parseMode,
-	}
-	if keyboard != nil {
-		payload.ReplyMarkup = keyboard
-	}
-	return b.sendMessage(ctx, payload)
+	return b.sendMessage(ctx, b.messageRequest(chatID, text, true, inlineMarkup(keyboard)))
 }
 
 // SendPlainWithReplyKeyboard sends a plain message carrying a persistent reply
 // keyboard (the buttons shown under the input field).
 func (b *Bot) SendPlainWithReplyKeyboard(ctx context.Context, chatID int64, text string, keyboard *ReplyKeyboardMarkup) error {
-	payload := sendMessageRequest{
-		ChatID: chatID,
-		Text:   text,
-	}
-	if keyboard != nil {
-		payload.ReplyMarkup = keyboard
-	}
-	_, err := b.sendMessage(ctx, payload)
+	_, err := b.sendMessage(ctx, b.messageRequest(chatID, text, false, replyMarkup(keyboard)))
 	return err
 }
 
 func (b *Bot) SendWithKeyboard(ctx context.Context, chatID int64, text string, keyboard *InlineKeyboardMarkup) error {
-	payload := sendMessageRequest{
-		ChatID:    chatID,
-		Text:      text,
-		ParseMode: b.parseMode,
-	}
-	if keyboard != nil {
-		payload.ReplyMarkup = keyboard
-	}
-	_, err := b.sendMessage(ctx, payload)
+	_, err := b.sendMessage(ctx, b.messageRequest(chatID, text, true, inlineMarkup(keyboard)))
 	return err
 }
 
@@ -508,10 +491,74 @@ func (b *Bot) SendInvoice(ctx context.Context, chatID int64, title, description,
 	})
 }
 
+// post posts the JSON payload to the Bot API method at path with the normal
+// (non-polling) client and returns the raw response body; label names the call
+// in errors.
+func (b *Bot) post(ctx context.Context, path, label string, payload any) ([]byte, error) {
+	return b.postWith(ctx, b.http, path, label, payload)
+}
+
+func (b *Bot) postWith(ctx context.Context, client *http.Client, path, label string, payload any) ([]byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/"+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return b.do(req, label, client)
+}
+
+func (b *Bot) do(req *http.Request, label string, client *http.Client) ([]byte, error) {
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("telegram %s: %w", label, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("telegram %s failed: status=%d body=%s", label, resp.StatusCode, textutil.Truncate(string(raw), 300))
+	}
+	return raw, nil
+}
+
+// postOK posts a best-effort call (query answers, message edits, settings) and
+// surfaces only an explicit not-ok envelope: a body that fails to decode is
+// tolerated, exactly as every ack-style caller always did.
+func (b *Bot) postOK(ctx context.Context, path, label string, payload any) error {
+	raw, err := b.post(ctx, path, label, payload)
+	if err != nil {
+		return err
+	}
+	var ar apiResponse
+	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
+		return fmt.Errorf("telegram %s not ok: %s", label, ar.Description)
+	}
+	return nil
+}
+
+// decodeResult strictly decodes a Bot API envelope into its result, treating a
+// malformed body as an error (unlike postOK's tolerated acks).
+func decodeResult[T any](raw []byte, label string) (T, error) {
+	var ar struct {
+		apiResponse
+		Result T `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &ar); err != nil {
+		return *new(T), fmt.Errorf("telegram %s decode: %w", label, err)
+	}
+	if !ar.OK {
+		return *new(T), fmt.Errorf("telegram %s not ok: %s", label, ar.Description)
+	}
+	return ar.Result, nil
+}
+
 // CreateInvoiceLink creates a Telegram Stars invoice link (currency "XTR") that
 // a Mini App can open with Telegram.WebApp.openInvoice. Returns the link URL.
 func (b *Bot) CreateInvoiceLink(ctx context.Context, title, description, payload string, prices []LabeledPrice) (string, error) {
-	body, err := json.Marshal(createInvoiceLinkRequest{
+	raw, err := b.post(ctx, "createInvoiceLink", "create invoice link", createInvoiceLinkRequest{
 		Title:       title,
 		Description: description,
 		Payload:     payload,
@@ -521,68 +568,17 @@ func (b *Bot) CreateInvoiceLink(ctx context.Context, title, description, payload
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/createInvoiceLink", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := b.http.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("telegram create invoice link: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("telegram create invoice link failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
-	}
-	var ar struct {
-		apiResponse
-		Result string `json:"result"`
-	}
-	if err := json.Unmarshal(raw, &ar); err != nil {
-		return "", fmt.Errorf("telegram create invoice link decode: %w", err)
-	}
-	if !ar.OK {
-		return "", fmt.Errorf("telegram create invoice link not ok: %s", ar.Description)
-	}
-	return ar.Result, nil
+	return decodeResult[string](raw, "create invoice link")
 }
 
 // AnswerPreCheckoutQuery confirms (ok=true) or rejects a pending pre-checkout
 // query. Telegram requires an answer within 10 seconds of the query.
 func (b *Bot) AnswerPreCheckoutQuery(ctx context.Context, preCheckoutQueryID string, ok bool, errorMessage string) error {
-	payload := answerPreCheckoutQueryRequest{
+	return b.postOK(ctx, "answerPreCheckoutQuery", "answer pre-checkout query", answerPreCheckoutQueryRequest{
 		PreCheckoutQueryID: preCheckoutQueryID,
 		OK:                 ok,
 		ErrorMessage:       errorMessage,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/answerPreCheckoutQuery", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := b.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("telegram answer pre-checkout query: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("telegram answer pre-checkout query failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
-	}
-	var ar apiResponse
-	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
-		return fmt.Errorf("telegram answer pre-checkout query not ok: %s", ar.Description)
-	}
-	return nil
+	})
 }
 
 // sendWithRetry posts payload to the given API method, waiting out 429s like
@@ -650,146 +646,41 @@ func (b *Bot) doSend(ctx context.Context, method string, payload any) (int64, ti
 }
 
 func (b *Bot) GetUpdates(ctx context.Context, offset int64, timeout int) ([]Update, error) {
-	payload := getUpdatesRequest{
+	raw, err := b.postWith(ctx, b.pollHTTP, "getUpdates", "get updates", getUpdatesRequest{
 		Offset:         offset,
 		Timeout:        timeout,
 		AllowedUpdates: []string{"callback_query", "message", "pre_checkout_query"},
-	}
-	body, err := json.Marshal(payload)
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	endpoint := b.apiBase + "/getUpdates"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := b.pollHTTP.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("telegram get updates: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("telegram get updates failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
-	}
-
-	var ar getUpdatesResponse
-	if err := json.Unmarshal(raw, &ar); err != nil {
-		return nil, fmt.Errorf("telegram get updates decode: %w", err)
-	}
-	if !ar.OK {
-		return nil, fmt.Errorf("telegram get updates not ok: %s", ar.Description)
-	}
-	return ar.Result, nil
+	return decodeResult[[]Update](raw, "get updates")
 }
 
 func (b *Bot) AnswerCallbackQuery(ctx context.Context, callbackQueryID, text string) error {
-	payload := answerCallbackQueryRequest{
+	return b.postOK(ctx, "answerCallbackQuery", "answer callback query", answerCallbackQueryRequest{
 		CallbackQueryID: callbackQueryID,
 		Text:            text,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	endpoint := b.apiBase + "/answerCallbackQuery"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := b.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("telegram answer callback query: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("telegram answer callback query failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
-	}
-
-	var ar apiResponse
-	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
-		return fmt.Errorf("telegram answer callback query not ok: %s", ar.Description)
-	}
-	return nil
+	})
 }
 
 func (b *Bot) EditMessageReplyMarkup(ctx context.Context, chatID, messageID int64, keyboard *InlineKeyboardMarkup) error {
-	payload := editMessageReplyMarkupRequest{
+	return b.postOK(ctx, "editMessageReplyMarkup", "edit reply markup", editMessageReplyMarkupRequest{
 		ChatID:      chatID,
 		MessageID:   messageID,
 		ReplyMarkup: keyboard,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/editMessageReplyMarkup", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := b.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("telegram edit reply markup: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("telegram edit reply markup failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
-	}
-	var ar apiResponse
-	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
-		return fmt.Errorf("telegram edit reply markup not ok: %s", ar.Description)
-	}
-	return nil
+	})
 }
 
 // EditMessageText replaces both the text and the inline keyboard of an
 // existing message (keyboard nil = remove buttons).
 func (b *Bot) EditMessageText(ctx context.Context, chatID, messageID int64, text string, keyboard *InlineKeyboardMarkup) error {
-	payload := editMessageTextRequest{
+	return b.postOK(ctx, "editMessageText", "edit message text", editMessageTextRequest{
 		ChatID:      chatID,
 		MessageID:   messageID,
 		Text:        text,
 		ReplyMarkup: keyboard,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/editMessageText", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := b.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("telegram edit message text: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("telegram edit message text failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
-	}
-	var ar apiResponse
-	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
-		return fmt.Errorf("telegram edit message text not ok: %s", ar.Description)
-	}
-	return nil
+	})
 }
 
 // BotCommand is one entry in the bot's command menu (the "Menu" button and the
@@ -801,68 +692,18 @@ type BotCommand struct {
 
 // SetMyCommands registers the bot's command menu via the setMyCommands API.
 func (b *Bot) SetMyCommands(ctx context.Context, commands []BotCommand) error {
-	payload := map[string]any{"commands": commands}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/setMyCommands", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := b.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("telegram set my commands: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("telegram set my commands failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
-	}
-	var ar apiResponse
-	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
-		return fmt.Errorf("telegram set my commands not ok: %s", ar.Description)
-	}
-	return nil
+	return b.postOK(ctx, "setMyCommands", "set my commands", map[string]any{"commands": commands})
 }
 
 // SetMyCommandsForChat registers the bot's command menu for a specific chat via the setMyCommands API.
 func (b *Bot) SetMyCommandsForChat(ctx context.Context, chatID int64, commands []BotCommand) error {
-	payload := map[string]any{
+	return b.postOK(ctx, "setMyCommands", "set my commands for chat", map[string]any{
 		"commands": commands,
 		"scope": map[string]any{
 			"type":    "chat",
 			"chat_id": chatID,
 		},
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/setMyCommands", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := b.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("telegram set my commands for chat: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("telegram set my commands for chat failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
-	}
-	var ar apiResponse
-	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
-		return fmt.Errorf("telegram set my commands for chat not ok: %s", ar.Description)
-	}
-	return nil
+	})
 }
 
 // SetChatMenuButton sets the default menu button (left of the input field) to
@@ -884,37 +725,7 @@ func (b *Bot) ResetChatMenuButton(ctx context.Context) error {
 }
 
 func (b *Bot) setChatMenuButton(ctx context.Context, menuButton map[string]any) error {
-	payload := map[string]any{"menu_button": menuButton}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.apiBase+"/setChatMenuButton", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := b.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("telegram set chat menu button: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("telegram set chat menu button failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
-	}
-	var ar apiResponse
-	if err := json.Unmarshal(raw, &ar); err == nil && !ar.OK {
-		return fmt.Errorf("telegram set chat menu button not ok: %s", ar.Description)
-	}
-	return nil
-}
-
-type getMeResponse struct {
-	apiResponse
-	Result User `json:"result"`
+	return b.postOK(ctx, "setChatMenuButton", "set chat menu button", map[string]any{"menu_button": menuButton})
 }
 
 // GetMe returns the bot's own account info via the getMe API. Used at startup
@@ -924,33 +735,13 @@ func (b *Bot) GetMe(ctx context.Context) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	resp, err := b.http.Do(req)
+	raw, err := b.do(req, "get me", b.http)
 	if err != nil {
-		return nil, fmt.Errorf("telegram get me: %w", err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("telegram get me failed: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(raw), 300))
+	u, err := decodeResult[User](raw, "get me")
+	if err != nil {
+		return nil, err
 	}
-
-	var ar getMeResponse
-	if err := json.Unmarshal(raw, &ar); err != nil {
-		return nil, fmt.Errorf("telegram get me decode: %w", err)
-	}
-	if !ar.OK {
-		return nil, fmt.Errorf("telegram get me not ok: %s", ar.Description)
-	}
-	return &ar.Result, nil
-}
-
-func (b *Bot) EndpointHost() string {
-	u, _ := url.Parse(b.apiBase)
-	return u.Host
-}
-
-func ParseChatID(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
+	return &u, nil
 }

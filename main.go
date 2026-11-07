@@ -434,16 +434,28 @@ func newRWFinder(c *remnawave.Client) rwFinder {
 	return f
 }
 
+func mapSubscribers(us []remnawave.User) []payments.Subscriber {
+	out := make([]payments.Subscriber, 0, len(us))
+	for i := range us {
+		out = append(out, toSubscriber(us[i]))
+	}
+	return out
+}
+
+func subscriberPtr(u *remnawave.User) *payments.Subscriber {
+	if u == nil {
+		return nil
+	}
+	s := toSubscriber(*u)
+	return &s
+}
+
 func (f rwFinder) FindByTelegramID(ctx context.Context, telegramID int64) ([]payments.Subscriber, error) {
 	us, err := f.c.GetUserByTelegramID(ctx, telegramID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]payments.Subscriber, 0, len(us))
-	for i := range us {
-		out = append(out, toSubscriber(us[i]))
-	}
-	return out, nil
+	return mapSubscribers(us), nil
 }
 
 func (f rwFinder) FindByUsername(ctx context.Context, username string) (*payments.Subscriber, error) {
@@ -451,11 +463,7 @@ func (f rwFinder) FindByUsername(ctx context.Context, username string) (*payment
 	if err != nil {
 		return nil, err
 	}
-	if u == nil {
-		return nil, nil
-	}
-	s := toSubscriber(*u)
-	return &s, nil
+	return subscriberPtr(u), nil
 }
 
 func (f rwFinder) FindByShortUUID(ctx context.Context, shortUUID string) (*payments.Subscriber, error) {
@@ -463,11 +471,7 @@ func (f rwFinder) FindByShortUUID(ctx context.Context, shortUUID string) (*payme
 	if err != nil {
 		return nil, err
 	}
-	if u == nil {
-		return nil, nil
-	}
-	s := toSubscriber(*u)
-	return &s, nil
+	return subscriberPtr(u), nil
 }
 
 func (f rwFinder) ListAll(ctx context.Context) ([]payments.Subscriber, error) {
@@ -479,11 +483,7 @@ func (f rwFinder) listAllFromPanel(ctx context.Context) ([]payments.Subscriber, 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]payments.Subscriber, 0, len(us))
-	for i := range us {
-		out = append(out, toSubscriber(us[i]))
-	}
-	return out, nil
+	return mapSubscribers(us), nil
 }
 
 // rwCreator adapts *remnawave.Client to payments.Creator and

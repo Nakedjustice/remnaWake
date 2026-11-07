@@ -294,7 +294,6 @@ type payPhotoState struct {
 	kind       string
 	trafficGB  int
 	baseBytes  int64
-	extraBytes int64
 	createdAt  time.Time
 }
 
@@ -1091,6 +1090,32 @@ func (s *Service) takeAdminMsgs(m map[int64]adminMsgEntry, id int64) []adminMsgR
 	e := m[id]
 	delete(m, id)
 	return e.refs
+}
+
+// notifyAdminsWithKeyboard DMs every admin a keyboard message and remembers
+// the sent refs under id in m so resolving can clear the buttons in all admin
+// chats. label names the failures in the log.
+func (s *Service) notifyAdminsWithKeyboard(ctx context.Context, m map[int64]adminMsgEntry, id int64, text string, kb *tg.InlineKeyboardMarkup, label string) {
+	var refs []adminMsgRef
+	for _, adminID := range s.adminIDs {
+		msgID, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
+		if err != nil {
+			s.logger.Error(label, "admin_id", adminID, "err", err.Error())
+			continue
+		}
+		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
+	}
+	s.putAdminMsgs(m, id, refs)
+}
+
+// clearAdminButtons removes the keyboards from every remembered admin message
+// for id in m, then forgets the stored refs. label names the failures in the log.
+func (s *Service) clearAdminButtons(ctx context.Context, m map[int64]adminMsgEntry, id int64, label string) {
+	for _, ref := range s.takeAdminMsgs(m, id) {
+		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
+			s.logger.Warn(label, "chat_id", ref.chatID, "err", err.Error())
+		}
+	}
 }
 
 func (s *Service) priceLabel(price int) string {

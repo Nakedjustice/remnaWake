@@ -14,10 +14,7 @@ import (
 
 // SetProxyNotifMuted upserts the mute flag for a single proxy key.
 func (s *Store) SetProxyNotifMuted(ctx context.Context, key string, muted bool) error {
-	val := 0
-	if muted {
-		val = 1
-	}
+	val := boolToInt(muted)
 	now := formatTime(time.Now())
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO proxy_notif_muted (proxy_key, muted, updated_at)

@@ -72,40 +72,10 @@ func (s *Service) createTrafficExtensionPaymentRequest(ctx context.Context, u *s
 			{Text: i18n.T("✅ Подтвердить оплату"), CallbackData: fmt.Sprintf("ok:%d", reqID)},
 			{Text: i18n.T("❌ Отклонить"), CallbackData: fmt.Sprintf("rej:%d", reqID)},
 		}}}
-		var refs []adminMsgRef
-		for _, adminID := range s.adminIDs {
-			var msgID int64
-			var sendErr error
-			switch {
-			case att != nil && len(att.data) > 0 && fileID == "" && isDoc:
-				msgID, fileID, sendErr = s.bot.SendDocumentUpload(ctx, adminID, att.filename, att.data, text, kb)
-			case att != nil && len(att.data) > 0 && fileID == "":
-				msgID, fileID, sendErr = s.bot.SendPhotoUpload(ctx, adminID, att.filename, att.data, text, kb)
-			case fileID != "" && isDoc:
-				msgID, sendErr = s.bot.SendDocument(ctx, adminID, fileID, text, kb)
-			case fileID != "":
-				msgID, sendErr = s.bot.SendPhoto(ctx, adminID, fileID, text, kb)
-			default:
-				msgID, sendErr = s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
-			}
-			if sendErr != nil {
-				s.logger.Error("notify admin failed", "admin_id", adminID, "err", sendErr.Error())
-				continue
-			}
-			if att != nil && len(att.data) > 0 && fileID != "" && len(refs) == 0 {
-				if serr := s.store.SetPaymentRequestScreenshot(ctx, reqID, fileID, isDoc); serr != nil {
-					s.logger.Error("store uploaded receipt file id failed", "request_id", reqID, "err", serr.Error())
-				}
-			}
-			refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
+		if err := s.notifyAdminsWithReceipt(ctx, reqID, text, kb, att, fileID, isDoc,
+			"withdraw unnotified traffic request failed", "traffic extension request"); err != nil {
+			return 0, err
 		}
-		if len(refs) == 0 && len(s.adminIDs) > 0 {
-			if _, derr := s.store.DeletePendingPaymentRequest(ctx, reqID); derr != nil {
-				s.logger.Error("withdraw unnotified traffic request failed", "request_id", reqID, "err", derr.Error())
-			}
-			return 0, fmt.Errorf("traffic extension request %d: notifying every admin failed", reqID)
-		}
-		s.putAdminMsgs(s.payMsgs, reqID, refs)
 	}
 	return reqID, nil
 }

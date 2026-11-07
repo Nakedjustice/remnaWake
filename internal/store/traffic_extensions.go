@@ -142,25 +142,13 @@ func (s *Store) ConfirmTrafficExtensionRequest(ctx context.Context, id int64, co
 }
 
 func (s *Store) ActiveTrafficExtensionForUser(ctx context.Context, remnawaveID int64, now time.Time) (*PaymentRequest, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, remnawave_user_id, username, telegram_id, months, price,
-			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
-			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
-			extension_expires_at, extension_restored_at
+	return getPaymentRequest(s.db.QueryRowContext(ctx, `
+		SELECT `+paymentRequestColumns+`
 		FROM payment_requests
 		WHERE remnawave_user_id = ? AND kind = ? AND status = 'confirmed'
 			AND extension_restored_at IS NULL AND extension_expires_at > ?
 		ORDER BY confirmed_at DESC, id DESC LIMIT 1
-	`, remnawaveID, PaymentKindTrafficExtension, formatTime(now))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	if !rows.Next() {
-		return nil, rows.Err()
-	}
-	return scanPaymentRequestRow(rows)
+	`, remnawaveID, PaymentKindTrafficExtension, formatTime(now)))
 }
 
 func (s *Store) UpdateActiveTrafficExtensionBase(ctx context.Context, remnawaveID int64, now time.Time, baseBytes int64) error {
@@ -184,11 +172,7 @@ func (s *Store) MarkActiveTrafficExtensionsRestored(ctx context.Context, remnawa
 
 func (s *Store) ListExpiredTrafficExtensions(ctx context.Context, now time.Time) ([]PaymentRequest, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, remnawave_user_id, username, telegram_id, months, price,
-			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
-			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
-			extension_expires_at, extension_restored_at
+		SELECT `+paymentRequestColumns+`
 		FROM payment_requests
 		WHERE kind = ? AND status = 'confirmed' AND extension_restored_at IS NULL
 			AND extension_expires_at <= ?
@@ -198,37 +182,5 @@ func (s *Store) ListExpiredTrafficExtensions(ctx context.Context, now time.Time)
 		return nil, err
 	}
 	defer rows.Close()
-	var out []PaymentRequest
-	for rows.Next() {
-		r, err := scanPaymentRequestRow(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *r)
-	}
-	return out, rows.Err()
-}
-
-func scanPaymentRequestRow(rows *sql.Rows) (*PaymentRequest, error) {
-	var (
-		r            PaymentRequest
-		exp, created string
-		confirmed    sql.NullString
-	)
-	if err := rows.Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID,
-		&r.Months, &r.Price, &exp, &r.Status, &created, &confirmed,
-		&r.PayerTelegramID, &r.PayerUsername, &r.ScreenshotFileID,
-		&r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,
-		&r.Kind, &r.TrafficGB, &r.BaseTrafficLimitBytes, &r.ExtraTrafficBytes,
-		newNullTimeScanner(&r.ExtensionExpiresAt), newNullTimeScanner(&r.ExtensionRestoredAt)); err != nil {
-		return nil, err
-	}
-	r.ExpireAt, _ = parseTime(exp)
-	r.CreatedAt, _ = parseTime(created)
-	if confirmed.Valid {
-		if ts, e := parseTime(confirmed.String); e == nil {
-			r.ConfirmedAt = &ts
-		}
-	}
-	return &r, nil
+	return scanList(rows, scanPaymentRequest)
 }

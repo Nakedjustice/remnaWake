@@ -19,6 +19,30 @@ type InviteRequest struct {
 	ResolvedAt        *time.Time
 }
 
+// inviteRequestColumns is the invite_requests column list in scanInviteRequest order.
+const inviteRequestColumns = `id, inviter_telegram_id, inviter_username, new_username, months, price,
+	status, created_at, resolved_at`
+
+// scanInviteRequest reads one row in inviteRequestColumns order.
+func scanInviteRequest(sc rowScanner) (InviteRequest, error) {
+	var (
+		r          InviteRequest
+		created    string
+		resolvedAt sql.NullString
+	)
+	if err := sc.Scan(&r.ID, &r.InviterTelegramID, &r.InviterUsername, &r.NewUsername,
+		&r.Months, &r.Price, &r.Status, &created, &resolvedAt); err != nil {
+		return InviteRequest{}, err
+	}
+	r.CreatedAt, _ = parseTime(created)
+	if resolvedAt.Valid {
+		if ts, e := parseTime(resolvedAt.String); e == nil {
+			r.ResolvedAt = &ts
+		}
+	}
+	return r, nil
+}
+
 func (s *Store) CreateInviteRequest(ctx context.Context, r InviteRequest) (int64, error) {
 	now := formatTime(time.Now())
 	res, err := s.db.ExecContext(ctx, `
@@ -33,28 +57,13 @@ func (s *Store) CreateInviteRequest(ctx context.Context, r InviteRequest) (int64
 }
 
 func (s *Store) GetInviteRequest(ctx context.Context, id int64) (*InviteRequest, error) {
-	var (
-		r          InviteRequest
-		created    string
-		resolvedAt sql.NullString
-	)
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, inviter_telegram_id, inviter_username, new_username, months, price,
-			status, created_at, resolved_at
-		FROM invite_requests WHERE id = ?
-	`, id).Scan(&r.ID, &r.InviterTelegramID, &r.InviterUsername, &r.NewUsername,
-		&r.Months, &r.Price, &r.Status, &created, &resolvedAt)
+	r, err := scanInviteRequest(s.db.QueryRowContext(ctx,
+		`SELECT `+inviteRequestColumns+` FROM invite_requests WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
-	}
-	r.CreatedAt, _ = parseTime(created)
-	if resolvedAt.Valid {
-		if ts, e := parseTime(resolvedAt.String); e == nil {
-			r.ResolvedAt = &ts
-		}
 	}
 	return &r, nil
 }
@@ -72,36 +81,13 @@ func (s *Store) ListInviteRequestsByStatus(ctx context.Context, status string) (
 }
 
 func (s *Store) listInviteRequests(ctx context.Context, where string, arg any) ([]InviteRequest, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, inviter_telegram_id, inviter_username, new_username, months, price,
-			status, created_at, resolved_at
-		FROM invite_requests `+where+` ORDER BY id DESC
-	`, arg)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+inviteRequestColumns+` FROM invite_requests `+where+` ORDER BY id DESC`, arg)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	var out []InviteRequest
-	for rows.Next() {
-		var (
-			r          InviteRequest
-			created    string
-			resolvedAt sql.NullString
-		)
-		if err := rows.Scan(&r.ID, &r.InviterTelegramID, &r.InviterUsername, &r.NewUsername,
-			&r.Months, &r.Price, &r.Status, &created, &resolvedAt); err != nil {
-			return nil, err
-		}
-		r.CreatedAt, _ = parseTime(created)
-		if resolvedAt.Valid {
-			if ts, e := parseTime(resolvedAt.String); e == nil {
-				r.ResolvedAt = &ts
-			}
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return scanList(rows, scanInviteRequest)
 }
 
 // DeleteInviteRequest permanently removes an invite request of any status by

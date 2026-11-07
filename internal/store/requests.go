@@ -52,6 +52,14 @@ const (
 	PaymentKindTrafficExtension = "traffic_extension"
 )
 
+// paymentRequestColumns is the full payment_requests column list in
+// scanPaymentRequest order.
+const paymentRequestColumns = `id, remnawave_user_id, username, telegram_id, months, price,
+	expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
+	screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
+	kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
+	extension_expires_at, extension_restored_at`
+
 type nullTimeScanner struct {
 	dst **time.Time
 }
@@ -119,29 +127,19 @@ func (s *Store) CreatePaymentRequest(ctx context.Context, r PaymentRequest) (int
 	return res.LastInsertId()
 }
 
-func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentRequest, error) {
+// scanPaymentRequest reads one row in paymentRequestColumns order.
+func scanPaymentRequest(sc rowScanner) (PaymentRequest, error) {
 	var (
 		r            PaymentRequest
 		exp, created string
 		confirmed    sql.NullString
 	)
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, remnawave_user_id, username, telegram_id, months, price,
-			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
-			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
-			extension_expires_at, extension_restored_at
-		FROM payment_requests WHERE id = ?
-	`, id).Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID, &r.Months,
+	if err := sc.Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID, &r.Months,
 		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
 		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,
 		&r.Kind, &r.TrafficGB, &r.BaseTrafficLimitBytes, &r.ExtraTrafficBytes,
-		newNullTimeScanner(&r.ExtensionExpiresAt), newNullTimeScanner(&r.ExtensionRestoredAt))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
+		newNullTimeScanner(&r.ExtensionExpiresAt), newNullTimeScanner(&r.ExtensionRestoredAt)); err != nil {
+		return PaymentRequest{}, err
 	}
 	r.ExpireAt, _ = parseTime(exp)
 	r.CreatedAt, _ = parseTime(created)
@@ -150,7 +148,24 @@ func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentReques
 			r.ConfirmedAt = &ts
 		}
 	}
+	return r, nil
+}
+
+// getPaymentRequest scans one optional row, mapping no-rows to (nil, nil).
+func getPaymentRequest(row *sql.Row) (*PaymentRequest, error) {
+	r, err := scanPaymentRequest(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	return &r, nil
+}
+
+func (s *Store) GetPaymentRequest(ctx context.Context, id int64) (*PaymentRequest, error) {
+	return getPaymentRequest(s.db.QueryRowContext(ctx,
+		`SELECT `+paymentRequestColumns+` FROM payment_requests WHERE id = ?`, id))
 }
 
 // GetPaymentRequestByProviderTxn returns the request carrying the given external
@@ -160,37 +175,8 @@ func (s *Store) GetPaymentRequestByProviderTxn(ctx context.Context, txnID string
 	if txnID == "" {
 		return nil, nil
 	}
-	var (
-		r            PaymentRequest
-		exp, created string
-		confirmed    sql.NullString
-	)
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, remnawave_user_id, username, telegram_id, months, price,
-			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
-			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
-			extension_expires_at, extension_restored_at
-		FROM payment_requests WHERE provider_txn_id = ?
-	`, txnID).Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID, &r.Months,
-		&r.Price, &exp, &r.Status, &created, &confirmed, &r.PayerTelegramID, &r.PayerUsername,
-		&r.ScreenshotFileID, &r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,
-		&r.Kind, &r.TrafficGB, &r.BaseTrafficLimitBytes, &r.ExtraTrafficBytes,
-		newNullTimeScanner(&r.ExtensionExpiresAt), newNullTimeScanner(&r.ExtensionRestoredAt))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	r.ExpireAt, _ = parseTime(exp)
-	r.CreatedAt, _ = parseTime(created)
-	if confirmed.Valid {
-		if ts, e := parseTime(confirmed.String); e == nil {
-			r.ConfirmedAt = &ts
-		}
-	}
-	return &r, nil
+	return getPaymentRequest(s.db.QueryRowContext(ctx,
+		`SELECT `+paymentRequestColumns+` FROM payment_requests WHERE provider_txn_id = ?`, txnID))
 }
 
 // LatestConfirmedPaymentRequestByUser returns the most recent confirmed
@@ -250,44 +236,13 @@ func (s *Store) SetPaymentRequestScreenshot(ctx context.Context, id int64, fileI
 // ListPaymentRequestsByStatus returns all requests with the given status in
 // creation order.
 func (s *Store) ListPaymentRequestsByStatus(ctx context.Context, status string) ([]PaymentRequest, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, remnawave_user_id, username, telegram_id, months, price,
-			expire_at, status, created_at, confirmed_at, payer_telegram_id, payer_username,
-			screenshot_file_id, screenshot_is_document, provider, provider_txn_id, plan,
-			kind, traffic_gb, base_traffic_limit_bytes, extra_traffic_bytes,
-			extension_expires_at, extension_restored_at
-		FROM payment_requests WHERE status = ? ORDER BY id
-	`, status)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+paymentRequestColumns+` FROM payment_requests WHERE status = ? ORDER BY id`, status)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	var out []PaymentRequest
-	for rows.Next() {
-		var (
-			r            PaymentRequest
-			exp, created string
-			confirmed    sql.NullString
-		)
-		if err := rows.Scan(&r.ID, &r.RemnawaveID, &r.Username, &r.TelegramID,
-			&r.Months, &r.Price, &exp, &r.Status, &created, &confirmed,
-			&r.PayerTelegramID, &r.PayerUsername, &r.ScreenshotFileID,
-			&r.ScreenshotIsDocument, &r.Provider, &r.ProviderTxnID, &r.Plan,
-			&r.Kind, &r.TrafficGB, &r.BaseTrafficLimitBytes, &r.ExtraTrafficBytes,
-			newNullTimeScanner(&r.ExtensionExpiresAt), newNullTimeScanner(&r.ExtensionRestoredAt)); err != nil {
-			return nil, err
-		}
-		r.ExpireAt, _ = parseTime(exp)
-		r.CreatedAt, _ = parseTime(created)
-		if confirmed.Valid {
-			if ts, e := parseTime(confirmed.String); e == nil {
-				r.ConfirmedAt = &ts
-			}
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return scanList(rows, scanPaymentRequest)
 }
 
 // ConfirmPaymentRequest transitions pending->confirmed exactly once.
