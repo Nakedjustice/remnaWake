@@ -143,35 +143,35 @@ func (s *Server) Handler() http.Handler {
 	// Public payment-gateway callback (no initData auth): Platega verifies the
 	// transaction itself via its API, so the body is trusted only for its id.
 	mux.HandleFunc("POST /platega/callback", s.handlePlategaCallback)
-	mux.HandleFunc("GET /api/me", s.handleMe)
-	mux.HandleFunc("POST /api/renew", s.handleRenew)
-	mux.HandleFunc("POST /api/traffic-extension", s.handleTrafficExtension)
-	mux.HandleFunc("POST /api/gift", s.handleGift)
-	mux.HandleFunc("POST /api/invite", s.handleInvite)
-	mux.HandleFunc("POST /api/register", s.handleRegister)
-	mux.HandleFunc("POST /api/gift/redeem", s.handleGiftRedeem)
-	mux.HandleFunc("POST /api/receipt", s.handleReceipt)
-	mux.HandleFunc("POST /api/platega/check", s.handlePlategaCheck)
-	mux.HandleFunc("POST /api/notifications", s.handleNotifications)
-	mux.HandleFunc("POST /api/trial", s.handleTrial)
-	mux.HandleFunc("GET /api/devices", s.handleDevices)
-	mux.HandleFunc("POST /api/devices/revoke", s.handleDeviceRevoke)
-	mux.HandleFunc("GET /api/support", s.handleSupport)
-	mux.HandleFunc("POST /api/support/send", s.handleSupportSend)
-	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
-	mux.HandleFunc("GET /api/support/tickets", s.handleSupportTickets)
-	mux.HandleFunc("POST /api/support/ticket", s.handleSupportTicketThread)
-	mux.HandleFunc("POST /api/support/ticket/new", s.handleSupportTicketCreate)
-	mux.HandleFunc("POST /api/support/ticket/send", s.handleSupportTicketSend)
-	mux.HandleFunc("POST /api/support/ticket/close", s.handleSupportTicketClose)
-	mux.HandleFunc("GET /api/admin", s.handleAdminPanel)
-	mux.HandleFunc("POST /api/admin/backup", s.handleAdminBackup)
-	mux.HandleFunc("GET /api/admin/action-center", s.handleAdminActionCenter)
-	mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
-	mux.HandleFunc("GET /api/admin/analytics", s.handleAdminAnalytics)
-	mux.HandleFunc("GET /api/admin/proxy-health", s.handleAdminProxyHealth)
-	mux.HandleFunc("POST /api/admin/proxy-notification", s.handleAdminSetProxyNotification)
-	mux.HandleFunc("GET /api/admin/payments", s.handleAdminPayments)
+	mux.HandleFunc("GET /api/me", s.withUser(s.handleMe))
+	mux.HandleFunc("POST /api/renew", s.withUser(s.handleRenew))
+	mux.HandleFunc("POST /api/traffic-extension", s.withUser(s.handleTrafficExtension))
+	mux.HandleFunc("POST /api/gift", s.withUser(s.handleGift))
+	mux.HandleFunc("POST /api/invite", s.withUser(s.handleInvite))
+	mux.HandleFunc("POST /api/register", s.withUser(s.handleRegister))
+	mux.HandleFunc("POST /api/gift/redeem", s.withUser(s.handleGiftRedeem))
+	mux.HandleFunc("POST /api/receipt", s.withUser(s.handleReceipt))
+	mux.HandleFunc("POST /api/platega/check", s.withUser(s.handlePlategaCheck))
+	mux.HandleFunc("POST /api/notifications", s.withUser(s.handleNotifications))
+	mux.HandleFunc("POST /api/trial", s.withUser(s.handleTrial))
+	mux.HandleFunc("GET /api/devices", s.withUser(s.handleDevices))
+	mux.HandleFunc("POST /api/devices/revoke", s.withUser(s.handleDeviceRevoke))
+	mux.HandleFunc("GET /api/support", s.withSupportUser(s.handleSupport))
+	mux.HandleFunc("POST /api/support/send", s.withSupportUser(s.handleSupportSend))
+	mux.HandleFunc("POST /api/support/close", s.withSupportUser(s.handleSupportClose))
+	mux.HandleFunc("GET /api/support/tickets", s.withSupportUser(s.handleSupportTickets))
+	mux.HandleFunc("POST /api/support/ticket", s.withSupportUser(s.handleSupportTicketThread))
+	mux.HandleFunc("POST /api/support/ticket/new", s.withSupportUser(s.handleSupportTicketCreate))
+	mux.HandleFunc("POST /api/support/ticket/send", s.withSupportUser(s.handleSupportTicketSend))
+	mux.HandleFunc("POST /api/support/ticket/close", s.withSupportUser(s.handleSupportTicketClose))
+	mux.HandleFunc("GET /api/admin", s.withUser(s.handleAdminPanel))
+	mux.HandleFunc("POST /api/admin/backup", s.withUser(s.handleAdminBackup))
+	mux.HandleFunc("GET /api/admin/action-center", s.withUser(s.handleAdminActionCenter))
+	mux.HandleFunc("GET /api/admin/stats", s.withUser(s.handleAdminStats))
+	mux.HandleFunc("GET /api/admin/analytics", s.withUser(s.handleAdminAnalytics))
+	mux.HandleFunc("GET /api/admin/proxy-health", s.withUser(s.handleAdminProxyHealth))
+	mux.HandleFunc("POST /api/admin/proxy-notification", s.withUser(s.handleAdminSetProxyNotification))
+	mux.HandleFunc("GET /api/admin/payments", s.withUser(s.handleAdminPayments))
 	mux.HandleFunc("POST /api/admin/payment/delete", s.adminIDAction("delete payment", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminDeletePaymentRequest(ctx, tgID, id)
 	}))
@@ -181,52 +181,52 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/invite/delete", s.adminIDAction("delete invite", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminDeleteInviteRequest(ctx, tgID, id)
 	}))
-	mux.HandleFunc("POST /api/admin/backup/schedule", s.handleAdminSetBackupSchedule)
-	mux.HandleFunc("POST /api/admin/updates/check", s.handleAdminCheckUpdates)
-	mux.HandleFunc("POST /api/admin/updates/interval", s.handleAdminSetUpdateInterval)
-	mux.HandleFunc("GET /api/admin/support", s.handleAdminSupport)
-	mux.HandleFunc("POST /api/admin/support/thread", s.handleAdminSupportThread)
-	mux.HandleFunc("POST /api/admin/support/send", s.handleAdminSupportSend)
+	mux.HandleFunc("POST /api/admin/backup/schedule", s.withUser(s.handleAdminSetBackupSchedule))
+	mux.HandleFunc("POST /api/admin/updates/check", s.withUser(s.handleAdminCheckUpdates))
+	mux.HandleFunc("POST /api/admin/updates/interval", s.withUser(s.handleAdminSetUpdateInterval))
+	mux.HandleFunc("GET /api/admin/support", s.withUser(s.handleAdminSupport))
+	mux.HandleFunc("POST /api/admin/support/thread", s.withUser(s.handleAdminSupportThread))
+	mux.HandleFunc("POST /api/admin/support/send", s.withUser(s.handleAdminSupportSend))
 	mux.HandleFunc("POST /api/admin/support/close", s.adminIDAction("close support", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.SupportCloseAdmin(ctx, tgID, id)
 	}))
-	mux.HandleFunc("GET /api/admin/support/tickets", s.handleAdminSupportTickets)
-	mux.HandleFunc("POST /api/admin/support/ticket", s.handleAdminSupportTicketThread)
-	mux.HandleFunc("POST /api/admin/support/ticket/reply", s.handleAdminSupportTicketReply)
-	mux.HandleFunc("POST /api/admin/support/ticket/close", s.handleAdminSupportTicketClose)
-	mux.HandleFunc("POST /api/admin/tariff", s.handleAdminSetTariff)
-	mux.HandleFunc("POST /api/admin/tariff/delete", s.handleAdminDeleteTariff)
-	mux.HandleFunc("POST /api/admin/traffic-extension", s.handleAdminSetTrafficExtension)
-	mux.HandleFunc("POST /api/admin/traffic-extension/delete", s.handleAdminDeleteTrafficExtension)
-	mux.HandleFunc("POST /api/admin/plan", s.handleAdminSetPlan)
-	mux.HandleFunc("POST /api/admin/plan/delete", s.handleAdminDeletePlan)
-	mux.HandleFunc("POST /api/admin/requisites", s.handleAdminSetRequisites)
-	mux.HandleFunc("POST /api/admin/screenshot-toggle", s.handleAdminSetRequireScreenshot)
-	mux.HandleFunc("POST /api/admin/payment-provider", s.handleAdminSetPaymentProvider)
-	mux.HandleFunc("GET /api/admin/squads", s.handleAdminListSquads)
-	mux.HandleFunc("POST /api/admin/squad", s.handleAdminSetDefaultSquad)
-	mux.HandleFunc("GET /api/admin/users", s.handleAdminListUsers)
-	mux.HandleFunc("POST /api/admin/traffic-reset", s.handleAdminSetDefaultTrafficReset)
-	mux.HandleFunc("POST /api/admin/trial", s.handleAdminSetTrial)
-	mux.HandleFunc("POST /api/admin/referral", s.handleAdminSetReferral)
-	mux.HandleFunc("POST /api/admin/registration-guard/pattern", s.handleAdminAddRegistrationGuardPattern)
-	mux.HandleFunc("POST /api/admin/registration-guard/pattern/delete", s.handleAdminDeleteRegistrationGuardPattern)
-	mux.HandleFunc("POST /api/admin/registration-guard/unblock", s.handleAdminUnblockRegistration)
-	mux.HandleFunc("POST /api/admin/user/find", s.handleAdminFindUser)
-	mux.HandleFunc("POST /api/admin/user/update", s.handleAdminUpdateUser)
-	mux.HandleFunc("POST /api/admin/broadcast", s.handleAdminBroadcast)
-	mux.HandleFunc("GET /api/admin/servers", s.handleAdminListServers)
-	mux.HandleFunc("POST /api/admin/server", s.handleAdminSaveServer)
+	mux.HandleFunc("GET /api/admin/support/tickets", s.withUser(s.handleAdminSupportTickets))
+	mux.HandleFunc("POST /api/admin/support/ticket", s.withUser(s.handleAdminSupportTicketThread))
+	mux.HandleFunc("POST /api/admin/support/ticket/reply", s.withUser(s.handleAdminSupportTicketReply))
+	mux.HandleFunc("POST /api/admin/support/ticket/close", s.withUser(s.handleAdminSupportTicketClose))
+	mux.HandleFunc("POST /api/admin/tariff", s.withUser(s.handleAdminSetTariff))
+	mux.HandleFunc("POST /api/admin/tariff/delete", s.withUser(s.handleAdminDeleteTariff))
+	mux.HandleFunc("POST /api/admin/traffic-extension", s.withUser(s.handleAdminSetTrafficExtension))
+	mux.HandleFunc("POST /api/admin/traffic-extension/delete", s.withUser(s.handleAdminDeleteTrafficExtension))
+	mux.HandleFunc("POST /api/admin/plan", s.withUser(s.handleAdminSetPlan))
+	mux.HandleFunc("POST /api/admin/plan/delete", s.withUser(s.handleAdminDeletePlan))
+	mux.HandleFunc("POST /api/admin/requisites", s.withUser(s.handleAdminSetRequisites))
+	mux.HandleFunc("POST /api/admin/screenshot-toggle", s.withUser(s.handleAdminSetRequireScreenshot))
+	mux.HandleFunc("POST /api/admin/payment-provider", s.withUser(s.handleAdminSetPaymentProvider))
+	mux.HandleFunc("GET /api/admin/squads", s.withUser(s.handleAdminListSquads))
+	mux.HandleFunc("POST /api/admin/squad", s.withUser(s.handleAdminSetDefaultSquad))
+	mux.HandleFunc("GET /api/admin/users", s.withUser(s.handleAdminListUsers))
+	mux.HandleFunc("POST /api/admin/traffic-reset", s.withUser(s.handleAdminSetDefaultTrafficReset))
+	mux.HandleFunc("POST /api/admin/trial", s.withUser(s.handleAdminSetTrial))
+	mux.HandleFunc("POST /api/admin/referral", s.withUser(s.handleAdminSetReferral))
+	mux.HandleFunc("POST /api/admin/registration-guard/pattern", s.withUser(s.handleAdminAddRegistrationGuardPattern))
+	mux.HandleFunc("POST /api/admin/registration-guard/pattern/delete", s.withUser(s.handleAdminDeleteRegistrationGuardPattern))
+	mux.HandleFunc("POST /api/admin/registration-guard/unblock", s.withUser(s.handleAdminUnblockRegistration))
+	mux.HandleFunc("POST /api/admin/user/find", s.withUser(s.handleAdminFindUser))
+	mux.HandleFunc("POST /api/admin/user/update", s.withUser(s.handleAdminUpdateUser))
+	mux.HandleFunc("POST /api/admin/broadcast", s.withUser(s.handleAdminBroadcast))
+	mux.HandleFunc("GET /api/admin/servers", s.withUser(s.handleAdminListServers))
+	mux.HandleFunc("POST /api/admin/server", s.withUser(s.handleAdminSaveServer))
 	mux.HandleFunc("POST /api/admin/server/delete", s.adminIDAction("delete server", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminDeleteInfraServer(ctx, tgID, id)
 	}))
 	mux.HandleFunc("POST /api/admin/server/paid", s.adminIDAction("mark server paid", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminMarkInfraServerPaid(ctx, tgID, id)
 	}))
-	mux.HandleFunc("GET /api/admin/fx", s.handleAdminListFx)
-	mux.HandleFunc("POST /api/admin/fx/manual", s.handleAdminSetManualFx)
-	mux.HandleFunc("POST /api/admin/fx/base", s.handleAdminSetBaseCurrency)
-	mux.HandleFunc("POST /api/admin/fx/refresh", s.handleAdminRefreshFx)
+	mux.HandleFunc("GET /api/admin/fx", s.withUser(s.handleAdminListFx))
+	mux.HandleFunc("POST /api/admin/fx/manual", s.withUser(s.handleAdminSetManualFx))
+	mux.HandleFunc("POST /api/admin/fx/base", s.withUser(s.handleAdminSetBaseCurrency))
+	mux.HandleFunc("POST /api/admin/fx/refresh", s.withUser(s.handleAdminRefreshFx))
 	mux.HandleFunc("POST /api/admin/gift/revoke", s.adminIDAction("revoke gift", func(ctx context.Context, tgID, id int64) error {
 		return s.admin.AdminRevokeGiftCode(ctx, tgID, id)
 	}))
@@ -336,6 +336,41 @@ func (s *Server) authenticateSupport(w http.ResponseWriter, r *http.Request) (in
 	return user.ID, true
 }
 
+// withUser authenticates a Mini App identity and applies the registration
+// guard before invoking fn, so handlers receive the caller's Telegram ID
+// without repeating the prologue.
+func (s *Server) withUser(fn func(w http.ResponseWriter, r *http.Request, userID int64)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := s.authenticate(w, r)
+		if !ok {
+			return
+		}
+		fn(w, r, userID)
+	}
+}
+
+// withSupportUser is the support-route variant of withUser that keeps the
+// blocked-user exemption: the guard still runs but never rejects.
+func (s *Server) withSupportUser(fn func(w http.ResponseWriter, r *http.Request, userID int64)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := s.authenticateSupport(w, r)
+		if !ok {
+			return
+		}
+		fn(w, r, userID)
+	}
+}
+
+// decodeBody JSON-decodes a size-capped request body, answering 400 itself on
+// garbage so handlers keep their happy path.
+func decodeBody(w http.ResponseWriter, r *http.Request, limit int64, v any) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit)).Decode(v); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return false
+	}
+	return true
+}
+
 // handlePlategaCallback receives Platega's webhook. The body carries only a
 // transaction id; the service re-fetches the real status from Platega's API.
 // It always answers 200 (unless the body is unreadable) so Platega does not
@@ -359,11 +394,7 @@ func (s *Server) handlePlategaCallback(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, userID int64) {
 	data, err := s.cabinet.CabinetData(r.Context(), userID)
 	if err != nil {
 		s.logger.Error("webapp: cabinet data failed", "err", err.Error(), "telegram_id", userID)
@@ -373,11 +404,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, data)
 }
 
-func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		RemnawaveID         int64  `json:"remnawave_id"`
 		Months              int    `json:"months"`
@@ -385,8 +412,7 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		Plan                string `json:"plan"` // "" = standard
 		PlanChangeConfirmed bool   `json:"plan_change_confirmed"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 
@@ -424,18 +450,13 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) handleTrafficExtension(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleTrafficExtension(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		RemnawaveID int64  `json:"remnawave_id"`
 		TrafficGB   int    `json:"traffic_gb"`
 		Provider    string `json:"provider"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	result, err := s.cabinet.CreateTrafficExtensionRequest(r.Context(), userID, req.RemnawaveID, req.TrafficGB, req.Provider)
@@ -470,11 +491,7 @@ func (s *Server) handleTrafficExtension(w http.ResponseWriter, r *http.Request) 
 
 // handleDevices returns the caller's HWID slot usage, one section per linked
 // profile.
-func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request, userID int64) {
 	data, err := s.cabinet.DeviceOverview(r.Context(), userID)
 	if err != nil {
 		s.writeCabinetError(w, "devices", userID, err)
@@ -486,17 +503,12 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 // handleDeviceRevoke frees one slot. The hwid travels in the body because it is
 // long and arbitrary; the profile is named by id and re-checked against the
 // caller's own profiles by the service.
-func (s *Server) handleDeviceRevoke(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleDeviceRevoke(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		RemnawaveID int64  `json:"remnawave_id"`
 		HWID        string `json:"hwid"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	data, err := s.cabinet.RevokeDevice(r.Context(), userID, req.RemnawaveID, req.HWID)
@@ -567,16 +579,11 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 	}
 }
 
-func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Query string `json:"query"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, 400, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	result, err := s.cabinet.RegisterProfile(r.Context(), userID, req.Query)
@@ -587,18 +594,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": result.Username})
 }
 
-func (s *Server) handleGiftRedeem(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleGiftRedeem(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Code        string `json:"code"`
 		RemnawaveID int64  `json:"remnawave_id"`
 		Username    string `json:"username"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
-		writeJSONError(w, 400, "malformed request body")
+	if !decodeBody(w, r, 8192, &req) {
 		return
 	}
 	result, err := s.cabinet.RedeemGift(r.Context(), userID, req.Code, req.RemnawaveID, req.Username)
@@ -609,11 +611,7 @@ func (s *Server) handleGiftRedeem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": result.Username, "subscription_url": result.SubscriptionURL, "expire_at": result.ExpireAt})
 }
 
-func (s *Server) handleReceipt(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleReceipt(w http.ResponseWriter, r *http.Request, userID int64) {
 	r.Body = http.MaxBytesReader(w, r.Body, (50<<20)+(1<<20))
 	if err := r.ParseMultipartForm(50 << 20); err != nil {
 		var maxErr *http.MaxBytesError
@@ -646,16 +644,11 @@ func (s *Server) handleReceipt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handlePlategaCheck(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handlePlategaCheck(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		RequestID int64 `json:"request_id"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, 400, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	result, err := s.cabinet.CheckPlategaPayment(r.Context(), userID, req.RequestID)
@@ -666,16 +659,11 @@ func (s *Server) handlePlategaCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": result.Status})
 }
 
-func (s *Server) handleGift(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleGift(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Months int `json:"months"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.cabinet.CreateGiftRequest(r.Context(), userID, req.Months); err != nil {
@@ -685,16 +673,11 @@ func (s *Server) handleGift(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleInvite(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleInvite(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Username string `json:"username"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.cabinet.CreateInviteRequest(r.Context(), userID, req.Username); err != nil {
@@ -704,17 +687,12 @@ func (s *Server) handleInvite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Kind  string `json:"kind"`
 		Muted bool   `json:"muted"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.cabinet.SetNotificationPref(r.Context(), userID, req.Kind, req.Muted); err != nil {
@@ -724,16 +702,11 @@ func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleTrial(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleTrial(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Username string `json:"username"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	result, err := s.cabinet.ClaimTrial(r.Context(), userID, req.Username)
@@ -800,11 +773,7 @@ func (s *Server) writeAdminError(w http.ResponseWriter, action string, telegramI
 	}
 }
 
-func (s *Server) handleAdminBackup(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminBackup(w http.ResponseWriter, r *http.Request, userID int64) {
 	if err := s.admin.AdminSendBackup(r.Context(), userID); err != nil {
 		s.writeAdminError(w, "send backup", userID, err)
 		return
@@ -812,17 +781,12 @@ func (s *Server) handleAdminBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminSetBackupSchedule(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetBackupSchedule(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Enabled      bool `json:"enabled"`
 		IntervalDays int  `json:"interval_days"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetBackupSchedule(r.Context(), userID, req.Enabled, req.IntervalDays); err != nil {
@@ -832,11 +796,7 @@ func (s *Server) handleAdminSetBackupSchedule(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminPanel(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminPanel(w http.ResponseWriter, r *http.Request, userID int64) {
 	panel, err := s.admin.AdminPanelData(r.Context(), userID)
 	if err != nil {
 		s.writeAdminError(w, "panel data", userID, err)
@@ -845,11 +805,7 @@ func (s *Server) handleAdminPanel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, panel)
 }
 
-func (s *Server) handleAdminActionCenter(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminActionCenter(w http.ResponseWriter, r *http.Request, userID int64) {
 	center, err := s.admin.AdminActionCenter(r.Context(), userID)
 	if err != nil {
 		s.writeAdminError(w, "action center", userID, err)
@@ -858,11 +814,7 @@ func (s *Server) handleAdminActionCenter(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, center)
 }
 
-func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request, userID int64) {
 	stats, err := s.admin.AdminStatsData(r.Context(), userID)
 	if err != nil {
 		s.writeAdminError(w, "statistics", userID, err)
@@ -871,11 +823,7 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
-func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request, userID int64) {
 	days, err := positiveQueryInt(r.URL.Query().Get("days"), 30)
 	if err != nil || (days != 7 && days != 30 && days != 90) {
 		writeJSONError(w, http.StatusBadRequest, "invalid analytics filters")
@@ -889,11 +837,7 @@ func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, report)
 }
 
-func (s *Server) handleAdminProxyHealth(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminProxyHealth(w http.ResponseWriter, r *http.Request, userID int64) {
 	health, err := s.admin.AdminProxyHealth(r.Context(), userID)
 	if err != nil {
 		s.writeAdminError(w, "proxy health", userID, err)
@@ -902,19 +846,14 @@ func (s *Server) handleAdminProxyHealth(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, health)
 }
 
-func (s *Server) handleAdminSetProxyNotification(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetProxyNotification(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Name    string `json:"name"`
 		Address string `json:"address"`
 		SubName string `json:"sub_name"`
 		Muted   bool   `json:"muted"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetProxyNotification(r.Context(), userID, req.Name, req.Address, req.SubName, req.Muted); err != nil {
@@ -924,11 +863,7 @@ func (s *Server) handleAdminSetProxyNotification(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminPayments(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminPayments(w http.ResponseWriter, r *http.Request, userID int64) {
 	query := r.URL.Query()
 	days, err := positiveQueryInt(query.Get("days"), 30)
 	if err != nil {
@@ -990,11 +925,7 @@ func validPaymentQuery(days int, status, provider, kind, search string) bool {
 	return provider == "all" || provider == payments.ProviderP2P || provider == payments.ProviderPlatega || provider == payments.ProviderTelegramStars
 }
 
-func (s *Server) handleAdminCheckUpdates(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminCheckUpdates(w http.ResponseWriter, r *http.Request, userID int64) {
 	result, err := s.admin.AdminCheckUpdates(r.Context(), userID)
 	if err != nil {
 		s.writeAdminError(w, "check updates", userID, err)
@@ -1003,16 +934,11 @@ func (s *Server) handleAdminCheckUpdates(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (s *Server) handleAdminSetUpdateInterval(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetUpdateInterval(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Interval string `json:"interval"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetUpdateInterval(r.Context(), userID, req.Interval); err != nil {
@@ -1022,18 +948,13 @@ func (s *Server) handleAdminSetUpdateInterval(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminSetTariff(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetTariff(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Plan   string `json:"plan"` // "" = standard
 		Months int    `json:"months"`
 		Price  int    `json:"price"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetTariff(r.Context(), userID, req.Plan, req.Months, req.Price); err != nil {
@@ -1043,17 +964,12 @@ func (s *Server) handleAdminSetTariff(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminDeleteTariff(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminDeleteTariff(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Plan   string `json:"plan"` // "" = standard
 		Months int    `json:"months"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminDeleteTariff(r.Context(), userID, req.Plan, req.Months); err != nil {
@@ -1063,17 +979,12 @@ func (s *Server) handleAdminDeleteTariff(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminSetTrafficExtension(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetTrafficExtension(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		TrafficGB int `json:"traffic_gb"`
 		Price     int `json:"price"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetTrafficExtensionOption(r.Context(), userID, req.TrafficGB, req.Price); err != nil {
@@ -1083,16 +994,11 @@ func (s *Server) handleAdminSetTrafficExtension(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminDeleteTrafficExtension(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminDeleteTrafficExtension(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		TrafficGB int `json:"traffic_gb"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminDeleteTrafficExtensionOption(r.Context(), userID, req.TrafficGB); err != nil {
@@ -1102,14 +1008,9 @@ func (s *Server) handleAdminDeleteTrafficExtension(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminSetPlan(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetPlan(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req payments.WebAdminPlan
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetPlan(r.Context(), userID, req); err != nil {
@@ -1119,16 +1020,11 @@ func (s *Server) handleAdminSetPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminDeletePlan(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminDeletePlan(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Code string `json:"code"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminDeletePlan(r.Context(), userID, req.Code); err != nil {
@@ -1138,11 +1034,7 @@ func (s *Server) handleAdminDeletePlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminListServers(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminListServers(w http.ResponseWriter, r *http.Request, userID int64) {
 	servers, err := s.admin.AdminListInfraServers(r.Context(), userID)
 	if err != nil {
 		s.writeAdminError(w, "list servers", userID, err)
@@ -1151,14 +1043,9 @@ func (s *Server) handleAdminListServers(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, servers)
 }
 
-func (s *Server) handleAdminSaveServer(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSaveServer(w http.ResponseWriter, r *http.Request, userID int64) {
 	var in payments.WebInfraServerInput
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 8192, &in) {
 		return
 	}
 	if err := s.admin.AdminSaveInfraServer(r.Context(), userID, in); err != nil {
@@ -1168,11 +1055,7 @@ func (s *Server) handleAdminSaveServer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminListFx(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminListFx(w http.ResponseWriter, r *http.Request, userID int64) {
 	rates, err := s.admin.AdminListFxRates(r.Context(), userID)
 	if err != nil {
 		s.writeAdminError(w, "list fx", userID, err)
@@ -1181,17 +1064,12 @@ func (s *Server) handleAdminListFx(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rates)
 }
 
-func (s *Server) handleAdminSetManualFx(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetManualFx(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Currency string  `json:"currency"`
 		Rate     float64 `json:"rate"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetManualFxRate(r.Context(), userID, req.Currency, req.Rate); err != nil {
@@ -1201,16 +1079,11 @@ func (s *Server) handleAdminSetManualFx(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminSetBaseCurrency(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetBaseCurrency(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Currency string `json:"currency"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetBaseCurrency(r.Context(), userID, req.Currency); err != nil {
@@ -1220,11 +1093,7 @@ func (s *Server) handleAdminSetBaseCurrency(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminRefreshFx(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminRefreshFx(w http.ResponseWriter, r *http.Request, userID int64) {
 	if err := s.admin.AdminRefreshFxRates(r.Context(), userID); err != nil {
 		s.writeAdminError(w, "refresh fx", userID, err)
 		return
@@ -1232,16 +1101,11 @@ func (s *Server) handleAdminRefreshFx(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminSetRequisites(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetRequisites(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Text string `json:"text"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 16384, &req) {
 		return
 	}
 	if err := s.admin.AdminSetRequisites(r.Context(), userID, req.Text); err != nil {
@@ -1251,16 +1115,11 @@ func (s *Server) handleAdminSetRequisites(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminSetRequireScreenshot(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetRequireScreenshot(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetRequireScreenshot(r.Context(), userID, req.Enabled); err != nil {
@@ -1270,17 +1129,12 @@ func (s *Server) handleAdminSetRequireScreenshot(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminSetPaymentProvider(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetPaymentProvider(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Provider string `json:"provider"`
 		Enabled  bool   `json:"enabled"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetProviderEnabled(r.Context(), userID, req.Provider, req.Enabled); err != nil {
@@ -1290,11 +1144,7 @@ func (s *Server) handleAdminSetPaymentProvider(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminListSquads(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminListSquads(w http.ResponseWriter, r *http.Request, userID int64) {
 	squads, err := s.admin.AdminListSquads(r.Context(), userID)
 	if err != nil {
 		s.writeAdminError(w, "list squads", userID, err)
@@ -1303,16 +1153,11 @@ func (s *Server) handleAdminListSquads(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"squads": squads})
 }
 
-func (s *Server) handleAdminSetDefaultSquad(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetDefaultSquad(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		UUID string `json:"uuid"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetDefaultSquad(r.Context(), userID, req.UUID); err != nil {
@@ -1322,11 +1167,7 @@ func (s *Server) handleAdminSetDefaultSquad(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request, userID int64) {
 	var (
 		users []payments.WebUserRow
 		err   error
@@ -1343,16 +1184,11 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 }
 
-func (s *Server) handleAdminSetDefaultTrafficReset(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetDefaultTrafficReset(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Strategy string `json:"strategy"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetDefaultTrafficReset(r.Context(), userID, req.Strategy); err != nil {
@@ -1362,11 +1198,7 @@ func (s *Server) handleAdminSetDefaultTrafficReset(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminSetTrial(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetTrial(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Enabled         bool   `json:"enabled"`
 		Days            int    `json:"days"`
@@ -1375,8 +1207,7 @@ func (s *Server) handleAdminSetTrial(w http.ResponseWriter, r *http.Request) {
 		SquadUUID       string `json:"squad_uuid"`
 		RequireApproval bool   `json:"require_approval"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetTrial(r.Context(), userID, payments.TrialConfig{
@@ -1390,18 +1221,13 @@ func (s *Server) handleAdminSetTrial(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminSetReferral(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminSetReferral(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Enabled     bool `json:"enabled"`
 		InviterDays int  `json:"inviter_days"`
 		InviteeDays int  `json:"invitee_days"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminSetReferral(r.Context(), userID, req.Enabled, req.InviterDays, req.InviteeDays); err != nil {
@@ -1411,16 +1237,11 @@ func (s *Server) handleAdminSetReferral(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminAddRegistrationGuardPattern(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminAddRegistrationGuardPattern(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Pattern string `json:"pattern"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminAddRegistrationGuardPattern(r.Context(), userID, req.Pattern); err != nil {
@@ -1430,16 +1251,11 @@ func (s *Server) handleAdminAddRegistrationGuardPattern(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminDeleteRegistrationGuardPattern(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminDeleteRegistrationGuardPattern(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Pattern string `json:"pattern"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminDeleteRegistrationGuardPattern(r.Context(), userID, req.Pattern); err != nil {
@@ -1449,16 +1265,11 @@ func (s *Server) handleAdminDeleteRegistrationGuardPattern(w http.ResponseWriter
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminUnblockRegistration(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminUnblockRegistration(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		TelegramID int64 `json:"telegram_id"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.admin.AdminUnblockRegistration(r.Context(), userID, req.TelegramID); err != nil {
@@ -1468,16 +1279,11 @@ func (s *Server) handleAdminUnblockRegistration(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminFindUser(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminFindUser(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Query string `json:"query"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	user, err := s.admin.AdminFindUser(r.Context(), userID, req.Query)
@@ -1488,14 +1294,9 @@ func (s *Server) handleAdminFindUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": user})
 }
 
-func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req payments.WebUserUpdate
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 8192, &req) {
 		return
 	}
 	if err := s.admin.AdminUpdateUser(r.Context(), userID, req); err != nil {
@@ -1505,16 +1306,11 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleAdminBroadcast(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleAdminBroadcast(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Message string `json:"message"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 16384, &req) {
 		return
 	}
 	res, err := s.admin.AdminBroadcast(r.Context(), userID, req.Message)
@@ -1536,8 +1332,7 @@ func (s *Server) adminIDAction(action string, fn func(ctx context.Context, teleg
 		var req struct {
 			ID int64 `json:"id"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		if !decodeBody(w, r, 4096, &req) {
 			return
 		}
 		if err := fn(r.Context(), userID, req.ID); err != nil {
