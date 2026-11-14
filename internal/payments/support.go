@@ -358,22 +358,17 @@ func (s *Service) handleSupportReplyStart(ctx context.Context, cb *tg.CallbackQu
 		return true
 	}
 	chatID := cb.Message.Chat.ID
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputSupportReply
-	state.supportTarget = target
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.mutateAdminInput(chatID, func(st *adminInputState) {
+		st.step = adminInputSupportReply
+		st.supportTarget = target
+	})
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите ответ пользователю следующим сообщением (или /cancel для отмены):"))
 	return true
 }
 
 // consumeSupportReply delivers an admin's typed reply to the targeted user.
 func (s *Service) consumeSupportReply(ctx context.Context, chatID int64, text string) bool {
-	s.mu.Lock()
-	target := s.adminInput[chatID].supportTarget
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	target := s.popAdminInput(chatID).supportTarget
 	if target == 0 {
 		return true
 	}

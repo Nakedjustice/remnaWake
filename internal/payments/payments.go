@@ -234,6 +234,37 @@ type adminInputState struct {
 	supportTicket int64
 }
 
+// mutateAdminInput updates a chat's pending admin-input state under the
+// service lock, starting a fresh entry when the chat has none.
+func (s *Service) mutateAdminInput(chatID int64, mutate func(st *adminInputState)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.adminInput[chatID]
+	mutate(&st)
+	s.adminInput[chatID] = st
+}
+
+// setAdminInputStep moves a chat's pending admin-input to the given step.
+func (s *Service) setAdminInputStep(chatID int64, step adminInputStep) {
+	s.mutateAdminInput(chatID, func(st *adminInputState) { st.step = step })
+}
+
+// popAdminInput returns a chat's pending admin-input state and clears it.
+func (s *Service) popAdminInput(chatID int64) adminInputState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.adminInput[chatID]
+	delete(s.adminInput, chatID)
+	return st
+}
+
+// clearAdminInput drops a chat's pending admin-input state.
+func (s *Service) clearAdminInput(chatID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.adminInput, chatID)
+}
+
 type adminMsgRef struct {
 	chatID    int64
 	messageID int64

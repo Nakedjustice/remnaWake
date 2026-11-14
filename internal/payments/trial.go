@@ -373,9 +373,7 @@ func (s *Service) notifyAdminsTrialRequest(ctx context.Context, reqID int64, tel
 
 // handleTrialApprove processes an admin's "Одобрить" button on a trial request.
 func (s *Service) handleTrialApprove(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized trial approve attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "trial approve") {
 		return true
 	}
 
@@ -415,9 +413,7 @@ func (s *Service) handleTrialApprove(ctx context.Context, cb *tg.CallbackQuery) 
 
 // handleTrialReject processes an admin's "Отклонить" button on a trial request.
 func (s *Service) handleTrialReject(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized trial reject attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "trial reject") {
 		return true
 	}
 

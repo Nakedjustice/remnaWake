@@ -274,9 +274,7 @@ func (s *Service) handleGiftCodeCancel(ctx context.Context, cb *tg.CallbackQuery
 // code and sends the buyer the deep link. No panel mutation happens here, so
 // dry-run needs no special branch.
 func (s *Service) handleGiftCodeApprove(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized gift approve attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "gift approve") {
 		return true
 	}
 
@@ -364,9 +362,7 @@ func (s *Service) giftLinkMessage(g *store.GiftCode) string {
 
 // handleGiftCodeReject processes admin's rejection of a gift purchase.
 func (s *Service) handleGiftCodeReject(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized gift reject attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "gift reject") {
 		return true
 	}
 

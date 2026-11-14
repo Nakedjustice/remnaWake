@@ -223,9 +223,7 @@ func (s *Service) notifyAdminsInviteRequest(ctx context.Context, reqID int64, in
 
 // handleInviteApprove processes admin's "Одобрить" button.
 func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized invite approve attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "invite approve") {
 		return true
 	}
 
@@ -412,9 +410,7 @@ func referralBonusSuffix(days int) string {
 
 // handleInviteReject processes admin's "Отклонить" button.
 func (s *Service) handleInviteReject(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized invite reject attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "invite reject") {
 		return true
 	}
 

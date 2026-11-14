@@ -417,22 +417,17 @@ func (s *Service) startAdminTicketReply(ctx context.Context, chatID int64, data 
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Обращение не найдено."))
 		return
 	}
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputSupportTicketReply
-	state.supportTicket = id
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.mutateAdminInput(chatID, func(st *adminInputState) {
+		st.step = adminInputSupportTicketReply
+		st.supportTicket = id
+	})
 	_ = s.bot.SendPlain(ctx, chatID,
 		fmt.Sprintf(i18n.T("Введите ответ по обращению №%d следующим сообщением (или /cancel для отмены):"), id))
 }
 
 // consumeSupportTicketReply delivers the admin's typed reply into the ticket.
 func (s *Service) consumeSupportTicketReply(ctx context.Context, chatID int64, text string) bool {
-	s.mu.Lock()
-	ticketID := s.adminInput[chatID].supportTicket
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	ticketID := s.popAdminInput(chatID).supportTicket
 	if ticketID == 0 {
 		return true
 	}

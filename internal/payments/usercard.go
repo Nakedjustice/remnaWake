@@ -38,20 +38,14 @@ func (s *Service) userCtlTarget(chatID int64) (string, bool) {
 
 // startUserLookup begins the "Manage user" flow by asking for a username/link.
 func (s *Service) startUserLookup(ctx context.Context, chatID int64) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputUserLookup
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, adminInputUserLookup)
 	_ = s.bot.SendPlain(ctx, chatID,
 		i18n.T("Отправьте имя профиля или ссылку на подписку пользователя, которым хотите управлять:"))
 }
 
 // consumeUserLookup resolves the lookup query and shows the user card.
 func (s *Service) consumeUserLookup(ctx context.Context, chatID int64, text string) bool {
-	s.mu.Lock()
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	s.clearAdminInput(chatID)
 	sub, err := s.findManagedUser(ctx, text)
 	switch {
 	case err == ErrRequestNotFound:
@@ -175,19 +169,13 @@ func (s *Service) startUserInput(ctx context.Context, chatID int64, step adminIn
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Сессия управления пользователем истекла. Откройте её заново через меню."))
 		return
 	}
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = step
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, step)
 	_ = s.bot.SendPlain(ctx, chatID, prompt)
 }
 
 // consumeUserHwid applies a typed HWID device limit (0 = unlimited).
 func (s *Service) consumeUserHwid(ctx context.Context, chatID int64, text string) bool {
-	s.mu.Lock()
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	s.clearAdminInput(chatID)
 	n, err := strconv.Atoi(text)
 	if err != nil || n < 0 {
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 0 (0 — без ограничения)."))
@@ -207,9 +195,7 @@ func (s *Service) consumeUserHwid(ctx context.Context, chatID int64, text string
 
 // consumeUserTraffic applies a typed traffic limit in GB (0 = unlimited).
 func (s *Service) consumeUserTraffic(ctx context.Context, chatID int64, text string) bool {
-	s.mu.Lock()
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	s.clearAdminInput(chatID)
 	gb, err := strconv.ParseInt(text, 10, 64)
 	if err != nil || gb < 0 {
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 0 GB (0 — без ограничения)."))
@@ -229,9 +215,7 @@ func (s *Service) consumeUserTraffic(ctx context.Context, chatID int64, text str
 
 // consumeUserExpiry applies a typed +/- days expiry change.
 func (s *Service) consumeUserExpiry(ctx context.Context, chatID int64, text string) bool {
-	s.mu.Lock()
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	s.clearAdminInput(chatID)
 	days, err := strconv.Atoi(strings.TrimPrefix(text, "+"))
 	if err != nil {
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число дней (можно со знаком «−» для уменьшения)."))

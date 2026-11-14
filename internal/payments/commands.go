@@ -75,11 +75,7 @@ func (s *Service) HandleAdminCommand(ctx context.Context, m *tg.Message) bool {
 }
 
 func (s *Service) cmdSetRequisites(ctx context.Context, chatID int64) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputRequisites
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, adminInputRequisites)
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отправьте текст реквизитов следующим сообщением."))
 }
 
@@ -151,12 +147,10 @@ func (s *Service) consumeAdminInput(ctx context.Context, m *tg.Message) bool {
 // The step goes back to adminInputNone so further chat is not intercepted; the
 // draft stays in pendingBroadcast until the admin presses a confirm button.
 func (s *Service) consumeBroadcastText(ctx context.Context, chatID int64, text string) bool {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputNone
-	state.pendingBroadcast = text
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.mutateAdminInput(chatID, func(st *adminInputState) {
+		st.step = adminInputNone
+		st.pendingBroadcast = text
+	})
 	kb := &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{{
 			{Text: i18n.T("✅ Отправить"), CallbackData: "adm:bc_send"},
@@ -171,9 +165,7 @@ func (s *Service) consumeBroadcastText(ctx context.Context, chatID int64, text s
 func (s *Service) consumeRequisitesText(ctx context.Context, chatID int64, text string) bool {
 	if err := s.store.UpsertSetting(ctx, requisitesKey, text); err != nil {
 		s.logger.Error("save requisites failed", "err", err.Error())
-		s.mu.Lock()
-		delete(s.adminInput, chatID)
-		s.mu.Unlock()
+		s.clearAdminInput(chatID)
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения реквизитов."))
 		return true
 	}
@@ -191,12 +183,10 @@ func (s *Service) consumeTariffMonths(ctx context.Context, chatID int64, text st
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 1. Пример: 3"))
 		return true
 	}
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.pendingMonths = months
-	state.step = adminInputTariffPrice
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.mutateAdminInput(chatID, func(st *adminInputState) {
+		st.pendingMonths = months
+		st.step = adminInputTariffPrice
+	})
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите цену (целое ≥ 0):"))
 	return true
 }
@@ -207,10 +197,7 @@ func (s *Service) consumeTariffPrice(ctx context.Context, chatID int64, text str
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 0. Пример: 500"))
 		return true
 	}
-	s.mu.Lock()
-	months := s.adminInput[chatID].pendingMonths
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	months := s.popAdminInput(chatID).pendingMonths
 	if err := s.store.UpsertTariff(ctx, store.PlanStandard, months, price); err != nil {
 		s.logger.Error("upsert tariff failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения тарифа."))

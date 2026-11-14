@@ -259,11 +259,7 @@ func (s *Service) applyBackupInterval(ctx context.Context, chatID int64, raw str
 }
 
 func (s *Service) startBackupIntervalInput(ctx context.Context, chatID int64) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputBackupInterval
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, adminInputBackupInterval)
 	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(
 		i18n.T("Введите интервал резервного копирования в днях (целое от 1 до %d):"), maxBackupIntervalDays))
 }
@@ -273,9 +269,7 @@ func (s *Service) consumeBackupInterval(ctx context.Context, chatID int64, text 
 		// Keep the input step so the admin can correct the value in place.
 		return true
 	}
-	s.mu.Lock()
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	s.clearAdminInput(chatID)
 	return true
 }
 
