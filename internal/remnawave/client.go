@@ -64,33 +64,53 @@ func (c *Client) GetUsers(ctx context.Context) ([]User, error) {
 	return users, nil
 }
 
-func (c *Client) fetchUsersPage(ctx context.Context, start, size int) ([]User, int64, error) {
-	endpoint := fmt.Sprintf("%s/api/users?start=%d&size=%d", c.baseURL, start, size)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+// do performs one panel request. A non-nil reqBody is marshalled to JSON and
+// sent with Content-Type set. Transport, 401, and non-2xx failures return an
+// op-prefixed error in the panel error format together with the HTTP status
+// (0 on transport failure) so callers can single out 404s; a 2xx response
+// returns the raw body.
+func (c *Client) do(ctx context.Context, method, endpoint, op string, reqBody any) ([]byte, int, error) {
+	var rdr io.Reader
+	if reqBody != nil {
+		b, err := json.Marshal(reqBody)
+		if err != nil {
+			return nil, 0, err
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, rdr)
 	if err != nil {
 		return nil, 0, err
 	}
 	c.setRequestHeaders(req)
-
+	if reqBody != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("get users: %w", err)
+		return nil, 0, fmt.Errorf("%s: %w", op, err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, 0, fmt.Errorf("get users: unauthorized (status=%d)", resp.StatusCode)
+		return nil, resp.StatusCode, fmt.Errorf("%s: unauthorized (status=%d)", op, resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, 0, fmt.Errorf("get users: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
+		return nil, resp.StatusCode, fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
 	}
-
 	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	return body, resp.StatusCode, nil
+}
+
+func (c *Client) fetchUsersPage(ctx context.Context, start, size int) ([]User, int64, error) {
+	endpoint := fmt.Sprintf("%s/api/users?start=%d&size=%d", c.baseURL, start, size)
+	body, _, err := c.do(ctx, http.MethodGet, endpoint, "get users", nil)
 	if err != nil {
 		return nil, 0, err
 	}
-
 	var payload UsersResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, 0, fmt.Errorf("decode users: %w (body=%s)", err, textutil.Truncate(string(body), 300))
@@ -103,33 +123,8 @@ func (c *Client) fetchUsersPage(ctx context.Context, start, size int) ([]User, i
 // for error messages.
 func (c *Client) patchUser(ctx context.Context, payload map[string]interface{}, op string) error {
 	endpoint := fmt.Sprintf("%s/api/users", c.baseURL)
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	c.setRequestHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("%s: unauthorized (status=%d)", op, resp.StatusCode)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
-	}
-
-	return nil
+	_, _, err := c.do(ctx, http.MethodPatch, endpoint, op, payload)
+	return err
 }
 
 func (c *Client) ExtendSubscription(ctx context.Context, userID int64, newExpireAt time.Time) error {
@@ -182,26 +177,8 @@ func (c *Client) UpdateUser(ctx context.Context, userID int64, patch UserPatch) 
 // the configured limit and reset strategy.
 func (c *Client) ResetUserTraffic(ctx context.Context, userID int64) error {
 	endpoint := fmt.Sprintf("%s/api/users/%d/actions/reset-traffic", c.baseURL, userID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
-	if err != nil {
-		return err
-	}
-	c.setRequestHeaders(req)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("reset user traffic: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("reset user traffic: unauthorized (status=%d)", resp.StatusCode)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("reset user traffic: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
-	}
-	return nil
+	_, _, err := c.do(ctx, http.MethodPost, endpoint, "reset user traffic", nil)
+	return err
 }
 
 func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User, error) {
@@ -217,30 +194,10 @@ func (c *Client) GetUserByShortUUID(ctx context.Context, shortUUID string) (*Use
 }
 
 func (c *Client) getUser(ctx context.Context, endpoint, op string) (*User, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	c.setRequestHeaders(req)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
+	body, status, err := c.do(ctx, http.MethodGet, endpoint, op, nil)
+	if status == http.StatusNotFound {
 		return nil, nil
 	}
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("%s: unauthorized (status=%d)", op, resp.StatusCode)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
-	}
-
-	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -282,66 +239,20 @@ func (c *Client) CreateUser(ctx context.Context, spec CreateUserSpec) (*User, er
 	if spec.Tag != "" {
 		reqBody["tag"] = spec.Tag
 	}
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	c.setRequestHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("create user: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("create user: unauthorized (status=%d)", resp.StatusCode)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("create user: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
-	}
-
-	respBody, err := io.ReadAll(resp.Body)
+	body, _, err := c.do(ctx, http.MethodPost, endpoint, "create user", reqBody)
 	if err != nil {
 		return nil, err
 	}
 	var payload userResponse
-	if err := json.Unmarshal(respBody, &payload); err != nil {
-		return nil, fmt.Errorf("decode created user: %w (body=%s)", err, textutil.Truncate(string(respBody), 300))
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("decode created user: %w (body=%s)", err, textutil.Truncate(string(body), 300))
 	}
 	return &payload.Response, nil
 }
 
 func (c *Client) GetInternalSquads(ctx context.Context) ([]InternalSquad, error) {
 	endpoint := fmt.Sprintf("%s/api/internal-squads", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	c.setRequestHeaders(req)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("get internal squads: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("get internal squads: unauthorized (status=%d)", resp.StatusCode)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("get internal squads: status=%d body=%s", resp.StatusCode, textutil.Truncate(string(b), 300))
-	}
-
-	body, err := io.ReadAll(resp.Body)
+	body, _, err := c.do(ctx, http.MethodGet, endpoint, "get internal squads", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -413,30 +324,10 @@ type usersStreamPage struct {
 }
 
 func (c *Client) fetchUsersStreamPage(ctx context.Context, endpoint, op string) (*usersStreamPage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	c.setRequestHeaders(req)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
+	body, status, err := c.do(ctx, http.MethodGet, endpoint, op, nil)
+	if status == http.StatusNotFound {
 		return nil, nil
 	}
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("%s: unauthorized (status=%d)", op, resp.StatusCode)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
-	}
-
-	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -462,22 +353,14 @@ var ErrHwidDeviceNotFound = errors.New("hwid device not found")
 // useful reading of "no such user record here" is "no devices".
 func (c *Client) GetHwidDevices(ctx context.Context, userID int64) ([]HwidDevice, error) {
 	endpoint := fmt.Sprintf("%s/api/hwid/devices/%d", c.baseURL, userID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	body, status, err := c.do(ctx, http.MethodGet, endpoint, "get hwid devices", nil)
+	if status == http.StatusNotFound {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	c.setRequestHeaders(req)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("get hwid devices: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-	return decodeHwidDevices(resp, "get hwid devices")
+	return unmarshalHwidDevices(body)
 }
 
 // DeleteHwidDevice frees one HWID slot and returns the devices still registered
@@ -486,45 +369,19 @@ func (c *Client) GetHwidDevices(ctx context.Context, userID int64) ([]HwidDevice
 // outage.
 func (c *Client) DeleteHwidDevice(ctx context.Context, userID int64, hwid string) ([]HwidDevice, error) {
 	endpoint := fmt.Sprintf("%s/api/hwid/devices/delete", c.baseURL)
-	body, err := json.Marshal(map[string]interface{}{"userId": userID, "hwid": hwid})
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	c.setRequestHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("delete hwid device: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
+	body, status, err := c.do(ctx, http.MethodPost, endpoint, "delete hwid device", map[string]interface{}{"userId": userID, "hwid": hwid})
+	if status == http.StatusNotFound {
 		return nil, ErrHwidDeviceNotFound
 	}
-	return decodeHwidDevices(resp, "delete hwid device")
-}
-
-// decodeHwidDevices checks the status of an HWID response and unwraps its
-// shared {response:{total, devices}} envelope. op names the operation for
-// error messages.
-func decodeHwidDevices(resp *http.Response, op string) ([]HwidDevice, error) {
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("%s: unauthorized (status=%d)", op, resp.StatusCode)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("%s: status=%d body=%s", op, resp.StatusCode, textutil.Truncate(string(b), 300))
-	}
-	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
+	return unmarshalHwidDevices(body)
+}
+
+// unmarshalHwidDevices unwraps the shared {response:{total, devices}} envelope
+// the panel answers HWID requests with.
+func unmarshalHwidDevices(body []byte) ([]HwidDevice, error) {
 	var payload hwidDevicesResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("decode hwid devices: %w (body=%s)", err, textutil.Truncate(string(body), 300))
