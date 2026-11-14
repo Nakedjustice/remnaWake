@@ -123,16 +123,17 @@ func (s *Store) ReadPaymentReport(ctx context.Context, f PaymentReportFilter) (*
 		return nil, err
 	}
 	defer rows.Close()
-	for rows.Next() {
-		it, err := scanPaymentHistoryItem(rows)
+	items, err := scanList(rows, func(r rowScanner) (PaymentHistoryItem, error) {
+		it, err := scanPaymentHistoryItem(r)
 		if err != nil {
-			return nil, err
+			return PaymentHistoryItem{}, err
 		}
-		report.Items = append(report.Items, *it)
-	}
-	if err := rows.Err(); err != nil {
+		return *it, nil
+	})
+	if err != nil {
 		return nil, err
 	}
+	report.Items = append(report.Items, items...)
 
 	analytics, err := s.readPaymentAnalytics(ctx, f.Since, f.Provider)
 	if err != nil {

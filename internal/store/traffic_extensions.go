@@ -33,20 +33,18 @@ func (s *Store) ListTrafficExtensionOptions(ctx context.Context) ([]TrafficExten
 		return nil, err
 	}
 	defer rows.Close()
-	var out []TrafficExtensionOption
-	for rows.Next() {
+	return scanList(rows, func(r rowScanner) (TrafficExtensionOption, error) {
 		var (
 			o            TrafficExtensionOption
 			created, upd string
 		)
-		if err := rows.Scan(&o.TrafficGB, &o.Price, &created, &upd); err != nil {
-			return nil, err
+		if err := r.Scan(&o.TrafficGB, &o.Price, &created, &upd); err != nil {
+			return o, err
 		}
 		o.CreatedAt, _ = parseTime(created)
 		o.UpdatedAt, _ = parseTime(upd)
-		out = append(out, o)
-	}
-	return out, rows.Err()
+		return o, nil
+	})
 }
 
 func (s *Store) GetTrafficExtensionOption(ctx context.Context, trafficGB int) (*TrafficExtensionOption, error) {

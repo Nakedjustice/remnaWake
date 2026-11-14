@@ -260,19 +260,17 @@ func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
 	}
 	defer rows.Close()
 
-	existing := map[string]bool{}
-	for rows.Next() {
+	return scanMap(rows, func(r rowScanner) (string, bool, error) {
 		var (
 			cid, notnull, pk int
 			name, ctype      string
 			dflt             sql.NullString
 		)
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return nil, err
+		if err := r.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return name, false, err
 		}
-		existing[name] = true
-	}
-	return existing, rows.Err()
+		return name, true, nil
+	})
 }
 
 // columnDef is one additive column: name plus its ALTER TABLE definition.

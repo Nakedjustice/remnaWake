@@ -57,7 +57,7 @@ func TestStatusRejectsBadCredentials(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "metrics", "wrong", time.Second)
-	if err := c.Ping(context.Background()); err == nil {
+	if _, err := c.Status(context.Background()); err == nil {
 		t.Fatal("expected error on 401")
 	}
 }

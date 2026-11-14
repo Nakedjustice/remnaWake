@@ -243,15 +243,16 @@ func (s *Store) ReadOperatorAnalytics(ctx context.Context, since, now time.Time)
 		return nil, err
 	}
 	defer rows.Close()
-	for rows.Next() {
+	mix, err := scanList(rows, func(r rowScanner) (ProviderMixStat, error) {
 		var p ProviderMixStat
-		if err := rows.Scan(&p.Provider, &p.Confirmed, &p.Rejected, &p.Pending, &p.Revenue); err != nil {
-			return nil, err
+		if err := r.Scan(&p.Provider, &p.Confirmed, &p.Rejected, &p.Pending, &p.Revenue); err != nil {
+			return p, err
 		}
-		out.ProviderMix = append(out.ProviderMix, p)
-	}
-	if err := rows.Err(); err != nil {
+		return p, nil
+	})
+	if err != nil {
 		return nil, err
 	}
+	out.ProviderMix = append(out.ProviderMix, mix...)
 	return out, nil
 }

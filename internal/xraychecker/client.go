@@ -67,12 +67,6 @@ func (c *Client) Status(ctx context.Context) ([]ProxyStatus, error) {
 	return parseMetrics(body), nil
 }
 
-// Ping verifies the checker is reachable and the credentials are accepted.
-func (c *Client) Ping(ctx context.Context) error {
-	_, err := c.fetchMetrics(ctx)
-	return err
-}
-
 func (c *Client) fetchMetrics(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/metrics", nil)
 	if err != nil {

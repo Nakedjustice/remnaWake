@@ -163,23 +163,21 @@ func (s *Store) ListSupportConversations(ctx context.Context) ([]SupportConversa
 		return nil, err
 	}
 	defer rows.Close()
-	var out []SupportConversation
-	for rows.Next() {
+	return scanList(rows, func(r rowScanner) (SupportConversation, error) {
 		var (
 			conv     SupportConversation
 			username sql.NullString
 			lastText sql.NullString
 			lastAt   string
 		)
-		if err := rows.Scan(&conv.UserTelegramID, &username, &lastText, &lastAt, &conv.Unread); err != nil {
-			return nil, err
+		if err := r.Scan(&conv.UserTelegramID, &username, &lastText, &lastAt, &conv.Unread); err != nil {
+			return conv, err
 		}
 		conv.UserUsername = username.String
 		conv.LastText = lastText.String
 		conv.LastAt, _ = parseTime(lastAt)
-		out = append(out, conv)
-	}
-	return out, rows.Err()
+		return conv, nil
+	})
 }
 
 // MarkSupportReadByUser marks every admin reply in a conversation as seen by

@@ -205,16 +205,14 @@ func (s *Store) CountGiftCodesByBuyer(ctx context.Context, buyerTGID int64) (map
 	}
 	defer rows.Close()
 
-	out := make(map[string]int)
-	for rows.Next() {
+	return scanMap(rows, func(r rowScanner) (string, int, error) {
 		var status string
 		var n int
-		if err := rows.Scan(&status, &n); err != nil {
-			return nil, err
+		if err := r.Scan(&status, &n); err != nil {
+			return status, n, err
 		}
-		out[status] = n
-	}
-	return out, rows.Err()
+		return status, n, nil
+	})
 }
 
 // ListGiftBuyers returns each buyer that has at least one issued or redeemed
@@ -239,15 +237,13 @@ func (s *Store) ListGiftBuyers(ctx context.Context) ([]GiftBuyer, error) {
 	}
 	defer rows.Close()
 
-	var out []GiftBuyer
-	for rows.Next() {
+	return scanList(rows, func(r rowScanner) (GiftBuyer, error) {
 		var b GiftBuyer
-		if err := rows.Scan(&b.BuyerTelegramID, &b.BuyerUsername, &b.NotUsed, &b.Used); err != nil {
-			return nil, err
+		if err := r.Scan(&b.BuyerTelegramID, &b.BuyerUsername, &b.NotUsed, &b.Used); err != nil {
+			return b, err
 		}
-		out = append(out, b)
-	}
-	return out, rows.Err()
+		return b, nil
+	})
 }
 
 func (s *Store) listGiftCodes(ctx context.Context, where string, args ...any) ([]GiftCode, error) {

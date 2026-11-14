@@ -18,3 +18,17 @@ func scanList[T any](rows *sql.Rows, scan func(rowScanner) (T, error)) ([]T, err
 	}
 	return out, rows.Err()
 }
+
+// scanMap drains rows into a map using the given per-row key/value scan
+// function. The returned map is always non-nil.
+func scanMap[K comparable, V any](rows *sql.Rows, scan func(rowScanner) (K, V, error)) (map[K]V, error) {
+	out := make(map[K]V)
+	for rows.Next() {
+		k, v, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, rows.Err()
+}

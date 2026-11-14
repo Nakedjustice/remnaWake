@@ -48,13 +48,11 @@ func (s *Store) MutedProxyKeys(ctx context.Context) (map[string]bool, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]bool{}
-	for rows.Next() {
+	return scanMap(rows, func(r rowScanner) (string, bool, error) {
 		var key string
-		if err := rows.Scan(&key); err != nil {
-			return nil, err
+		if err := r.Scan(&key); err != nil {
+			return key, false, err
 		}
-		out[key] = true
-	}
-	return out, rows.Err()
+		return key, true, nil
+	})
 }
