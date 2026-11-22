@@ -49,7 +49,7 @@ func TestAdminTrialConfigValidationAndPersistence(t *testing.T) {
 	svc, _, _, st := newTestService(t)
 	svc.squads = &fakeSquadLister{squads: []InternalSquad{{UUID: "trial-squad", Name: "Trial"}}}
 	cfg := TrialConfig{Enabled: true, Days: 5, TrafficLimitGB: 25, HwidDeviceLimit: 2, SquadUUID: "trial-squad"}
-	if err := svc.AdminSetTrial(context.Background(), 1000, cfg); err != nil {
+	if err := runOpErr(context.Background(), svc, 1000, "trial.set", adminTrialIn(cfg)); err != nil {
 		t.Fatalf("set trial: %v", err)
 	}
 	if got := svc.trialConfig(); got != cfg {
@@ -66,12 +66,12 @@ func TestAdminTrialConfigValidationAndPersistence(t *testing.T) {
 	}
 	bad := cfg
 	bad.SquadUUID = "missing"
-	if err := svc.AdminSetTrial(context.Background(), 1000, bad); !errors.Is(err, ErrBadInput) {
+	if err := runOpErr(context.Background(), svc, 1000, "trial.set", adminTrialIn(bad)); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("missing squad err = %v, want ErrBadInput", err)
 	}
 	bad = cfg
 	bad.TrafficLimitGB = -1
-	if err := svc.AdminSetTrial(context.Background(), 1000, bad); !errors.Is(err, ErrBadInput) {
+	if err := runOpErr(context.Background(), svc, 1000, "trial.set", adminTrialIn(bad)); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("negative traffic err = %v, want ErrBadInput", err)
 	}
 }

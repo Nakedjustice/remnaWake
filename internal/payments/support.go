@@ -200,10 +200,7 @@ func (s *Service) notifyAdminsSupport(ctx context.Context, userTelegramID int64,
 // the bot reply-button path: the reply lands in the user's newest open ticket
 // and starts an admin-initiated one when none is open, so an admin reply
 // always works (as it did before tickets existed).
-func (s *Service) SupportSendAdmin(ctx context.Context, adminID, targetUserID int64, text string) error {
-	if err := s.adminGuard(adminID); err != nil {
-		return err
-	}
+func (s *Service) supportSendAdmin(ctx context.Context, adminID, targetUserID int64, text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ErrBadInput
@@ -241,10 +238,7 @@ func (s *Service) SupportHistoryUser(ctx context.Context, telegramID int64) (*We
 }
 
 // SupportConversations returns the admin support inbox.
-func (s *Service) SupportConversations(ctx context.Context, adminID int64) ([]WebSupportConversation, error) {
-	if err := s.adminGuard(adminID); err != nil {
-		return nil, err
-	}
+func (s *Service) supportConversations(ctx context.Context) ([]WebSupportConversation, error) {
 	convs, err := s.store.ListSupportConversations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list support conversations: %w", err)
@@ -264,10 +258,7 @@ func (s *Service) SupportConversations(ctx context.Context, adminID int64) ([]We
 
 // SupportThreadAdmin returns one conversation for an admin and marks its user
 // messages as read.
-func (s *Service) SupportThreadAdmin(ctx context.Context, adminID, targetUserID int64) (*WebSupport, error) {
-	if err := s.adminGuard(adminID); err != nil {
-		return nil, err
-	}
+func (s *Service) supportThreadAdmin(ctx context.Context, targetUserID int64) (*WebSupport, error) {
 	msgs, err := s.store.ListSupportMessages(ctx, targetUserID)
 	if err != nil {
 		return nil, fmt.Errorf("list support messages: %w", err)
@@ -306,10 +297,7 @@ func (s *Service) SupportCloseUser(ctx context.Context, telegramID int64) error 
 
 // SupportCloseAdmin closes a conversation from the admin side and tells the
 // user the chat was closed.
-func (s *Service) SupportCloseAdmin(ctx context.Context, adminID, targetUserID int64) error {
-	if err := s.adminGuard(adminID); err != nil {
-		return err
-	}
+func (s *Service) supportCloseAdmin(ctx context.Context, targetUserID int64) error {
 	s.setSupportSession(targetUserID, false)
 	closed, err := s.store.CloseSupportConversation(ctx, targetUserID)
 	if err != nil {
@@ -377,7 +365,7 @@ func (s *Service) consumeSupportReply(ctx context.Context, chatID int64, text st
 	if target == 0 {
 		return true
 	}
-	if err := s.SupportSendAdmin(ctx, chatID, target, text); err != nil {
+	if err := s.supportSendAdmin(ctx, chatID, target, text); err != nil {
 		s.logger.Error("support: admin reply failed", "err", err.Error(), "admin_id", chatID)
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось отправить ответ."))
 		return true

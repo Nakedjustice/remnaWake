@@ -263,10 +263,7 @@ func (s *Service) notifyAdminsSupportClosed(ctx context.Context, telegramID int6
 
 // SupportTicketsAdmin returns the admin inbox: open tickets first, then the
 // most recently active closed ones.
-func (s *Service) SupportTicketsAdmin(ctx context.Context, adminID int64) ([]WebSupportTicket, error) {
-	if err := s.adminGuard(adminID); err != nil {
-		return nil, err
-	}
+func (s *Service) supportTicketsAdmin(ctx context.Context) ([]WebSupportTicket, error) {
 	tickets, err := s.store.ListSupportTicketsAdmin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list support tickets: %w", err)
@@ -280,10 +277,7 @@ func (s *Service) SupportTicketsAdmin(ctx context.Context, adminID int64) ([]Web
 
 // SupportTicketThreadAdmin returns one ticket with history for an admin and
 // marks its user messages as read.
-func (s *Service) SupportTicketThreadAdmin(ctx context.Context, adminID, ticketID int64) (*WebSupportThread, error) {
-	if err := s.adminGuard(adminID); err != nil {
-		return nil, err
-	}
+func (s *Service) supportTicketThreadAdmin(ctx context.Context, ticketID int64) (*WebSupportThread, error) {
 	tk, err := s.store.GetSupportTicket(ctx, ticketID)
 	if err != nil {
 		return nil, fmt.Errorf("get support ticket: %w", err)
@@ -297,10 +291,7 @@ func (s *Service) SupportTicketThreadAdmin(ctx context.Context, adminID, ticketI
 // SupportReplyTicketAdmin appends an admin reply to a specific open ticket and
 // delivers it to the user. Closed tickets reject the reply — unlike the bot's
 // SupportSendAdmin, this never creates a new ticket.
-func (s *Service) SupportReplyTicketAdmin(ctx context.Context, adminID, ticketID int64, text string) error {
-	if err := s.adminGuard(adminID); err != nil {
-		return err
-	}
+func (s *Service) supportReplyTicketAdmin(ctx context.Context, adminID, ticketID int64, text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ErrBadInput
@@ -335,10 +326,7 @@ func (s *Service) SupportReplyTicketAdmin(ctx context.Context, adminID, ticketID
 
 // SupportCloseTicketAdmin closes a ticket from the admin side and tells the
 // user (same text as the pre-ticket bot close).
-func (s *Service) SupportCloseTicketAdmin(ctx context.Context, adminID, ticketID int64) error {
-	if err := s.adminGuard(adminID); err != nil {
-		return err
-	}
+func (s *Service) supportCloseTicketAdmin(ctx context.Context, ticketID int64) error {
 	tk, err := s.store.GetSupportTicket(ctx, ticketID)
 	if err != nil {
 		return fmt.Errorf("get support ticket: %w", err)

@@ -75,7 +75,7 @@ func TestSupportBotTicketListOpensThread(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := svc.SupportReplyTicketAdmin(ctx, 1000, id, "смотрим"); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "support.ticket.reply", &AdminTicketReplyInput{TicketID: id, Text: "смотрим"}); err != nil {
 		t.Fatalf("admin reply: %v", err)
 	}
 
@@ -290,7 +290,7 @@ func TestSupportBotAdminInboxReplyAndClose(t *testing.T) {
 			t.Fatalf("admin thread keyboard missing %q: %+v", want, thread.Keyboard)
 		}
 	}
-	if tickets, _ := svc.SupportTicketsAdmin(ctx, 1000); len(tickets) != 1 || tickets[0].Unread != 0 {
+	if tickets, _ := runOp[[]WebSupportTicket](t, ctx, svc, 1000, "support.tickets", nil); len(tickets) != 1 || tickets[0].Unread != 0 {
 		t.Fatalf("reading the thread must clear the admin unread: %+v", tickets)
 	}
 

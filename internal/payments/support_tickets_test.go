@@ -87,7 +87,7 @@ func TestSupportAdminReplyTargetsNewestOpenTicketOrCreates(t *testing.T) {
 	ctx := context.Background()
 
 	// No open ticket: the admin reply starts an admin-initiated one.
-	if err := svc.SupportSendAdmin(ctx, 1000, supportUser, "proactive hello"); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "support.send", &AdminSupportSendInput{UserID: supportUser, Text: "proactive hello"}); err != nil {
 		t.Fatalf("admin reply: %v", err)
 	}
 	tk, err := svc.store.LatestOpenTicketForUser(ctx, supportUser)
@@ -102,7 +102,7 @@ func TestSupportAdminReplyTargetsNewestOpenTicketOrCreates(t *testing.T) {
 	if err := svc.SupportSendUser(ctx, supportUser, "thanks"); err != nil {
 		t.Fatalf("user send: %v", err)
 	}
-	if err := svc.SupportSendAdmin(ctx, 1000, supportUser, "anytime"); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "support.send", &AdminSupportSendInput{UserID: supportUser, Text: "anytime"}); err != nil {
 		t.Fatalf("admin send: %v", err)
 	}
 	tickets, err := svc.store.ListSupportTicketsAdmin(ctx)
@@ -148,7 +148,7 @@ func TestSupportCreateTicketAndListUser(t *testing.T) {
 	}
 
 	// An admin reply flips the state and bumps the unread counters.
-	if err := svc.SupportReplyTicketAdmin(ctx, 1000, id, "смотрим"); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "support.ticket.reply", &AdminTicketReplyInput{TicketID: id, Text: "смотрим"}); err != nil {
 		t.Fatalf("admin reply: %v", err)
 	}
 	list, _ = svc.SupportTicketsUser(ctx, supportUser)
@@ -226,7 +226,7 @@ func TestSupportReplyClosedTicketRejected(t *testing.T) {
 	if err := svc.SupportSendUserToTicket(ctx, supportUser, id, "more"); !errors.Is(err, ErrTicketClosed) {
 		t.Fatalf("user reply to closed: %v", err)
 	}
-	if err := svc.SupportReplyTicketAdmin(ctx, 1000, id, "reply"); !errors.Is(err, ErrTicketClosed) {
+	if err := runOpErr(ctx, svc, 1000, "support.ticket.reply", &AdminTicketReplyInput{TicketID: id, Text: "reply"}); !errors.Is(err, ErrTicketClosed) {
 		t.Fatalf("admin reply to closed: %v", err)
 	}
 	if err := svc.SupportCloseTicketUser(ctx, supportUser, id); !errors.Is(err, ErrTicketClosed) {
@@ -287,7 +287,7 @@ func TestSupportCloseTicketAdminNotifiesUser(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	before := len(sentTo(bot, supportUser))
-	if err := svc.SupportCloseTicketAdmin(ctx, 1000, id); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "support.ticket.close", &AdminTicketInput{TicketID: id}); err != nil {
 		t.Fatalf("admin close: %v", err)
 	}
 	tk, _ := svc.store.GetSupportTicket(ctx, id)
@@ -298,13 +298,13 @@ func TestSupportCloseTicketAdminNotifiesUser(t *testing.T) {
 	if len(userMsgs) != before+1 || !strings.Contains(userMsgs[len(userMsgs)-1].Text, "завершён администратором") {
 		t.Fatalf("user close notice: %+v", userMsgs)
 	}
-	if err := svc.SupportCloseTicketAdmin(ctx, 1000, id); !errors.Is(err, ErrTicketClosed) {
+	if err := runOpErr(ctx, svc, 1000, "support.ticket.close", &AdminTicketInput{TicketID: id}); !errors.Is(err, ErrTicketClosed) {
 		t.Fatalf("double admin close: %v", err)
 	}
 	if _, err := svc.store.GetSupportTicket(ctx, id+77); err != nil {
 		t.Fatalf("sanity: %v", err)
 	}
-	if err := svc.SupportCloseTicketAdmin(ctx, 1000, id+77); !errors.Is(err, ErrTicketNotFound) {
+	if err := runOpErr(ctx, svc, 1000, "support.ticket.close", &AdminTicketInput{TicketID: id+77}); !errors.Is(err, ErrTicketNotFound) {
 		t.Fatalf("close missing: %v", err)
 	}
 }
@@ -318,29 +318,29 @@ func TestSupportTicketAdminGuard(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	const outsider = int64(555)
-	if _, err := svc.SupportTicketsAdmin(ctx, outsider); !errors.Is(err, ErrNotAdmin) {
+	if _, err := runOp[[]WebSupportTicket](t, ctx, svc, outsider, "support.tickets", nil); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("tickets: %v", err)
 	}
-	if _, err := svc.SupportTicketThreadAdmin(ctx, outsider, id); !errors.Is(err, ErrNotAdmin) {
+	if _, err := runOp[*WebSupportThread](t, ctx, svc, outsider, "support.ticket.thread", &AdminTicketInput{TicketID: id}); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("thread: %v", err)
 	}
-	if err := svc.SupportReplyTicketAdmin(ctx, outsider, id, "hi"); !errors.Is(err, ErrNotAdmin) {
+	if err := runOpErr(ctx, svc, outsider, "support.ticket.reply", &AdminTicketReplyInput{TicketID: id, Text: "hi"}); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("reply: %v", err)
 	}
-	if err := svc.SupportCloseTicketAdmin(ctx, outsider, id); !errors.Is(err, ErrNotAdmin) {
+	if err := runOpErr(ctx, svc, outsider, "support.ticket.close", &AdminTicketInput{TicketID: id}); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("close: %v", err)
 	}
 
 	// The admin inbox view works and marks the thread read.
-	tickets, err := svc.SupportTicketsAdmin(ctx, 1000)
+	tickets, err := runOp[[]WebSupportTicket](t, ctx, svc, 1000, "support.tickets", nil)
 	if err != nil || len(tickets) != 1 || tickets[0].UserID != supportUser || tickets[0].Unread != 1 {
 		t.Fatalf("admin tickets: %+v err %v", tickets, err)
 	}
-	thread, err := svc.SupportTicketThreadAdmin(ctx, 1000, id)
+	thread, err := runOp[*WebSupportThread](t, ctx, svc, 1000, "support.ticket.thread", &AdminTicketInput{TicketID: id})
 	if err != nil || len(thread.Messages) != 1 || thread.Ticket.UserID != supportUser {
 		t.Fatalf("admin thread: %+v err %v", thread, err)
 	}
-	tickets, _ = svc.SupportTicketsAdmin(ctx, 1000)
+	tickets, _ = runOp[[]WebSupportTicket](t, ctx, svc, 1000, "support.tickets", nil)
 	if tickets[0].Unread != 0 {
 		t.Fatalf("unread after admin read: %+v", tickets[0])
 	}
@@ -355,10 +355,10 @@ func TestSupportCloseDryRunSendsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := svc.SupportReplyTicketAdmin(ctx, 1000, id, "dry reply"); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "support.ticket.reply", &AdminTicketReplyInput{TicketID: id, Text: "dry reply"}); err != nil {
 		t.Fatalf("reply: %v", err)
 	}
-	if err := svc.SupportCloseTicketAdmin(ctx, 1000, id); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "support.ticket.close", &AdminTicketInput{TicketID: id}); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 	tk, _ := svc.store.GetSupportTicket(ctx, id)

@@ -44,7 +44,7 @@ func severityEmoji(severity string) string {
 // lists. This is the recovery entry point when the original admin DM buttons
 // are gone (the message refs are in-memory and lost on restart).
 func (s *Service) sendPendingSummary(ctx context.Context, chatID int64) {
-	ac, err := s.AdminActionCenter(ctx, chatID)
+	ac, err := s.actionCenterData(ctx)
 	if err != nil {
 		s.logger.Error("pending summary failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось загрузить центр действий."))

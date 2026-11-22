@@ -89,10 +89,7 @@ type WebOperatorPaymentProvider struct {
 	RevenueShare float64 `json:"revenue_share"`
 }
 
-func (s *Service) AdminOperatorAnalytics(ctx context.Context, telegramID int64, days int) (*WebOperatorAnalytics, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+func (s *Service) adminOperatorAnalytics(ctx context.Context, days int) (*WebOperatorAnalytics, error) {
 	if !validAnalyticsDays(days) {
 		return nil, ErrBadInput
 	}

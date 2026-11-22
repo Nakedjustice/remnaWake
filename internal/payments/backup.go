@@ -282,7 +282,7 @@ func (s *Service) consumeBackupInterval(ctx context.Context, chatID int64, text 
 // cmdBackup handles the /backup admin command: an immediate one-off backup
 // sent only to the requesting admin, independent of the schedule and stamp.
 func (s *Service) cmdBackup(ctx context.Context, chatID int64) {
-	err := s.AdminSendBackup(ctx, chatID)
+	err := s.sendBackupToAdmin(ctx, chatID)
 	switch {
 	case err == nil:
 		return
@@ -303,10 +303,7 @@ func (s *Service) cmdBackup(ctx context.Context, chatID int64) {
 // requesting admin's Telegram chat. It is shared by /backup, the Telegram
 // admin-menu callback, the authenticated Mini App admin endpoint, and the
 // mandatory pre-update backup.
-func (s *Service) AdminSendBackup(ctx context.Context, telegramID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) sendBackupToAdmin(ctx context.Context, telegramID int64) error {
 	if s.dryRun {
 		return ErrBackupDryRun
 	}

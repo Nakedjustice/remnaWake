@@ -72,16 +72,6 @@ func (s *Service) xrayCheckerConfigured() bool {
 	return s.getXrayChecker() != nil
 }
 
-// AdminProxyHealth returns the current proxy-health snapshot from the optional
-// xray-checker sidecar. The caller identity is always checked because Web API
-// requests reach this method directly.
-func (s *Service) AdminProxyHealth(ctx context.Context, telegramID int64) (*WebProxyHealth, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
-	return s.proxyHealth(ctx)
-}
-
 // proxyHealth fetches and aggregates the current per-proxy status.
 func (s *Service) proxyHealth(ctx context.Context) (*WebProxyHealth, error) {
 	dashboardURL := s.getCheckerURL()

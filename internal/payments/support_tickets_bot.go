@@ -350,7 +350,7 @@ func (s *Service) handleSupportComposeInput(ctx context.Context, m *tg.Message) 
 
 // sendAdminTicketInbox lists every open ticket plus the recently closed ones.
 func (s *Service) sendAdminTicketInbox(ctx context.Context, chatID int64) {
-	tickets, err := s.SupportTicketsAdmin(ctx, chatID)
+	tickets, err := s.supportTicketsAdmin(ctx)
 	if err != nil {
 		s.sendSupportTicketError(ctx, chatID, err, "list admin tickets")
 		return
@@ -392,7 +392,7 @@ func (s *Service) sendAdminTicketThread(ctx context.Context, chatID int64, data 
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Обращение не найдено."))
 		return
 	}
-	thread, err := s.SupportTicketThreadAdmin(ctx, chatID, id)
+	thread, err := s.supportTicketThreadAdmin(ctx, id)
 	if err != nil {
 		s.sendSupportTicketError(ctx, chatID, err, "open admin ticket")
 		return
@@ -436,7 +436,7 @@ func (s *Service) consumeSupportTicketReply(ctx context.Context, chatID int64, t
 	if ticketID == 0 {
 		return true
 	}
-	if err := s.SupportReplyTicketAdmin(ctx, chatID, ticketID, text); err != nil {
+	if err := s.supportReplyTicketAdmin(ctx, chatID, ticketID, text); err != nil {
 		switch {
 		case errors.Is(err, ErrTicketNotFound), errors.Is(err, ErrTicketClosed), errors.Is(err, ErrBadInput):
 			s.sendSupportTicketError(ctx, chatID, err, "admin ticket reply")
@@ -457,7 +457,7 @@ func (s *Service) handleAdminTicketClose(ctx context.Context, chatID int64, data
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Обращение не найдено."))
 		return
 	}
-	if err := s.SupportCloseTicketAdmin(ctx, chatID, id); err != nil {
+	if err := s.supportCloseTicketAdmin(ctx, id); err != nil {
 		s.sendSupportTicketError(ctx, chatID, err, "close admin ticket")
 		return
 	}

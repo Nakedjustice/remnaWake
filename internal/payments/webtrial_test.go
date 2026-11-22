@@ -123,13 +123,13 @@ func TestCabinetDataNotificationsAndTrial(t *testing.T) {
 func TestAdminSetTrialPersists(t *testing.T) {
 	svc, _, _, _ := newTestService(t) // admin 1000
 	ctx := context.Background()
-	if err := svc.AdminSetTrial(ctx, 1000, TrialConfig{Enabled: true, Days: 5, TrafficLimitGB: 10, HwidDeviceLimit: 1}); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "trial.set", adminTrialIn(TrialConfig{Enabled: true, Days: 5, TrafficLimitGB: 10, HwidDeviceLimit: 1})); err != nil {
 		t.Fatalf("set trial: %v", err)
 	}
 	if cfg := svc.trialConfig(); !cfg.Enabled || cfg.Days != 5 {
 		t.Fatalf("trial config = %+v, want enabled with 5 days", cfg)
 	}
-	if err := svc.AdminSetTrial(ctx, 2222, TrialConfig{Enabled: true, Days: 5, TrafficLimitGB: 10, HwidDeviceLimit: 1}); !errors.Is(err, ErrNotAdmin) {
+	if err := runOpErr(ctx, svc, 2222, "trial.set", adminTrialIn(TrialConfig{Enabled: true, Days: 5, TrafficLimitGB: 10, HwidDeviceLimit: 1})); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("non-admin err = %v, want ErrNotAdmin", err)
 	}
 }
@@ -137,13 +137,13 @@ func TestAdminSetTrialPersists(t *testing.T) {
 func TestAdminSetReferralPersists(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	ctx := context.Background()
-	if err := svc.AdminSetReferral(ctx, 1000, true, 30, 10); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "referral.set", &AdminReferralInput{Enabled: true, InviterDays: 30, InviteeDays: 10}); err != nil {
 		t.Fatalf("set referral: %v", err)
 	}
 	if en, inv, ee := svc.referralConfig(); !en || inv != 30 || ee != 10 {
 		t.Fatalf("referral config = (%v,%d,%d), want (true,30,10)", en, inv, ee)
 	}
-	if err := svc.AdminSetReferral(ctx, 2222, true, 1, 0); !errors.Is(err, ErrNotAdmin) {
+	if err := runOpErr(ctx, svc, 2222, "referral.set", &AdminReferralInput{Enabled: true, InviterDays: 1, InviteeDays: 0}); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("non-admin err = %v, want ErrNotAdmin", err)
 	}
 }
@@ -151,7 +151,7 @@ func TestAdminSetReferralPersists(t *testing.T) {
 func TestAdminSetReferralRejectsAllZeroEnable(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	// A fresh service has zero bonuses; enabling without setting any is rejected.
-	if err := svc.AdminSetReferral(context.Background(), 1000, true, 0, 0); !errors.Is(err, ErrBadInput) {
+	if err := runOpErr(context.Background(), svc, 1000, "referral.set", &AdminReferralInput{Enabled: true, InviterDays: 0, InviteeDays: 0}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("all-zero enable err = %v, want ErrBadInput", err)
 	}
 }

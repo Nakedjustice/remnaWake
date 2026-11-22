@@ -75,10 +75,7 @@ func classifyUser(u *Subscriber, now time.Time) userClass {
 // AdminStatsData returns the admin statistics snapshot for the Mini App and
 // bot. The caller identity is always checked because Web API requests reach
 // this method directly.
-func (s *Service) AdminStatsData(ctx context.Context, telegramID int64) (*WebAdminStats, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+func (s *Service) adminStatsData(ctx context.Context) (*WebAdminStats, error) {
 	subs, err := s.finder.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%w: list users: %v", ErrPanelUnavailable, err)
@@ -143,7 +140,7 @@ func (s *Service) AdminStatsData(ctx context.Context, telegramID int64) (*WebAdm
 // sendAdminStats builds and sends the 📊 /stats report: panel user counts from
 // the Remnawave API plus payment/gift/invite counters from the local store.
 func (s *Service) sendAdminStats(ctx context.Context, chatID int64) {
-	st, err := s.AdminStatsData(ctx, chatID)
+	st, err := s.adminStatsData(ctx)
 	if errors.Is(err, ErrPanelUnavailable) {
 		s.logger.Error("stats: list users failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка получения пользователей из панели."))

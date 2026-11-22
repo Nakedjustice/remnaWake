@@ -191,7 +191,7 @@ func TestApproveLegacyInvalidTrialKeepsAnUnrelatedClaim(t *testing.T) {
 func TestSetTrialApprovalPersists(t *testing.T) {
 	svc, _, _, _ := newTestService(t) // admin 1000
 	ctx := context.Background()
-	if err := svc.AdminSetTrial(ctx, 1000, TrialConfig{Enabled: true, Days: 5, TrafficLimitGB: 10, HwidDeviceLimit: 1, RequireApproval: true}); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "trial.set", adminTrialIn(TrialConfig{Enabled: true, Days: 5, TrafficLimitGB: 10, HwidDeviceLimit: 1, RequireApproval: true})); err != nil {
 		t.Fatalf("set trial: %v", err)
 	}
 	if !svc.trialConfig().RequireApproval {
@@ -212,7 +212,7 @@ func TestAdminPanelExposesTrialApprovalAndRequests(t *testing.T) {
 		t.Fatalf("seed request: %v", err)
 	}
 
-	panel, err := svc.AdminPanelData(ctx, 1000)
+	panel, err := runOp[*WebAdminPanel](t, ctx, svc, 1000, "panel.get", nil)
 	if err != nil {
 		t.Fatalf("panel: %v", err)
 	}

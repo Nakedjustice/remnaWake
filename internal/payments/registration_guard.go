@@ -346,7 +346,7 @@ func (s *Service) addRegistrationGuardPattern(ctx context.Context, adminID int64
 // AdminAddRegistrationGuardPattern saves a custom guard pattern from the Mini
 // App. It reuses exactly the same normalization and persistence as the bot
 // admin flow.
-func (s *Service) AdminAddRegistrationGuardPattern(ctx context.Context, adminID int64, raw string) error {
+func (s *Service) adminAddRegistrationGuardPattern(ctx context.Context, adminID int64, raw string) error {
 	added, err := s.addRegistrationGuardPattern(ctx, adminID, raw)
 	if errors.Is(err, errRegistrationGuardPatternInvalid) || errors.Is(err, errRegistrationGuardPatternLimit) {
 		return ErrBadInput
@@ -363,10 +363,7 @@ func (s *Service) AdminAddRegistrationGuardPattern(ctx context.Context, adminID 
 // AdminDeleteRegistrationGuardPattern removes one custom pattern by value.
 // Values are normalized before matching so the web and bot inputs behave the
 // same way without relying on a mutable list index.
-func (s *Service) AdminDeleteRegistrationGuardPattern(ctx context.Context, adminID int64, raw string) error {
-	if err := s.adminGuard(adminID); err != nil {
-		return err
-	}
+func (s *Service) adminDeleteRegistrationGuardPattern(ctx context.Context, raw string) error {
 	pattern, err := normalizeRegistrationGuardPattern(raw)
 	if err != nil {
 		return ErrBadInput
@@ -399,10 +396,7 @@ func (s *Service) AdminDeleteRegistrationGuardPattern(ctx context.Context, admin
 // AdminUnblockRegistration removes an active automatic block for a Mini App
 // administrator. A missing or already-resolved guard is reported explicitly so
 // a stale browser view cannot look like a successful state transition.
-func (s *Service) AdminUnblockRegistration(ctx context.Context, adminID, telegramID int64) error {
-	if err := s.adminGuard(adminID); err != nil {
-		return err
-	}
+func (s *Service) adminUnblockRegistration(ctx context.Context, telegramID int64) error {
 	if telegramID <= 0 {
 		return ErrBadInput
 	}

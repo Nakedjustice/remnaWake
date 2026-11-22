@@ -78,11 +78,11 @@ func TestSupportAdminReplyDeliversToUser(t *testing.T) {
 	ctx := context.Background()
 
 	// Non-admin caller is rejected.
-	if err := svc.SupportSendAdmin(ctx, 555, supportUser, "hi"); !errors.Is(err, ErrNotAdmin) {
+	if err := runOpErr(ctx, svc, 555, "support.send", &AdminSupportSendInput{UserID: supportUser, Text: "hi"}); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("non-admin reply: want ErrNotAdmin, got %v", err)
 	}
 
-	if err := svc.SupportSendAdmin(ctx, 1000, supportUser, "how can I help?"); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "support.send", &AdminSupportSendInput{UserID: supportUser, Text: "how can I help?"}); err != nil {
 		t.Fatalf("admin reply: %v", err)
 	}
 	userMsgs := sentTo(bot, supportUser)
@@ -104,30 +104,30 @@ func TestSupportAdminViewsAndClose(t *testing.T) {
 	}
 
 	// Non-admins cannot list or read conversations.
-	if _, err := svc.SupportConversations(ctx, 555); !errors.Is(err, ErrNotAdmin) {
+	if _, err := runOp[[]WebSupportConversation](t, ctx, svc, 555, "support.conversations", nil); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("conversations non-admin: %v", err)
 	}
 
-	convs, err := svc.SupportConversations(ctx, 1000)
+	convs, err := runOp[[]WebSupportConversation](t, ctx, svc, 1000, "support.conversations", nil)
 	if err != nil || len(convs) != 1 || convs[0].UserID != supportUser || convs[0].Unread != 1 {
 		t.Fatalf("conversations: %+v err %v", convs, err)
 	}
 
 	// Opening the thread marks user messages read.
-	thread, err := svc.SupportThreadAdmin(ctx, 1000, supportUser)
+	thread, err := runOp[*WebSupport](t, ctx, svc, 1000, "support.thread", &AdminSupportUserInput{UserID: supportUser})
 	if err != nil || !thread.Open || len(thread.Messages) != 1 {
 		t.Fatalf("thread: %+v err %v", thread, err)
 	}
-	convs, _ = svc.SupportConversations(ctx, 1000)
+	convs, _ = runOp[[]WebSupportConversation](t, ctx, svc, 1000, "support.conversations", nil)
 	if convs[0].Unread != 0 {
 		t.Fatalf("unread should clear after admin reads: %+v", convs)
 	}
 
 	// Closing deletes the thread.
-	if err := svc.SupportCloseAdmin(ctx, 1000, supportUser); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "support.close", &AdminIDInput{ID: supportUser}); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if convs, _ := svc.SupportConversations(ctx, 1000); len(convs) != 0 {
+	if convs, _ := runOp[[]WebSupportConversation](t, ctx, svc, 1000, "support.conversations", nil); len(convs) != 0 {
 		t.Fatalf("conversations after close: %+v", convs)
 	}
 }

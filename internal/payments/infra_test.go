@@ -38,16 +38,16 @@ func TestInfraAdminGuard(t *testing.T) {
 	ctx := context.Background()
 
 	checks := map[string]error{}
-	_, err := svc.AdminListInfraServers(ctx, userTG)
+	_, err := runOp[[]WebInfraServer](t, ctx, svc, userTG, "servers.list", nil)
 	checks["list"] = err
-	checks["save"] = svc.AdminSaveInfraServer(ctx, userTG, WebInfraServerInput{Name: "x", Currency: "USD", PeriodMonths: 1})
-	checks["delete"] = svc.AdminDeleteInfraServer(ctx, userTG, 1)
-	checks["paid"] = svc.AdminMarkInfraServerPaid(ctx, userTG, 1)
-	_, err = svc.AdminListFxRates(ctx, userTG)
+	checks["save"] = runOpErr(ctx, svc, userTG, "server.save", &WebInfraServerInput{Name: "x", Currency: "USD", PeriodMonths: 1})
+	checks["delete"] = runOpErr(ctx, svc, userTG, "server.delete", &AdminIDInput{ID: 1})
+	checks["paid"] = runOpErr(ctx, svc, userTG, "server.paid", &AdminIDInput{ID: 1})
+	_, err = runOp[*WebFxRates](t, ctx, svc, userTG, "fx.list", nil)
 	checks["fx"] = err
-	checks["manual"] = svc.AdminSetManualFxRate(ctx, userTG, "USD", 90)
-	checks["base"] = svc.AdminSetBaseCurrency(ctx, userTG, "USD")
-	checks["refresh"] = svc.AdminRefreshFxRates(ctx, userTG)
+	checks["manual"] = runOpErr(ctx, svc, userTG, "fx.manual.set", &AdminFxRateInput{Currency: "USD", Rate: 90})
+	checks["base"] = runOpErr(ctx, svc, userTG, "fx.base.set", &AdminCurrencyInput{Currency: "USD"})
+	checks["refresh"] = runOpErr(ctx, svc, userTG, "fx.refresh", nil)
 	for name, err := range checks {
 		if !errors.Is(err, ErrNotAdmin) {
 			t.Errorf("%s: err = %v, want ErrNotAdmin", name, err)
@@ -61,17 +61,17 @@ func TestInfraServerLifecycleAndConversion(t *testing.T) {
 	svc.now = func() time.Time { return time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC) }
 
 	// Manual USD rate; base is RUB (derived from the "₽" service currency).
-	if err := svc.AdminSetManualFxRate(ctx, adminTG, "USD", 90); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "fx.manual.set", &AdminFxRateInput{Currency: "USD", Rate: 90}); err != nil {
 		t.Fatalf("manual rate: %v", err)
 	}
-	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+	if err := runOpErr(ctx, svc, adminTG, "server.save", &WebInfraServerInput{
 		Name: "edge", Hoster: "Hetzner", Country: "DE", CPUCores: 4, RAMMB: 8192,
 		Price: 30, Currency: "usd", PeriodMonths: 3, NextDue: "2026-06-17",
 	}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 
-	list, err := svc.AdminListInfraServers(ctx, adminTG)
+	list, err := runOp[[]WebInfraServer](t, ctx, svc, adminTG, "servers.list", nil)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("list: %d err %v", len(list), err)
 	}
@@ -88,16 +88,16 @@ func TestInfraServerLifecycleAndConversion(t *testing.T) {
 	}
 
 	// Mark paid advances the due date by the 3-month period.
-	if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, srv.ID); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "server.paid", &AdminIDInput{ID: srv.ID}); err != nil {
 		t.Fatalf("paid: %v", err)
 	}
-	list, _ = svc.AdminListInfraServers(ctx, adminTG)
+	list, _ = runOp[[]WebInfraServer](t, ctx, svc, adminTG, "servers.list", nil)
 	if list[0].NextDue != "17.09.2026" {
 		t.Fatalf("advanced due: %q", list[0].NextDue)
 	}
 
 	// The cost surfaces in the stats payload.
-	stats, err := svc.AdminStatsData(ctx, adminTG)
+	stats, err := runOp[*WebAdminStats](t, ctx, svc, adminTG, "stats.get", nil)
 	if err != nil {
 		t.Fatalf("stats: %v", err)
 	}
@@ -106,25 +106,25 @@ func TestInfraServerLifecycleAndConversion(t *testing.T) {
 	}
 
 	// Validation + delete.
-	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{Name: "", Currency: "USD", PeriodMonths: 1}); !errors.Is(err, ErrBadInput) {
+	if err := runOpErr(ctx, svc, adminTG, "server.save", &WebInfraServerInput{Name: "", Currency: "USD", PeriodMonths: 1}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("empty name: %v", err)
 	}
 	// A price typed into the period box, or a mistyped year, is rejected rather
 	// than stored and walked decades out by the next "paid" click.
-	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+	if err := runOpErr(ctx, svc, adminTG, "server.save", &WebInfraServerInput{
 		Name: "x", Currency: "USD", PeriodMonths: infraMaxPeriodMonths + 1,
 	}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("oversized period: %v", err)
 	}
-	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+	if err := runOpErr(ctx, svc, adminTG, "server.save", &WebInfraServerInput{
 		Name: "x", Currency: "USD", PeriodMonths: 1, NextDue: "2054-08-29",
 	}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("far-future due date: %v", err)
 	}
-	if err := svc.AdminDeleteInfraServer(ctx, adminTG, srv.ID); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "server.delete", &AdminIDInput{ID: srv.ID}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if err := svc.AdminDeleteInfraServer(ctx, adminTG, srv.ID); !errors.Is(err, ErrInfraServerUnknown) {
+	if err := runOpErr(ctx, svc, adminTG, "server.delete", &AdminIDInput{ID: srv.ID}); !errors.Is(err, ErrInfraServerUnknown) {
 		t.Fatalf("delete missing: %v", err)
 	}
 }
@@ -143,7 +143,7 @@ func TestInfraMarkPaidIsIdempotent(t *testing.T) {
 	// The first click advances one period; the next ten (a button that did not
 	// visibly react, tapped again) must not stack another period each.
 	for i := 0; i < 11; i++ {
-		if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, id); err != nil {
+		if err := runOpErr(ctx, svc, adminTG, "server.paid", &AdminIDInput{ID: id}); err != nil {
 			t.Fatalf("paid %d: %v", i, err)
 		}
 	}
@@ -158,7 +158,7 @@ func TestInfraMarkPaidIsIdempotent(t *testing.T) {
 		Name: "today", Price: 5, Currency: "USD", PeriodMonths: 1, NextDueAt: now,
 	})
 	for i := 0; i < 2; i++ {
-		if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, today); err != nil {
+		if err := runOpErr(ctx, svc, adminTG, "server.paid", &AdminIDInput{ID: today}); err != nil {
 			t.Fatalf("paid today %d: %v", i, err)
 		}
 	}
@@ -172,7 +172,7 @@ func TestInfraMarkPaidIsIdempotent(t *testing.T) {
 		Name: "old", Price: 5, Currency: "USD", PeriodMonths: 1,
 		NextDueAt: time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC),
 	})
-	if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, overdue); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "server.paid", &AdminIDInput{ID: overdue}); err != nil {
 		t.Fatalf("paid overdue: %v", err)
 	}
 	srv, _ = st.GetInfraServer(ctx, overdue)
@@ -184,7 +184,7 @@ func TestInfraMarkPaidIsIdempotent(t *testing.T) {
 	fresh, _ := st.CreateInfraServer(ctx, store.InfraServer{
 		Name: "new", Price: 5, Currency: "USD", PeriodMonths: 3,
 	})
-	if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, fresh); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "server.paid", &AdminIDInput{ID: fresh}); err != nil {
 		t.Fatalf("paid fresh: %v", err)
 	}
 	srv, _ = st.GetInfraServer(ctx, fresh)
@@ -197,7 +197,7 @@ func TestInfraMarkPaidIsIdempotent(t *testing.T) {
 		Name: "legacy", Price: 5, Currency: "USD", PeriodMonths: 336,
 		NextDueAt: time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC),
 	})
-	if err := svc.AdminMarkInfraServerPaid(ctx, adminTG, legacy); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "server.paid", &AdminIDInput{ID: legacy}); err != nil {
 		t.Fatalf("paid legacy: %v", err)
 	}
 	srv, _ = st.GetInfraServer(ctx, legacy)
@@ -212,22 +212,22 @@ func TestInfraFxAutoPreferredAndUnconverted(t *testing.T) {
 	svc.now = func() time.Time { return time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC) }
 
 	// EUR server with no rate yet → unconverted.
-	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+	if err := runOpErr(ctx, svc, adminTG, "server.save", &WebInfraServerInput{
 		Name: "eu", Price: 10, Currency: "EUR", PeriodMonths: 1,
 	}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	list, _ := svc.AdminListInfraServers(ctx, adminTG)
+	list, _ := runOp[[]WebInfraServer](t, ctx, svc, adminTG, "servers.list", nil)
 	if list[0].Converted || list[0].MonthlyBaseLabel != "≈ — (нет курса)" {
 		t.Fatalf("expected unconverted: %+v", list[0])
 	}
-	fx, err := svc.AdminListFxRates(ctx, adminTG)
+	fx, err := runOp[*WebFxRates](t, ctx, svc, adminTG, "fx.list", nil)
 	if err != nil || fx.BaseCurrency != "RUB" || fx.Unconverted != 1 {
 		t.Fatalf("fx overview: %+v err %v", fx, err)
 	}
 
 	// Manual fallback makes it convertible.
-	if err := svc.AdminSetManualFxRate(ctx, adminTG, "EUR", 100); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "fx.manual.set", &AdminFxRateInput{Currency: "EUR", Rate: 100}); err != nil {
 		t.Fatalf("manual: %v", err)
 	}
 	// A fetched auto rate then wins over the manual fallback.
@@ -239,7 +239,7 @@ func TestInfraFxAutoPreferredAndUnconverted(t *testing.T) {
 	if fetcher.calls != 1 || fetcher.base != "RUB" {
 		t.Fatalf("fetch calls=%d base=%q", fetcher.calls, fetcher.base)
 	}
-	list, _ = svc.AdminListInfraServers(ctx, adminTG)
+	list, _ = runOp[[]WebInfraServer](t, ctx, svc, adminTG, "servers.list", nil)
 	// 10 EUR/mo * 105 = 1050₽.
 	if list[0].MonthlyBaseLabel != "≈ 1050₽/мес" {
 		t.Fatalf("auto-converted: %+v", list[0])
@@ -252,7 +252,7 @@ func TestRefreshFxMultipleServerCurrencies(t *testing.T) {
 	svc.now = func() time.Time { return time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC) }
 
 	for _, c := range []string{"USD", "EUR"} {
-		if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+		if err := runOpErr(ctx, svc, adminTG, "server.save", &WebInfraServerInput{
 			Name: "srv-" + c, Price: 10, Currency: c, PeriodMonths: 1,
 		}); err != nil {
 			t.Fatalf("save %s: %v", c, err)
@@ -277,12 +277,12 @@ func TestRefreshFxStoredRateWithoutServer(t *testing.T) {
 
 	// One server in USD; EUR has only an admin-entered manual rate (its server
 	// was removed, say) so it still shows as a pair in the FX card.
-	if err := svc.AdminSaveInfraServer(ctx, adminTG, WebInfraServerInput{
+	if err := runOpErr(ctx, svc, adminTG, "server.save", &WebInfraServerInput{
 		Name: "us", Price: 10, Currency: "USD", PeriodMonths: 1,
 	}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	if err := svc.AdminSetManualFxRate(ctx, adminTG, "EUR", 100); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "fx.manual.set", &AdminFxRateInput{Currency: "EUR", Rate: 100}); err != nil {
 		t.Fatalf("manual: %v", err)
 	}
 

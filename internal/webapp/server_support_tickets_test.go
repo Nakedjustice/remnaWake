@@ -50,32 +50,6 @@ func (f *fakeCabinet) SupportCloseTicketUser(_ context.Context, telegramID, tick
 	return f.ticketErr
 }
 
-func (f *fakeAdmin) SupportTicketsAdmin(_ context.Context, tgID int64) ([]payments.WebSupportTicket, error) {
-	f.calls = append(f.calls, adminCall{Name: "support_tickets", A: tgID})
-	if f.err != nil {
-		return nil, f.err
-	}
-	return []payments.WebSupportTicket{{ID: 9, Status: "open", UserID: 200}}, nil
-}
-
-func (f *fakeAdmin) SupportTicketThreadAdmin(_ context.Context, tgID, ticketID int64) (*payments.WebSupportThread, error) {
-	f.calls = append(f.calls, adminCall{Name: "support_ticket_thread", A: tgID, B: ticketID})
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &payments.WebSupportThread{Ticket: payments.WebSupportTicket{ID: ticketID, Status: "open"}}, nil
-}
-
-func (f *fakeAdmin) SupportReplyTicketAdmin(_ context.Context, tgID, ticketID int64, text string) error {
-	f.calls = append(f.calls, adminCall{Name: "support_ticket_reply", A: tgID, B: ticketID, Text: text})
-	return f.err
-}
-
-func (f *fakeAdmin) SupportCloseTicketAdmin(_ context.Context, tgID, ticketID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "support_ticket_close", A: tgID, B: ticketID})
-	return f.err
-}
-
 // --- routes ---
 
 func ticketCall(t *testing.T, srv *Server, method, path, body string) *httptest.ResponseRecorder {

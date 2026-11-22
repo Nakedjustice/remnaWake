@@ -41,10 +41,10 @@ func TestAdminPaymentReportMapsHistoryAndGuardsAdmin(t *testing.T) {
 	}
 
 	filter := WebPaymentFilter{Days: 30, Status: "all", Provider: "all", Page: 1}
-	if _, err := svc.AdminPaymentReport(ctx, 2000, filter); !errors.Is(err, ErrNotAdmin) {
+	if _, err := runOp[*WebPaymentReport](t, ctx, svc, 2000, "payments.report", &filter); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("non-admin error = %v", err)
 	}
-	report, err := svc.AdminPaymentReport(ctx, 1000, filter)
+	report, err := runOp[*WebPaymentReport](t, ctx, svc, 1000, "payments.report", &filter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,12 +79,12 @@ func TestAdminPaymentReportMapsHistoryAndGuardsAdmin(t *testing.T) {
 func TestAdminPaymentReportRejectsInvalidFilter(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	ctx := context.Background()
-	if _, err := svc.AdminPaymentReport(ctx, 1000, WebPaymentFilter{
+	if _, err := runOp[*WebPaymentReport](t, ctx, svc, 1000, "payments.report", &WebPaymentFilter{
 		Days: 14, Status: "all", Provider: "all", Page: 1,
 	}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("days: error = %v, want ErrBadInput", err)
 	}
-	if _, err := svc.AdminPaymentReport(ctx, 1000, WebPaymentFilter{
+	if _, err := runOp[*WebPaymentReport](t, ctx, svc, 1000, "payments.report", &WebPaymentFilter{
 		Days: 30, Status: "all", Provider: "all", Kind: "bogus", Page: 1,
 	}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("kind: error = %v, want ErrBadInput", err)

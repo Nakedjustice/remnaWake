@@ -607,7 +607,7 @@ func TestScreenshotToggleIgnoresNonAdmin(t *testing.T) {
 	if svc.getRequireScreenshot() {
 		t.Fatal("non-admin must not flip the toggle")
 	}
-	if err := svc.AdminSetRequireScreenshot(ctx, 9999, true); !errors.Is(err, ErrNotAdmin) {
+	if err := runOpErr(ctx, svc, 9999, "screenshot.set", &AdminToggleInput{Enabled: true}); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("expected ErrNotAdmin, got %v", err)
 	}
 }

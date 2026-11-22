@@ -342,275 +342,249 @@ type fakeAdmin struct {
 	calls        []adminCall
 }
 
-func (f *fakeAdmin) AdminSendBackup(_ context.Context, tgID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "backup", A: tgID})
-	return f.err
-}
-
-func (f *fakeAdmin) AdminSetBackupSchedule(_ context.Context, tgID int64, enabled bool, intervalDays int) error {
-	f.calls = append(f.calls, adminCall{
-		Name: "backup schedule", A: tgID, B: int64(intervalDays), Text: fmt.Sprintf("%t", enabled),
-	})
-	return f.err
-}
-
-func (f *fakeAdmin) AdminPanelData(_ context.Context, tgID int64) (*payments.WebAdminPanel, error) {
-	f.calls = append(f.calls, adminCall{Name: "panel", A: tgID})
-	return f.panel, f.err
-}
-func (f *fakeAdmin) AdminActionCenter(_ context.Context, tgID int64) (*payments.WebAdminActionCenter, error) {
-	f.calls = append(f.calls, adminCall{Name: "action-center", A: tgID})
-	return f.actionCenter, f.err
-}
-func (f *fakeAdmin) AdminStatsData(_ context.Context, tgID int64) (*payments.WebAdminStats, error) {
-	f.calls = append(f.calls, adminCall{Name: "stats", A: tgID})
-	return f.stats, f.err
-}
-func (f *fakeAdmin) AdminOperatorAnalytics(_ context.Context, tgID int64, days int) (*payments.WebOperatorAnalytics, error) {
-	f.calls = append(f.calls, adminCall{Name: "analytics", A: tgID, B: int64(days)})
-	return f.analytics, f.err
-}
-func (f *fakeAdmin) AdminProxyHealth(_ context.Context, tgID int64) (*payments.WebProxyHealth, error) {
-	f.calls = append(f.calls, adminCall{Name: "proxy-health", A: tgID})
-	return f.proxyHealth, f.err
-}
-func (f *fakeAdmin) AdminSetProxyNotification(_ context.Context, tgID int64, name, address, subName string, muted bool) error {
-	f.calls = append(f.calls, adminCall{Name: "proxy-notification", A: tgID, Text: fmt.Sprintf("%s|%s|%s|%t", address, name, subName, muted)})
-	return f.err
-}
-func (f *fakeAdmin) AdminPaymentReport(_ context.Context, tgID int64, filter payments.WebPaymentFilter) (*payments.WebPaymentReport, error) {
-	f.calls = append(f.calls, adminCall{Name: "payments", A: tgID, B: int64(filter.Page), Text: fmt.Sprintf("%d:%s:%s:%s:%s", filter.Days, filter.Status, filter.Provider, filter.Kind, filter.Query)})
-	return f.report, f.err
-}
-func (f *fakeAdmin) AdminDeletePaymentRequest(_ context.Context, tgID, id int64) error {
-	f.calls = append(f.calls, adminCall{Name: "delete payment", A: tgID, B: id})
-	return f.err
-}
-func (f *fakeAdmin) AdminDeleteGiftCode(_ context.Context, tgID, id int64) error {
-	f.calls = append(f.calls, adminCall{Name: "delete gift", A: tgID, B: id})
-	return f.err
-}
-func (f *fakeAdmin) AdminDeleteInviteRequest(_ context.Context, tgID, id int64) error {
-	f.calls = append(f.calls, adminCall{Name: "delete invite", A: tgID, B: id})
-	return f.err
-}
-func (f *fakeAdmin) AdminCheckUpdates(_ context.Context, tgID int64) (*payments.WebUpdateCheckResult, error) {
-	f.calls = append(f.calls, adminCall{Name: "checkupdates", A: tgID})
-	return &payments.WebUpdateCheckResult{Status: "up_to_date", Message: "ok"}, f.err
-}
-func (f *fakeAdmin) AdminSetUpdateInterval(_ context.Context, tgID int64, interval string) error {
-	f.calls = append(f.calls, adminCall{Name: "setupdateinterval", A: tgID, Text: interval})
-	return f.err
-}
-func (f *fakeAdmin) AdminSetTariff(_ context.Context, tgID int64, plan string, months, price int) error {
-	f.calls = append(f.calls, adminCall{Name: "settariff", A: int64(months), B: int64(price), Text: plan})
-	return f.err
-}
-func (f *fakeAdmin) AdminDeleteTariff(_ context.Context, tgID int64, plan string, months int) error {
-	f.calls = append(f.calls, adminCall{Name: "deltariff", A: int64(months), Text: plan})
-	return f.err
-}
-func (f *fakeAdmin) AdminSetTrafficExtensionOption(_ context.Context, tgID int64, trafficGB, price int) error {
-	f.calls = append(f.calls, adminCall{Name: "settraffic", A: int64(trafficGB), B: int64(price)})
-	return f.err
-}
-func (f *fakeAdmin) AdminDeleteTrafficExtensionOption(_ context.Context, tgID int64, trafficGB int) error {
-	f.calls = append(f.calls, adminCall{Name: "deltraffic", A: int64(trafficGB)})
-	return f.err
-}
-func (f *fakeAdmin) AdminSetPlan(_ context.Context, tgID int64, in payments.WebAdminPlan) error {
-	f.calls = append(f.calls, adminCall{Name: "setplan", A: tgID, Text: in.Code})
-	return f.err
-}
-func (f *fakeAdmin) AdminDeletePlan(_ context.Context, tgID int64, code string) error {
-	f.calls = append(f.calls, adminCall{Name: "delplan", A: tgID, Text: code})
-	return f.err
-}
-func (f *fakeAdmin) AdminSetRequisites(_ context.Context, tgID int64, text string) error {
-	f.calls = append(f.calls, adminCall{Name: "setreq", Text: text})
-	return f.err
-}
-func (f *fakeAdmin) AdminSetTrial(_ context.Context, tgID int64, cfg payments.TrialConfig) error {
-	f.calls = append(f.calls, adminCall{Name: "settrial", A: tgID, B: int64(cfg.Days), Text: fmt.Sprintf("%t:%d:%d:%s", cfg.Enabled, cfg.TrafficLimitGB, cfg.HwidDeviceLimit, cfg.SquadUUID)})
-	return f.err
-}
-func (f *fakeAdmin) AdminSetReferral(_ context.Context, tgID int64, enabled bool, inviter, invitee int) error {
-	f.calls = append(f.calls, adminCall{Name: "setreferral", A: int64(inviter), B: int64(invitee), Text: fmt.Sprintf("%t", enabled)})
-	return f.err
-}
-func (f *fakeAdmin) AdminAddRegistrationGuardPattern(_ context.Context, tgID int64, pattern string) error {
-	f.calls = append(f.calls, adminCall{Name: "addguardpattern", A: tgID, Text: pattern})
-	return f.err
-}
-func (f *fakeAdmin) AdminDeleteRegistrationGuardPattern(_ context.Context, tgID int64, pattern string) error {
-	f.calls = append(f.calls, adminCall{Name: "deleteguardpattern", A: tgID, Text: pattern})
-	return f.err
-}
-func (f *fakeAdmin) AdminUnblockRegistration(_ context.Context, tgID, blockedTGID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "unblockregistration", A: tgID, B: blockedTGID})
-	return f.err
-}
-func (f *fakeAdmin) AdminSetRequireScreenshot(_ context.Context, tgID int64, on bool) error {
-	var b int64
-	if on {
-		b = 1
-	}
-	f.calls = append(f.calls, adminCall{Name: "setshot", A: tgID, B: b})
-	return f.err
-}
-
-func (f *fakeAdmin) AdminSetProviderEnabled(_ context.Context, tgID int64, _ string, _ bool) error {
-	f.calls = append(f.calls, adminCall{Name: "setprovider", A: tgID})
-	return f.err
-}
-func (f *fakeAdmin) AdminListSquads(_ context.Context, tgID int64) ([]payments.WebSquad, error) {
-	f.calls = append(f.calls, adminCall{Name: "listsquads", A: tgID})
-	if f.err != nil {
+// RunAdminOp mirrors the one-method Admin interface the op registry exposes.
+// It records the same adminCall entries the old per-method fake recorded,
+// keyed by op name, so the route assertions below stay unchanged.
+func (f *fakeAdmin) RunAdminOp(_ context.Context, actorID int64, name string, in any) (any, error) {
+	rec := func(c adminCall) { f.calls = append(f.calls, c) }
+	id := func() int64 { return in.(*payments.AdminIDInput).ID }
+	switch name {
+	case "backup.send":
+		rec(adminCall{Name: "backup", A: actorID})
+		return nil, f.err
+	case "backup.schedule.set":
+		p := in.(*payments.AdminBackupScheduleInput)
+		rec(adminCall{Name: "backup schedule", A: actorID, B: int64(p.IntervalDays), Text: fmt.Sprintf("%t", p.Enabled)})
+		return nil, f.err
+	case "panel.get":
+		rec(adminCall{Name: "panel", A: actorID})
+		return f.panel, f.err
+	case "action_center.get":
+		rec(adminCall{Name: "action-center", A: actorID})
+		return f.actionCenter, f.err
+	case "stats.get":
+		rec(adminCall{Name: "stats", A: actorID})
+		return f.stats, f.err
+	case "analytics.get":
+		p := in.(*payments.AdminAnalyticsInput)
+		rec(adminCall{Name: "analytics", A: actorID, B: int64(p.Days)})
+		return f.analytics, f.err
+	case "proxy_health.get":
+		rec(adminCall{Name: "proxy-health", A: actorID})
+		return f.proxyHealth, f.err
+	case "proxy_notification.set":
+		p := in.(*payments.AdminProxyNotifInput)
+		rec(adminCall{Name: "proxy-notification", A: actorID, Text: fmt.Sprintf("%s|%s|%s|%t", p.Address, p.Name, p.SubName, p.Muted)})
+		return nil, f.err
+	case "payments.report":
+		p := in.(*payments.WebPaymentFilter)
+		rec(adminCall{Name: "payments", A: actorID, B: int64(p.Page), Text: fmt.Sprintf("%d:%s:%s:%s:%s", p.Days, p.Status, p.Provider, p.Kind, p.Query)})
+		return f.report, f.err
+	case "request.delete":
+		rec(adminCall{Name: "delete payment", A: actorID, B: id()})
+		return nil, f.err
+	case "gift.delete":
+		rec(adminCall{Name: "delete gift", A: actorID, B: id()})
+		return nil, f.err
+	case "invite.delete":
+		rec(adminCall{Name: "delete invite", A: actorID, B: id()})
+		return nil, f.err
+	case "updates.check":
+		rec(adminCall{Name: "checkupdates", A: actorID})
+		return &payments.WebUpdateCheckResult{Status: "up_to_date", Message: "ok"}, f.err
+	case "updates.interval.set":
+		rec(adminCall{Name: "setupdateinterval", A: actorID, Text: in.(*payments.AdminIntervalInput).Interval})
+		return nil, f.err
+	case "tariff.set":
+		p := in.(*payments.AdminTariffInput)
+		rec(adminCall{Name: "settariff", A: int64(p.Months), B: int64(p.Price), Text: p.Plan})
+		return nil, f.err
+	case "tariff.delete":
+		p := in.(*payments.AdminTariffDeleteInput)
+		rec(adminCall{Name: "deltariff", A: int64(p.Months), Text: p.Plan})
+		return nil, f.err
+	case "traffic_ext.set":
+		p := in.(*payments.AdminTrafficExtInput)
+		rec(adminCall{Name: "settraffic", A: int64(p.TrafficGB), B: int64(p.Price)})
+		return nil, f.err
+	case "traffic_ext.delete":
+		rec(adminCall{Name: "deltraffic", A: int64(in.(*payments.AdminTrafficExtDeleteInput).TrafficGB)})
+		return nil, f.err
+	case "plan.set":
+		rec(adminCall{Name: "setplan", A: actorID, Text: in.(*payments.WebAdminPlan).Code})
+		return nil, f.err
+	case "plan.delete":
+		rec(adminCall{Name: "delplan", A: actorID, Text: in.(*payments.AdminPlanDeleteInput).Code})
+		return nil, f.err
+	case "requisites.set":
+		rec(adminCall{Name: "setreq", Text: in.(*payments.AdminTextInput).Text})
+		return nil, f.err
+	case "trial.set":
+		p := in.(*payments.AdminTrialInput)
+		rec(adminCall{Name: "settrial", A: actorID, B: int64(p.Days), Text: fmt.Sprintf("%t:%d:%d:%s", p.Enabled, p.TrafficLimitGB, p.HwidDeviceLimit, p.SquadUUID)})
+		return nil, f.err
+	case "referral.set":
+		p := in.(*payments.AdminReferralInput)
+		rec(adminCall{Name: "setreferral", A: int64(p.InviterDays), B: int64(p.InviteeDays), Text: fmt.Sprintf("%t", p.Enabled)})
+		return nil, f.err
+	case "guard.pattern.add":
+		rec(adminCall{Name: "addguardpattern", A: actorID, Text: in.(*payments.AdminPatternInput).Pattern})
+		return nil, f.err
+	case "guard.pattern.delete":
+		rec(adminCall{Name: "deleteguardpattern", A: actorID, Text: in.(*payments.AdminPatternInput).Pattern})
+		return nil, f.err
+	case "guard.unblock":
+		rec(adminCall{Name: "unblockregistration", A: actorID, B: in.(*payments.AdminUnblockInput).TelegramID})
+		return nil, f.err
+	case "screenshot.set":
+		var b int64
+		if in.(*payments.AdminToggleInput).Enabled {
+			b = 1
+		}
+		rec(adminCall{Name: "setshot", A: actorID, B: b})
+		return nil, f.err
+	case "provider.set":
+		rec(adminCall{Name: "setprovider", A: actorID})
+		return nil, f.err
+	case "squads.list":
+		rec(adminCall{Name: "listsquads", A: actorID})
+		if f.err != nil {
+			return nil, f.err
+		}
+		return []payments.WebSquad{
+			{UUID: "sq-1", Name: "Default-Squad", Selected: true},
+			{UUID: "sq-2", Name: "Premium"},
+		}, nil
+	case "squad.default.set":
+		rec(adminCall{Name: "setsquad", A: actorID, Text: in.(*payments.AdminUUIDInput).UUID})
+		return nil, f.err
+	case "users.list":
+		p := in.(*payments.AdminCohortInput)
+		if p.Cohort != "" {
+			rec(adminCall{Name: "listuserscohort", A: actorID, Text: p.Cohort})
+			if f.err != nil {
+				return nil, f.err
+			}
+			return []payments.WebUserRow{{Username: "bob", Status: "EXPIRED", ExpireAt: "01.06.2026"}}, nil
+		}
+		rec(adminCall{Name: "listusers", A: actorID})
+		if f.err != nil {
+			return nil, f.err
+		}
+		return []payments.WebUserRow{{Username: "alice", Status: "ACTIVE", ExpireAt: "01.07.2026"}}, nil
+	case "traffic_reset.set":
+		rec(adminCall{Name: "settreset", A: actorID, Text: in.(*payments.AdminStrategyInput).Strategy})
+		return nil, f.err
+	case "user.find":
+		p := in.(*payments.AdminFindUserInput)
+		rec(adminCall{Name: "finduser", A: actorID, Text: p.Query})
+		if f.err != nil {
+			return nil, f.err
+		}
+		return &payments.WebManagedUser{Username: p.Query, Status: "ACTIVE"}, nil
+	case "user.update":
+		rec(adminCall{Name: "updateuser", A: actorID, B: in.(*payments.WebUserUpdate).RemnawaveID})
+		return nil, f.err
+	case "gift.revoke":
+		rec(adminCall{Name: "revoke", A: id()})
+		return nil, f.err
+	case "request.confirm":
+		rec(adminCall{Name: "confirm", A: id()})
+		return nil, f.err
+	case "request.reject":
+		rec(adminCall{Name: "reject", A: id()})
+		return nil, f.err
+	case "gift_request.confirm":
+		rec(adminCall{Name: "giftconfirm", A: id()})
+		return nil, f.err
+	case "gift_request.reject":
+		rec(adminCall{Name: "giftreject", A: id()})
+		return nil, f.err
+	case "invite_request.approve":
+		rec(adminCall{Name: "inviteapprove", A: id()})
+		return nil, f.err
+	case "invite_request.reject":
+		rec(adminCall{Name: "invitereject", A: id()})
+		return nil, f.err
+	case "trial_request.approve":
+		rec(adminCall{Name: "trialapprove", A: id()})
+		return nil, f.err
+	case "trial_request.reject":
+		rec(adminCall{Name: "trialreject", A: id()})
+		return nil, f.err
+	case "broadcast.start":
+		p := in.(*payments.AdminBroadcastInput)
+		rec(adminCall{Name: "broadcast", A: actorID, Text: p.Message})
+		if f.err != nil {
+			return nil, f.err
+		}
+		return &payments.WebBroadcastResult{Ok: true, Started: true}, nil
+	case "servers.list":
+		rec(adminCall{Name: "list_servers", A: actorID})
+		return nil, f.err
+	case "server.save":
+		rec(adminCall{Name: "save_server", A: actorID, Text: in.(*payments.WebInfraServerInput).Name})
+		return nil, f.err
+	case "server.delete":
+		rec(adminCall{Name: "delete_server", A: actorID, B: id()})
+		return nil, f.err
+	case "server.paid":
+		rec(adminCall{Name: "paid_server", A: actorID, B: id()})
+		return nil, f.err
+	case "fx.list":
+		rec(adminCall{Name: "list_fx", A: actorID})
+		if f.err != nil {
+			return nil, f.err
+		}
+		return &payments.WebFxRates{}, nil
+	case "fx.manual.set":
+		rec(adminCall{Name: "set_fx", A: actorID, Text: in.(*payments.AdminFxRateInput).Currency})
+		return nil, f.err
+	case "fx.base.set":
+		rec(adminCall{Name: "set_base", A: actorID, Text: in.(*payments.AdminCurrencyInput).Currency})
+		return nil, f.err
+	case "fx.refresh":
+		rec(adminCall{Name: "refresh_fx", A: actorID})
+		return nil, f.err
+	case "support.conversations":
+		rec(adminCall{Name: "support_conversations", A: actorID})
+		return nil, f.err
+	case "support.thread":
+		rec(adminCall{Name: "support_thread", A: actorID, B: in.(*payments.AdminSupportUserInput).UserID})
+		if f.err != nil {
+			return nil, f.err
+		}
+		return &payments.WebSupport{}, nil
+	case "support.send":
+		p := in.(*payments.AdminSupportSendInput)
+		rec(adminCall{Name: "support_send", A: actorID, B: p.UserID, Text: p.Text})
+		return nil, f.err
+	case "support.close":
+		rec(adminCall{Name: "support_close", A: actorID, B: id()})
+		return nil, f.err
+	case "support.tickets":
+		rec(adminCall{Name: "support_tickets", A: actorID})
+		if f.err != nil {
+			return nil, f.err
+		}
+		return []payments.WebSupportTicket{{ID: 9, Status: "open", UserID: 200}}, nil
+	case "support.ticket.thread":
+		p := in.(*payments.AdminTicketInput)
+		rec(adminCall{Name: "support_ticket_thread", A: actorID, B: p.TicketID})
+		if f.err != nil {
+			return nil, f.err
+		}
+		return &payments.WebSupportThread{Ticket: payments.WebSupportTicket{ID: p.TicketID, Status: "open"}}, nil
+	case "support.ticket.reply":
+		p := in.(*payments.AdminTicketReplyInput)
+		rec(adminCall{Name: "support_ticket_reply", A: actorID, B: p.TicketID, Text: p.Text})
+		return nil, f.err
+	case "support.ticket.close":
+		p := in.(*payments.AdminTicketInput)
+		rec(adminCall{Name: "support_ticket_close", A: actorID, B: p.TicketID})
 		return nil, f.err
 	}
-	return []payments.WebSquad{
-		{UUID: "sq-1", Name: "Default-Squad", Selected: true},
-		{UUID: "sq-2", Name: "Premium"},
-	}, nil
-}
-func (f *fakeAdmin) AdminSetDefaultSquad(_ context.Context, tgID int64, uuid string) error {
-	f.calls = append(f.calls, adminCall{Name: "setsquad", A: tgID, Text: uuid})
-	return f.err
-}
-func (f *fakeAdmin) AdminListUsers(_ context.Context, tgID int64) ([]payments.WebUserRow, error) {
-	f.calls = append(f.calls, adminCall{Name: "listusers", A: tgID})
-	if f.err != nil {
-		return nil, f.err
-	}
-	return []payments.WebUserRow{
-		{Username: "alice", Status: "ACTIVE", ExpireAt: "01.07.2026"},
-	}, nil
-}
-func (f *fakeAdmin) AdminListUsersByCohort(_ context.Context, tgID int64, cohort string) ([]payments.WebUserRow, error) {
-	f.calls = append(f.calls, adminCall{Name: "listuserscohort", A: tgID, Text: cohort})
-	if f.err != nil {
-		return nil, f.err
-	}
-	return []payments.WebUserRow{
-		{Username: "bob", Status: "EXPIRED", ExpireAt: "01.06.2026"},
-	}, nil
-}
-func (f *fakeAdmin) AdminSetDefaultTrafficReset(_ context.Context, tgID int64, strategy string) error {
-	f.calls = append(f.calls, adminCall{Name: "settreset", A: tgID, Text: strategy})
-	return f.err
-}
-func (f *fakeAdmin) AdminFindUser(_ context.Context, tgID int64, query string) (*payments.WebManagedUser, error) {
-	f.calls = append(f.calls, adminCall{Name: "finduser", A: tgID, Text: query})
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &payments.WebManagedUser{Username: query, Status: "ACTIVE"}, nil
-}
-func (f *fakeAdmin) AdminUpdateUser(_ context.Context, tgID int64, req payments.WebUserUpdate) error {
-	f.calls = append(f.calls, adminCall{Name: "updateuser", A: tgID, B: req.RemnawaveID})
-	return f.err
-}
-func (f *fakeAdmin) AdminRevokeGiftCode(_ context.Context, tgID, giftID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "revoke", A: giftID})
-	return f.err
-}
-func (f *fakeAdmin) AdminConfirmRequest(_ context.Context, tgID, reqID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "confirm", A: reqID})
-	return f.err
-}
-func (f *fakeAdmin) AdminRejectRequest(_ context.Context, tgID, reqID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "reject", A: reqID})
-	return f.err
-}
-func (f *fakeAdmin) AdminConfirmGiftRequest(_ context.Context, tgID, giftID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "giftconfirm", A: giftID})
-	return f.err
-}
-func (f *fakeAdmin) AdminRejectGiftRequest(_ context.Context, tgID, giftID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "giftreject", A: giftID})
-	return f.err
-}
-func (f *fakeAdmin) AdminApproveInviteRequest(_ context.Context, tgID, reqID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "inviteapprove", A: reqID})
-	return f.err
-}
-func (f *fakeAdmin) AdminRejectInviteRequest(_ context.Context, tgID, reqID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "invitereject", A: reqID})
-	return f.err
-}
-func (f *fakeAdmin) AdminApproveTrialRequest(_ context.Context, tgID, reqID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "trialapprove", A: reqID})
-	return f.err
-}
-func (f *fakeAdmin) AdminRejectTrialRequest(_ context.Context, tgID, reqID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "trialreject", A: reqID})
-	return f.err
-}
-func (f *fakeAdmin) AdminBroadcast(_ context.Context, tgID int64, text string) (*payments.WebBroadcastResult, error) {
-	f.calls = append(f.calls, adminCall{Name: "broadcast", A: tgID, Text: text})
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &payments.WebBroadcastResult{Started: true}, nil
-}
-
-func (f *fakeAdmin) AdminListInfraServers(_ context.Context, tgID int64) ([]payments.WebInfraServer, error) {
-	f.calls = append(f.calls, adminCall{Name: "list_servers", A: tgID})
-	return nil, f.err
-}
-func (f *fakeAdmin) AdminSaveInfraServer(_ context.Context, tgID int64, in payments.WebInfraServerInput) error {
-	f.calls = append(f.calls, adminCall{Name: "save_server", A: tgID, Text: in.Name})
-	return f.err
-}
-func (f *fakeAdmin) AdminDeleteInfraServer(_ context.Context, tgID, id int64) error {
-	f.calls = append(f.calls, adminCall{Name: "delete_server", A: tgID, B: id})
-	return f.err
-}
-func (f *fakeAdmin) AdminMarkInfraServerPaid(_ context.Context, tgID, id int64) error {
-	f.calls = append(f.calls, adminCall{Name: "paid_server", A: tgID, B: id})
-	return f.err
-}
-func (f *fakeAdmin) AdminListFxRates(_ context.Context, tgID int64) (*payments.WebFxRates, error) {
-	f.calls = append(f.calls, adminCall{Name: "list_fx", A: tgID})
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &payments.WebFxRates{}, nil
-}
-func (f *fakeAdmin) AdminSetManualFxRate(_ context.Context, tgID int64, currency string, rate float64) error {
-	f.calls = append(f.calls, adminCall{Name: "set_fx", A: tgID, Text: currency})
-	return f.err
-}
-func (f *fakeAdmin) AdminSetBaseCurrency(_ context.Context, tgID int64, iso string) error {
-	f.calls = append(f.calls, adminCall{Name: "set_base", A: tgID, Text: iso})
-	return f.err
-}
-func (f *fakeAdmin) AdminRefreshFxRates(_ context.Context, tgID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "refresh_fx", A: tgID})
-	return f.err
-}
-
-func (f *fakeAdmin) SupportConversations(_ context.Context, tgID int64) ([]payments.WebSupportConversation, error) {
-	f.calls = append(f.calls, adminCall{Name: "support_conversations", A: tgID})
-	return nil, f.err
-}
-
-func (f *fakeAdmin) SupportThreadAdmin(_ context.Context, tgID, targetUserID int64) (*payments.WebSupport, error) {
-	f.calls = append(f.calls, adminCall{Name: "support_thread", A: tgID, B: targetUserID})
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &payments.WebSupport{}, nil
-}
-
-func (f *fakeAdmin) SupportSendAdmin(_ context.Context, tgID, targetUserID int64, text string) error {
-	f.calls = append(f.calls, adminCall{Name: "support_send", A: tgID, B: targetUserID, Text: text})
-	return f.err
-}
-
-func (f *fakeAdmin) SupportCloseAdmin(_ context.Context, tgID, targetUserID int64) error {
-	f.calls = append(f.calls, adminCall{Name: "support_close", A: tgID, B: targetUserID})
-	return f.err
+	return nil, fmt.Errorf("unknown admin op %q", name)
 }
 
 // fakeWebhooks records Platega webhook bodies handed to the service.

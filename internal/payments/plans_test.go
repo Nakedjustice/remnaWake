@@ -817,13 +817,13 @@ func TestAdminSetPlanValidatesAndPersists(t *testing.T) {
 		{Code: "msg", Name: "X", SquadUUID: "no-such-uuid"}, // unknown squad
 	}
 	for i, in := range bad {
-		if err := svc.AdminSetPlan(ctx, adminTG, in); !errors.Is(err, ErrBadInput) {
+		if err := runOpErr(ctx, svc, adminTG, "plan.set", &in); !errors.Is(err, ErrBadInput) {
 			t.Errorf("case %d (%+v): err = %v, want ErrBadInput", i, in, err)
 		}
 	}
 
 	// Valid: tag is uppercased, the seeded Default-Squad UUID is accepted.
-	err := svc.AdminSetPlan(ctx, adminTG, WebAdminPlan{
+	err := runOpErr(ctx, svc, adminTG, "plan.set", &WebAdminPlan{
 		Code: "Messenger", Name: "Мессенджер", Tag: "messenger",
 		SquadUUID: "default-squad-uuid", TrafficGB: 30, DeviceLimit: 1,
 	})
@@ -837,7 +837,7 @@ func TestAdminSetPlanValidatesAndPersists(t *testing.T) {
 
 	// It appears in the admin panel payload with its grid.
 	_ = st.UpsertTariff(ctx, "messenger", 3, 250)
-	panel, err := svc.AdminPanelData(ctx, adminTG)
+	panel, err := runOp[*WebAdminPanel](t, ctx, svc, adminTG, "panel.get", nil)
 	if err != nil {
 		t.Fatalf("panel: %v", err)
 	}
@@ -846,24 +846,24 @@ func TestAdminSetPlanValidatesAndPersists(t *testing.T) {
 	}
 
 	// Tariff CRUD targets the plan; an unknown plan is rejected.
-	if err := svc.AdminSetTariff(ctx, adminTG, "messenger", 6, 400); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "tariff.set", &AdminTariffInput{Plan: "messenger", Months: 6, Price: 400}); err != nil {
 		t.Fatalf("set plan tariff: %v", err)
 	}
-	if err := svc.AdminSetTariff(ctx, adminTG, "nope", 6, 400); !errors.Is(err, ErrPlanUnknown) {
+	if err := runOpErr(ctx, svc, adminTG, "tariff.set", &AdminTariffInput{Plan: "nope", Months: 6, Price: 400}); !errors.Is(err, ErrPlanUnknown) {
 		t.Fatalf("unknown plan tariff: err = %v, want ErrPlanUnknown", err)
 	}
-	if err := svc.AdminDeleteTariff(ctx, adminTG, "messenger", 6); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "tariff.delete", &AdminTariffDeleteInput{Plan: "messenger", Months: 6}); err != nil {
 		t.Fatalf("delete plan tariff: %v", err)
 	}
 
 	// Delete removes the plan and its grid; standard is not deletable.
-	if err := svc.AdminDeletePlan(ctx, adminTG, "standard"); !errors.Is(err, ErrBadInput) {
+	if err := runOpErr(ctx, svc, adminTG, "plan.delete", &AdminPlanDeleteInput{Code: "standard"}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("delete standard: err = %v, want ErrBadInput", err)
 	}
-	if err := svc.AdminDeletePlan(ctx, adminTG, "messenger"); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "plan.delete", &AdminPlanDeleteInput{Code: "messenger"}); err != nil {
 		t.Fatalf("delete plan: %v", err)
 	}
-	if err := svc.AdminDeletePlan(ctx, adminTG, "messenger"); !errors.Is(err, ErrPlanUnknown) {
+	if err := runOpErr(ctx, svc, adminTG, "plan.delete", &AdminPlanDeleteInput{Code: "messenger"}); !errors.Is(err, ErrPlanUnknown) {
 		t.Fatalf("delete missing: err = %v, want ErrPlanUnknown", err)
 	}
 	if left, _ := st.ListTariffs(ctx, "messenger"); len(left) != 0 {

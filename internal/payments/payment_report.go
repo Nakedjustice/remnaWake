@@ -90,10 +90,7 @@ type WebPaymentReport struct {
 
 // AdminPaymentReport returns local payment history without calling Remnawave,
 // keeping operational reporting available during panel outages.
-func (s *Service) AdminPaymentReport(ctx context.Context, telegramID int64, f WebPaymentFilter) (*WebPaymentReport, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+func (s *Service) adminPaymentReport(ctx context.Context, f WebPaymentFilter) (*WebPaymentReport, error) {
 	if !validPaymentReportFilter(f) {
 		return nil, ErrBadInput
 	}

@@ -280,7 +280,7 @@ func TestBackupScheduleParityBetweenBotAndMiniApp(t *testing.T) {
 
 	fromMiniApp, _, _, miniStore := newTestService(t)
 	fromMiniApp.InitBackupConfig(false, 1)
-	if err := fromMiniApp.AdminSetBackupSchedule(ctx, adminTG, true, 7); err != nil {
+	if err := runOpErr(ctx, fromMiniApp, adminTG, "backup.schedule.set", &AdminBackupScheduleInput{Enabled: true, IntervalDays: 7}); err != nil {
 		t.Fatalf("mini app set schedule: %v", err)
 	}
 
@@ -313,7 +313,7 @@ func TestBackupScheduleParityBetweenBotAndMiniApp(t *testing.T) {
 	}
 
 	// The panel payload reports the same schedule the bot card renders.
-	panel, err := fromMiniApp.AdminPanelData(ctx, adminTG)
+	panel, err := runOp[*WebAdminPanel](t, ctx, fromMiniApp, adminTG, "panel.get", nil)
 	if err != nil {
 		t.Fatalf("panel: %v", err)
 	}
@@ -322,10 +322,10 @@ func TestBackupScheduleParityBetweenBotAndMiniApp(t *testing.T) {
 	}
 
 	// Out-of-range input is refused on both surfaces.
-	if err := fromMiniApp.AdminSetBackupSchedule(ctx, adminTG, true, maxBackupIntervalDays+1); !errors.Is(err, ErrBadInput) {
+	if err := runOpErr(ctx, fromMiniApp, adminTG, "backup.schedule.set", &AdminBackupScheduleInput{Enabled: true, IntervalDays: maxBackupIntervalDays + 1}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("above ceiling: err = %v, want ErrBadInput", err)
 	}
-	if err := fromMiniApp.AdminSetBackupSchedule(ctx, adminTG, true, 0); !errors.Is(err, ErrBadInput) {
+	if err := runOpErr(ctx, fromMiniApp, adminTG, "backup.schedule.set", &AdminBackupScheduleInput{Enabled: true, IntervalDays: 0}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("zero interval: err = %v, want ErrBadInput", err)
 	}
 	if _, interval := fromMiniApp.backupConfig(); interval != 7 {
@@ -391,7 +391,7 @@ func TestSupportTicketParityBetweenBotAndMiniApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mini app create: %v", err)
 	}
-	if err := fromMiniApp.SupportReplyTicketAdmin(ctx, adminTG, webTicket, reply); err != nil {
+	if err := runOpErr(ctx, fromMiniApp, adminTG, "support.ticket.reply", &AdminTicketReplyInput{TicketID: webTicket, Text: reply}); err != nil {
 		t.Fatalf("mini app reply: %v", err)
 	}
 	if err := fromMiniApp.SupportCloseTicketUser(ctx, supportUser, webTicket); err != nil {

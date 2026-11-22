@@ -80,7 +80,7 @@ func rejectPaymentForActionCenter(t *testing.T, st *store.Store, now time.Time, 
 
 func TestAdminActionCenterRejectsNonAdmin(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
-	if _, err := svc.AdminActionCenter(context.Background(), userTG); !errors.Is(err, ErrNotAdmin) {
+	if _, err := runOp[*WebAdminActionCenter](t, context.Background(), svc, userTG, "action_center.get", nil); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("AdminActionCenter non-admin error = %v, want ErrNotAdmin", err)
 	}
 }
@@ -147,7 +147,7 @@ func TestAdminActionCenterAggregatesAttentionItems(t *testing.T) {
 	checker := &fakeActionUpdateChecker{snapshot: autoupdate.CheckSnapshot{Status: autoupdate.CheckStatusUpdateAvailable, Baseline: "sha256:old", Remote: "sha256:new"}}
 	svc.SetUpdateChecker(checker)
 
-	center, err := svc.AdminActionCenter(ctx, adminTG)
+	center, err := runOp[*WebAdminActionCenter](t, ctx, svc, adminTG, "action_center.get", nil)
 	if err != nil {
 		t.Fatalf("AdminActionCenter: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestAdminActionCenterEscalatesSupportButNotRegistrationBlock(t *testing.T) 
 		t.Fatalf("record registration block: %v", err)
 	}
 
-	center, err := svc.AdminActionCenter(ctx, adminTG)
+	center, err := runOp[*WebAdminActionCenter](t, ctx, svc, adminTG, "action_center.get", nil)
 	if err != nil {
 		t.Fatalf("AdminActionCenter: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestAdminActionCenterFailsWhenLocalStoreIsUnavailable(t *testing.T) {
 	if err := st.Close(); err != nil {
 		t.Fatalf("close store: %v", err)
 	}
-	if _, err := svc.AdminActionCenter(context.Background(), adminTG); err == nil {
+	if _, err := runOp[*WebAdminActionCenter](t, context.Background(), svc, adminTG, "action_center.get", nil); err == nil {
 		t.Fatal("AdminActionCenter succeeded with a closed local store")
 	}
 }
@@ -286,7 +286,7 @@ func TestAdminActionCenterDegradesExternalSources(t *testing.T) {
 	svc.SetXrayChecker(&fakeChecker{err: errors.New("checker down")})
 	svc.SetUpdateChecker(&fakeActionUpdateChecker{snapshotErr: errors.New("settings down")})
 
-	center, err := svc.AdminActionCenter(ctx, adminTG)
+	center, err := runOp[*WebAdminActionCenter](t, ctx, svc, adminTG, "action_center.get", nil)
 	if err != nil {
 		t.Fatalf("AdminActionCenter: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestAdminListUsersByCohortLowTraffic(t *testing.T) {
 		{Username: "expired", Status: "EXPIRED", ExpireAt: now.Add(-24 * time.Hour), TrafficLimitBytes: 1000, UsedTrafficBytes: 950},
 	}}
 
-	users, err := svc.AdminListUsersByCohort(context.Background(), adminTG, "low_traffic")
+	users, err := runOp[[]WebUserRow](t, context.Background(), svc, adminTG, "users.list", &AdminCohortInput{Cohort: "low_traffic"})
 	if err != nil {
 		t.Fatalf("AdminListUsersByCohort(low_traffic): %v", err)
 	}

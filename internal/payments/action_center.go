@@ -69,10 +69,7 @@ type WebAdminActionSource struct {
 
 // AdminActionCenter returns the current read-only admin triage state. Local
 // SQLite failures fail the request; optional external sources degrade in place.
-func (s *Service) AdminActionCenter(ctx context.Context, telegramID int64) (*WebAdminActionCenter, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+func (s *Service) actionCenterData(ctx context.Context) (*WebAdminActionCenter, error) {
 
 	now := s.now().UTC()
 	out := &WebAdminActionCenter{

@@ -177,9 +177,10 @@ type WebSquad struct {
 	TrialSelected bool   `json:"trial_selected"`
 }
 
-// adminGuard rejects calls from non-admin Telegram IDs. The ID comes from
-// validated initData, so this is the real authorization check — the is_admin
-// flag in /api/me is presentational only.
+// adminGuard rejects calls from non-admin Telegram IDs. It runs once per
+// operation inside RunAdminOp — the only entry point for admin ops — so no
+// transport can bypass it. The ID comes from validated initData (web) or the
+// callback sender (bot); the is_admin flag in /api/me is presentational only.
 func (s *Service) adminGuard(telegramID int64) error {
 	if !s.isEnabled() || !s.isAdmin(telegramID) {
 		return ErrNotAdmin
@@ -187,12 +188,9 @@ func (s *Service) adminGuard(telegramID int64) error {
 	return nil
 }
 
-// AdminPanelData assembles the admin panel view: tariffs, requisites, issued
-// gift codes and pending payment requests.
-func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdminPanel, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+// adminPanelData assembles the admin panel view: tariffs, requisites, issued
+// gift codes and pending payment requests. Reached via the "panel.get" op.
+func (s *Service) adminPanelData(ctx context.Context) (*WebAdminPanel, error) {
 	out := &WebAdminPanel{}
 
 	allTariffs, err := s.store.ListAllTariffs(ctx)
@@ -387,10 +385,7 @@ func (s *Service) AdminPanelData(ctx context.Context, telegramID int64) (*WebAdm
 	return out, nil
 }
 
-func (s *Service) AdminCheckUpdates(ctx context.Context, telegramID int64) (*WebUpdateCheckResult, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+func (s *Service) adminCheckUpdates(ctx context.Context) (*WebUpdateCheckResult, error) {
 	checker := s.updateCheckerLocked()
 	if checker == nil {
 		return nil, ErrBadInput
@@ -407,10 +402,7 @@ func (s *Service) AdminCheckUpdates(ctx context.Context, telegramID int64) (*Web
 	}, nil
 }
 
-func (s *Service) AdminSetUpdateInterval(ctx context.Context, telegramID int64, raw string) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminSetUpdateInterval(ctx context.Context, raw string) error {
 	interval, err := parseUpdateInterval(raw)
 	if err != nil {
 		return ErrBadInput
@@ -422,13 +414,11 @@ func (s *Service) AdminSetUpdateInterval(ctx context.Context, telegramID int64, 
 	return checker.SetInterval(ctx, interval)
 }
 
-// AdminSetBackupSchedule is the mini app twin of the adm:backup:* callbacks: it
-// persists the scheduled-backup state and cadence through the same core, so both
-// surfaces share the reset-on-change rule and the interval ceiling.
-func (s *Service) AdminSetBackupSchedule(ctx context.Context, telegramID int64, enabled bool, intervalDays int) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminSetBackupSchedule is the core of the "backup.schedule.set" op: it
+// persists the scheduled-backup state and cadence through the same core as the
+// adm:backup:* callbacks, so both surfaces share the reset-on-change rule and
+// the interval ceiling.
+func (s *Service) adminSetBackupSchedule(ctx context.Context, enabled bool, intervalDays int) error {
 	if intervalDays < 1 || intervalDays > maxBackupIntervalDays {
 		return ErrBadInput
 	}
@@ -440,12 +430,9 @@ func (s *Service) AdminSetBackupSchedule(ctx context.Context, telegramID int64, 
 	return nil
 }
 
-// AdminSetTariff adds or updates a tariff from the mini app admin panel. An
-// empty plan targets the built-in standard grid; a custom plan must exist.
-func (s *Service) AdminSetTariff(ctx context.Context, telegramID int64, plan string, months, price int) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminSetTariff adds or updates a tariff. An empty plan targets the built-in
+// standard grid; a custom plan must exist.
+func (s *Service) adminSetTariff(ctx context.Context, plan string, months, price int) error {
 	if months < 1 || price < 1 {
 		return ErrBadInput
 	}
@@ -459,11 +446,8 @@ func (s *Service) AdminSetTariff(ctx context.Context, telegramID int64, plan str
 	return nil
 }
 
-// AdminDeleteTariff removes a tariff from the mini app admin panel.
-func (s *Service) AdminDeleteTariff(ctx context.Context, telegramID int64, plan string, months int) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminDeleteTariff removes a tariff.
+func (s *Service) adminDeleteTariff(ctx context.Context, plan string, months int) error {
 	planDef, err := s.getPlan(ctx, plan)
 	if err != nil {
 		return err
@@ -478,10 +462,7 @@ func (s *Service) AdminDeleteTariff(ctx context.Context, telegramID int64, plan 
 	return nil
 }
 
-func (s *Service) AdminSetTrafficExtensionOption(ctx context.Context, telegramID int64, trafficGB, price int) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminSetTrafficExtensionOption(ctx context.Context, trafficGB, price int) error {
 	if trafficGB < 1 || price < 1 {
 		return ErrBadInput
 	}
@@ -491,10 +472,7 @@ func (s *Service) AdminSetTrafficExtensionOption(ctx context.Context, telegramID
 	return nil
 }
 
-func (s *Service) AdminDeleteTrafficExtensionOption(ctx context.Context, telegramID int64, trafficGB int) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminDeleteTrafficExtensionOption(ctx context.Context, trafficGB int) error {
 	deleted, err := s.store.DeleteTrafficExtensionOption(ctx, trafficGB)
 	if err != nil {
 		return fmt.Errorf("delete traffic extension option: %w", err)
@@ -505,14 +483,10 @@ func (s *Service) AdminDeleteTrafficExtensionOption(ctx context.Context, telegra
 	return nil
 }
 
-// AdminSetPlan creates or updates a custom tariff preset from the mini app
-// admin panel. The built-in standard plan is not editable; the tag must match
-// the panel's tag rules (uppercase) or be empty; a non-empty squad UUID must
-// name an existing internal squad.
-func (s *Service) AdminSetPlan(ctx context.Context, telegramID int64, in WebAdminPlan) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminSetPlan creates or updates a custom tariff preset. The built-in standard
+// plan is not editable; the tag must match the panel's tag rules (uppercase) or
+// be empty; a non-empty squad UUID must name an existing internal squad.
+func (s *Service) adminSetPlan(ctx context.Context, in WebAdminPlan) error {
 	code := strings.ToLower(strings.TrimSpace(in.Code))
 	name := strings.TrimSpace(in.Name)
 	tag := strings.ToUpper(strings.TrimSpace(in.Tag))
@@ -555,11 +529,8 @@ func (s *Service) AdminSetPlan(ctx context.Context, telegramID int64, in WebAdmi
 	return nil
 }
 
-// AdminDeletePlan removes a custom tariff preset together with its price grid.
-func (s *Service) AdminDeletePlan(ctx context.Context, telegramID int64, code string) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminDeletePlan removes a custom tariff preset together with its price grid.
+func (s *Service) adminDeletePlan(ctx context.Context, code string) error {
 	code = strings.ToLower(strings.TrimSpace(code))
 	if code == "" || code == store.PlanStandard {
 		return ErrBadInput
@@ -574,13 +545,9 @@ func (s *Service) AdminDeletePlan(ctx context.Context, telegramID int64, code st
 	return nil
 }
 
-// AdminSetRequisites replaces the payment requisites text from the mini app
-// admin panel, persisting it and refreshing the in-memory cache (same as the
-// chat /setrequisites flow).
-func (s *Service) AdminSetRequisites(ctx context.Context, telegramID int64, text string) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminSetRequisites replaces the payment requisites text, persisting it and
+// refreshing the in-memory cache (same as the chat /setrequisites flow).
+func (s *Service) adminSetRequisites(ctx context.Context, text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ErrBadInput
@@ -594,55 +561,18 @@ func (s *Service) AdminSetRequisites(ctx context.Context, telegramID int64, text
 	return nil
 }
 
-// AdminSetRequireScreenshot turns the payment-screenshot requirement on or off
-// from the mini app admin panel (same setting as the adm:shot_toggle button).
-func (s *Service) AdminSetRequireScreenshot(ctx context.Context, telegramID int64, on bool) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
-	if err := s.setRequireScreenshot(ctx, on); err != nil {
-		return fmt.Errorf("save screenshot setting: %w", err)
-	}
-	return nil
-}
-
-// AdminSetProviderEnabled enables or disables one payment provider from the mini
-// app admin panel (same setting as the adm:provtog:<name> button). Enabling an
-// unconfigured provider, or disabling the last enabled one, returns ErrBadInput.
-func (s *Service) AdminSetProviderEnabled(ctx context.Context, telegramID int64, provider string, on bool) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
-	return s.setProviderEnabled(ctx, provider, on)
-}
-
-// AdminSetTrial enables/disables the free trial and sets its length (days ≥ 1)
-// from the mini app admin panel (same settings as the adm:trial bot card).
-func (s *Service) AdminSetTrial(ctx context.Context, telegramID int64, cfg TrialConfig) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
-	return s.setTrialConfig(ctx, cfg)
-}
-
-// AdminSetReferral enables/disables the referral bonus and sets the inviter and
+// adminSetReferral enables/disables the referral bonus and sets the inviter and
 // invitee day amounts. Enabling with both at zero returns ErrBadInput.
-func (s *Service) AdminSetReferral(ctx context.Context, telegramID int64, enabled bool, inviterDays, inviteeDays int) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminSetReferral(ctx context.Context, enabled bool, inviterDays, inviteeDays int) error {
 	if err := s.setReferralDays(ctx, inviterDays, inviteeDays); err != nil {
 		return err
 	}
 	return s.setReferralEnabled(ctx, enabled)
 }
 
-// AdminListSquads returns the panel's internal squads for the mini app
+// adminListSquads returns the panel's internal squads for the mini app
 // default-squad picker, marking the currently selected one.
-func (s *Service) AdminListSquads(ctx context.Context, telegramID int64) ([]WebSquad, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+func (s *Service) adminListSquads(ctx context.Context) ([]WebSquad, error) {
 	if s.squads == nil {
 		return nil, ErrPanelUnavailable
 	}
@@ -659,19 +589,9 @@ func (s *Service) AdminListSquads(ctx context.Context, telegramID int64) ([]WebS
 	return out, nil
 }
 
-// AdminSetDefaultSquad persists the internal squad newly created users are
-// assigned to, selected from the mini app admin panel.
-func (s *Service) AdminSetDefaultSquad(ctx context.Context, telegramID int64, uuid string) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
-	_, err := s.setDefaultSquad(ctx, uuid)
-	return err
-}
-
 // WebUserRow is one lightweight row in the mini app "Manage users" table. Full
-// detail (limits, squads) is fetched per-user via AdminFindUser when a row is
-// opened.
+// detail (limits, squads) is fetched per-user via the "user.find" op when a row
+// is opened.
 type WebUserRow struct {
 	RemnawaveID int64  `json:"remnawave_id"`
 	Username    string `json:"username"`
@@ -679,41 +599,11 @@ type WebUserRow struct {
 	ExpireAt    string `json:"expire_at"` // DD.MM.YYYY
 }
 
-// AdminListUsers returns every panel user for the mini app "Manage users" page,
-// where the admin filters by username client-side.
-func (s *Service) AdminListUsers(ctx context.Context, telegramID int64) ([]WebUserRow, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
-	subs, err := s.finder.ListAll(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("%w: list users: %v", ErrPanelUnavailable, err)
-	}
-	out := make([]WebUserRow, 0, len(subs))
-	for i := range subs {
-		out = append(out, toWebUserRow(&subs[i]))
-	}
-	return out, nil
-}
-
-// toWebUserRow projects a panel user onto the lightweight list row.
-func toWebUserRow(sub *Subscriber) WebUserRow {
-	return WebUserRow{
-		RemnawaveID: sub.RemnawaveID,
-		Username:    sub.Username,
-		Status:      sub.Status,
-		ExpireAt:    sub.ExpireAt.Format("02.01.2006"),
-	}
-}
-
-// AdminListUsersByCohort returns the panel users behind one admin dashboard
-// tile. The core cohorts are classified with the same rules as AdminStatsData
-// (via classifyUser) so each returned list matches its tile count exactly. An
-// empty cohort (or "total") returns every user; an unknown cohort is rejected.
-func (s *Service) AdminListUsersByCohort(ctx context.Context, telegramID int64, cohort string) ([]WebUserRow, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+// adminListUsers returns panel users for the mini app "Manage users" page. An
+// empty cohort (or "total") returns every user; a named cohort filters with the
+// same rules as adminStatsData (via classifyUser) so each returned list matches
+// its tile count exactly; an unknown cohort is rejected.
+func (s *Service) adminListUsers(ctx context.Context, cohort string) ([]WebUserRow, error) {
 	switch cohort {
 	case "", "total", "active", "expiring_soon", "expired", "linked", "low_traffic":
 	default:
@@ -749,13 +639,14 @@ func (s *Service) AdminListUsersByCohort(ctx context.Context, telegramID int64, 
 	return out, nil
 }
 
-// AdminSetDefaultTrafficReset persists the traffic-reset strategy applied to
-// newly created users, selected from the mini app admin panel.
-func (s *Service) AdminSetDefaultTrafficReset(ctx context.Context, telegramID int64, strategy string) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
+// toWebUserRow projects a panel user onto the lightweight list row.
+func toWebUserRow(sub *Subscriber) WebUserRow {
+	return WebUserRow{
+		RemnawaveID: sub.RemnawaveID,
+		Username:    sub.Username,
+		Status:      sub.Status,
+		ExpireAt:    sub.ExpireAt.Format("02.01.2006"),
 	}
-	return s.setDefaultTrafficReset(ctx, strategy)
 }
 
 // WebManagedUser is the editable user card shown in the mini app "Manage user"
@@ -801,11 +692,8 @@ func (s *Service) toWebManagedUser(ctx context.Context, sub *Subscriber) (*WebMa
 	return out, nil
 }
 
-// AdminFindUser resolves a username/link query to an editable user card.
-func (s *Service) AdminFindUser(ctx context.Context, telegramID int64, query string) (*WebManagedUser, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+// adminFindUser resolves a username/link query to an editable user card.
+func (s *Service) adminFindUser(ctx context.Context, query string) (*WebManagedUser, error) {
 	sub, err := s.findManagedUser(ctx, query)
 	if err != nil {
 		return nil, err
@@ -828,12 +716,9 @@ type WebUserUpdate struct {
 	SquadUUIDs    *[]string `json:"squad_uuids"`    // replaces the user's squad set
 }
 
-// AdminUpdateUser applies the editable fields of an existing user from the mini
-// app "Manage user" card. Exactly the fields set in req are changed.
-func (s *Service) AdminUpdateUser(ctx context.Context, telegramID int64, req WebUserUpdate) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminUpdateUser applies the editable fields of an existing user from the
+// "Manage user" card. Exactly the fields set in req are changed.
+func (s *Service) adminUpdateUser(ctx context.Context, req WebUserUpdate) error {
 	if req.RemnawaveID == 0 {
 		return ErrBadInput
 	}
@@ -896,15 +781,13 @@ func (s *Service) AdminUpdateUser(ctx context.Context, telegramID int64, req Web
 // not come back on the response: the run takes minutes, so it is reported to
 // the admin's chat when it finishes, exactly as the bot flow does.
 type WebBroadcastResult struct {
+	Ok      bool `json:"ok"`
 	Started bool `json:"started"`
 }
 
-// AdminBroadcast starts a broadcast to every panel user with a linked Telegram
-// ID from the mini app admin panel and returns immediately.
-func (s *Service) AdminBroadcast(ctx context.Context, telegramID int64, text string) (*WebBroadcastResult, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+// adminBroadcast starts a broadcast to every panel user with a linked Telegram
+// ID and returns immediately; progress is reported to the actor's chat.
+func (s *Service) adminBroadcast(ctx context.Context, actorID int64, text string) (*WebBroadcastResult, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil, ErrBadInput
@@ -912,24 +795,21 @@ func (s *Service) AdminBroadcast(ctx context.Context, telegramID int64, text str
 	err := s.startBroadcast(ctx, text, func(ctx context.Context, sent, failed int, err error) {
 		if err != nil {
 			s.logger.Error("broadcast: list users failed", "err", err.Error())
-			_ = s.bot.SendPlain(ctx, telegramID, i18n.T("Ошибка получения списка пользователей, рассылка не выполнена."))
+			_ = s.bot.SendPlain(ctx, actorID, i18n.T("Ошибка получения списка пользователей, рассылка не выполнена."))
 			return
 		}
-		_ = s.bot.SendPlain(ctx, telegramID,
+		_ = s.bot.SendPlain(ctx, actorID,
 			fmt.Sprintf(i18n.T("Рассылка завершена: отправлено %d, ошибок %d."), sent, failed))
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &WebBroadcastResult{Started: true}, nil
+	return &WebBroadcastResult{Ok: true, Started: true}, nil
 }
 
-// AdminRevokeGiftCode revokes an issued gift code from the mini app admin
-// panel and notifies the buyer, mirroring the chat revoke flow.
-func (s *Service) AdminRevokeGiftCode(ctx context.Context, telegramID, giftID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminRevokeGiftCode revokes an issued gift code and notifies the buyer,
+// mirroring the chat revoke flow.
+func (s *Service) adminRevokeGiftCode(ctx context.Context, giftID int64) error {
 	g, err := s.store.GetGiftCode(ctx, giftID)
 	if err != nil {
 		return fmt.Errorf("get gift code: %w", err)
@@ -951,18 +831,15 @@ func (s *Service) AdminRevokeGiftCode(ctx context.Context, telegramID, giftID in
 	return nil
 }
 
-// AdminConfirmRequest confirms a pending payment request from the mini app
-// admin panel: extends the subscription and notifies the paying user in chat
-// (a webapp confirmation otherwise leaves no visible trace for them).
-func (s *Service) AdminConfirmRequest(ctx context.Context, telegramID, reqID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminConfirmRequest confirms a pending payment request: extends the
+// subscription and notifies the paying user in chat (a webapp confirmation
+// otherwise leaves no visible trace for them).
+func (s *Service) adminConfirmRequest(ctx context.Context, actorID, reqID int64) error {
 	req, newExpireAt, err := s.confirmPaymentRequest(ctx, reqID)
 	if errors.Is(err, ErrConfirmedNotMarked) {
 		// The extension itself succeeded; warn the admin in chat, because the
 		// webapp can only show a generic error for this state.
-		_ = s.bot.SendPlain(ctx, telegramID, fmt.Sprintf(
+		_ = s.bot.SendPlain(ctx, actorID, fmt.Sprintf(
 			i18n.T("⚠️ Подписка для %s продлена до %s, но заявку №%d не удалось отметить подтверждённой в базе. Не подтверждайте её повторно — это продлит подписку ещё раз."),
 			req.Username, newExpireAt.Format("02.01.2006"), reqID))
 	}
@@ -983,28 +860,19 @@ func (s *Service) AdminConfirmRequest(ctx context.Context, telegramID, reqID int
 	return nil
 }
 
-// AdminRejectRequest rejects a pending payment request from the mini app
-// admin panel; the requesting user is notified by the shared helper.
-func (s *Service) AdminRejectRequest(ctx context.Context, telegramID, reqID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminRejectRequest rejects a pending payment request; the requesting user is
+// notified by the shared helper.
+func (s *Service) adminRejectRequest(ctx context.Context, reqID int64) error {
 	_, err := s.rejectPaymentRequest(ctx, reqID)
 	return err
 }
 
-// AdminConfirmGiftRequest confirms payment of a pending gift purchase from the
-// mini app admin panel; the buyer gets the redemption link from the shared
-// helper.
-// AdminDeletePaymentRequest permanently removes a payment record from local
+// adminDeletePaymentRequest permanently removes a payment record from local
 // history (any status) so admins can purge test data that distorts the revenue
 // and conversion reporting. It only touches the local ledger — a confirmed
 // subscription extension already applied on the panel is not reversed — and
 // notifies nobody.
-func (s *Service) AdminDeletePaymentRequest(ctx context.Context, telegramID, reqID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminDeletePaymentRequest(ctx context.Context, reqID int64) error {
 	ok, err := s.store.DeletePaymentRequest(ctx, reqID)
 	if err != nil {
 		return fmt.Errorf("delete payment request: %w", err)
@@ -1015,14 +883,11 @@ func (s *Service) AdminDeletePaymentRequest(ctx context.Context, telegramID, req
 	return nil
 }
 
-// AdminDeleteGiftCode permanently removes a gift code from local history (any
+// adminDeleteGiftCode permanently removes a gift code from local history (any
 // status) so admins can purge test/junk records that distort reporting. It only
 // touches the local ledger and notifies nobody; deleting an unredeemed code
 // simply makes that code unusable.
-func (s *Service) AdminDeleteGiftCode(ctx context.Context, telegramID, giftID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminDeleteGiftCode(ctx context.Context, giftID int64) error {
 	ok, err := s.store.DeleteGiftCode(ctx, giftID)
 	if err != nil {
 		return fmt.Errorf("delete gift code: %w", err)
@@ -1033,13 +898,10 @@ func (s *Service) AdminDeleteGiftCode(ctx context.Context, telegramID, giftID in
 	return nil
 }
 
-// AdminDeleteInviteRequest permanently removes an invite request from local
+// adminDeleteInviteRequest permanently removes an invite request from local
 // history (any status) so admins can purge test/junk records that distort
 // reporting. It only touches the local ledger and notifies nobody.
-func (s *Service) AdminDeleteInviteRequest(ctx context.Context, telegramID, reqID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminDeleteInviteRequest(ctx context.Context, reqID int64) error {
 	ok, err := s.store.DeleteInviteRequest(ctx, reqID)
 	if err != nil {
 		return fmt.Errorf("delete invite request: %w", err)
@@ -1050,62 +912,44 @@ func (s *Service) AdminDeleteInviteRequest(ctx context.Context, telegramID, reqI
 	return nil
 }
 
-func (s *Service) AdminConfirmGiftRequest(ctx context.Context, telegramID, giftID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminConfirmGiftRequest confirms payment of a pending gift purchase; the
+// buyer gets the redemption link from the shared helper.
+func (s *Service) adminConfirmGiftRequest(ctx context.Context, giftID int64) error {
 	_, err := s.issueGiftRequest(ctx, giftID)
 	return err
 }
 
-// AdminRejectGiftRequest rejects a pending gift purchase from the mini app
-// admin panel; the buyer is notified by the shared helper.
-func (s *Service) AdminRejectGiftRequest(ctx context.Context, telegramID, giftID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminRejectGiftRequest rejects a pending gift purchase; the buyer is notified
+// by the shared helper.
+func (s *Service) adminRejectGiftRequest(ctx context.Context, giftID int64) error {
 	_, err := s.rejectGiftRequest(ctx, giftID)
 	return err
 }
 
-// AdminApproveInviteRequest approves a pending invite request from the mini
-// app admin panel: creates the user in the panel and notifies the inviter via
-// the shared helper.
-func (s *Service) AdminApproveInviteRequest(ctx context.Context, telegramID, reqID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminApproveInviteRequest approves a pending invite request: creates the user
+// in the panel and notifies the inviter via the shared helper.
+func (s *Service) adminApproveInviteRequest(ctx context.Context, reqID int64) error {
 	_, _, _, err := s.approveInviteRequest(ctx, reqID)
 	return err
 }
 
-// AdminRejectInviteRequest rejects a pending invite request from the mini app
-// admin panel; the inviter is notified by the shared helper.
-func (s *Service) AdminRejectInviteRequest(ctx context.Context, telegramID, reqID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminRejectInviteRequest rejects a pending invite request; the inviter is
+// notified by the shared helper.
+func (s *Service) adminRejectInviteRequest(ctx context.Context, reqID int64) error {
 	_, err := s.rejectInviteRequest(ctx, reqID)
 	return err
 }
 
-// AdminApproveTrialRequest approves a pending trial request from the mini app
-// admin panel: creates the trial profile and notifies the user via the shared
-// helper.
-func (s *Service) AdminApproveTrialRequest(ctx context.Context, telegramID, reqID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminApproveTrialRequest approves a pending trial request: creates the trial
+// profile and notifies the user via the shared helper.
+func (s *Service) adminApproveTrialRequest(ctx context.Context, reqID int64) error {
 	_, _, _, err := s.approveTrialRequest(ctx, reqID)
 	return err
 }
 
-// AdminRejectTrialRequest rejects a pending trial request from the mini app
-// admin panel; the user is notified by the shared helper.
-func (s *Service) AdminRejectTrialRequest(ctx context.Context, telegramID, reqID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+// adminRejectTrialRequest rejects a pending trial request; the user is notified
+// by the shared helper.
+func (s *Service) adminRejectTrialRequest(ctx context.Context, reqID int64) error {
 	_, err := s.rejectTrialRequest(ctx, reqID)
 	return err
 }

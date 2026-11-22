@@ -221,7 +221,7 @@ func (s *Service) runUpdateTrigger(ctx context.Context, adminID int64, trigger f
 		}
 	}
 
-	if err := s.AdminSendBackup(ctx, adminID); err != nil {
+	if err := s.sendBackupToAdmin(ctx, adminID); err != nil {
 		s.logger.Error("autoupdate: pre-update backup failed", "err", err.Error())
 		if sendErr := s.bot.SendPlain(ctx, adminID,
 			i18n.T("Обновление отменено: не удалось создать или отправить резервную копию в Telegram. Попробуйте снова позже или обновите вручную:\ndocker compose pull && docker compose up -d")); sendErr != nil {

@@ -223,10 +223,7 @@ func (s *Service) toWebInfraServer(ctx context.Context, base string, srv *store.
 
 // AdminListInfraServers returns the infrastructure servers for the mini app
 // admin panel, each with its original and converted cost labels.
-func (s *Service) AdminListInfraServers(ctx context.Context, telegramID int64) ([]WebInfraServer, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+func (s *Service) adminListInfraServers(ctx context.Context) ([]WebInfraServer, error) {
 	servers, err := s.store.ListInfraServers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list infra servers: %w", err)
@@ -271,10 +268,7 @@ func parseInfraDate(s string) (time.Time, error) {
 
 // AdminSaveInfraServer creates or updates an infrastructure server from the mini
 // app admin panel.
-func (s *Service) AdminSaveInfraServer(ctx context.Context, telegramID int64, in WebInfraServerInput) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminSaveInfraServer(ctx context.Context, in WebInfraServerInput) error {
 	in.Name = strings.TrimSpace(in.Name)
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
 	if in.Name == "" || in.Price < 0 || !validCurrencyCode(in.Currency) {
@@ -316,10 +310,7 @@ func (s *Service) AdminSaveInfraServer(ctx context.Context, telegramID int64, in
 }
 
 // AdminDeleteInfraServer removes a server from the mini app admin panel.
-func (s *Service) AdminDeleteInfraServer(ctx context.Context, telegramID, id int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminDeleteInfraServer(ctx context.Context, id int64) error {
 	deleted, err := s.store.DeleteInfraServer(ctx, id)
 	if err != nil {
 		return fmt.Errorf("delete infra server: %w", err)
@@ -339,10 +330,7 @@ func (s *Service) AdminDeleteInfraServer(ctx context.Context, telegramID, id int
 // lands on a future date. Clicking again while the server is already paid past
 // the current period does nothing: the click that pays an invoice must not
 // stack another period on top, or a double tap walks the date years out.
-func (s *Service) AdminMarkInfraServerPaid(ctx context.Context, telegramID, id int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) markInfraServerPaid(ctx context.Context, id int64) error {
 	srv, err := s.store.GetInfraServer(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get infra server: %w", err)
@@ -399,10 +387,7 @@ type WebFxRates struct {
 
 // AdminListFxRates returns the FX overview for the mini app: base currency,
 // per-currency auto/manual rates, and how many servers cannot be converted.
-func (s *Service) AdminListFxRates(ctx context.Context, telegramID int64) (*WebFxRates, error) {
-	if err := s.adminGuard(telegramID); err != nil {
-		return nil, err
-	}
+func (s *Service) adminListFxRates(ctx context.Context) (*WebFxRates, error) {
 	base := s.baseCurrencyISO(ctx)
 	out := &WebFxRates{BaseCurrency: base, BaseSymbol: s.currency, AutoAvailable: s.getForex() != nil}
 
@@ -463,10 +448,7 @@ func (s *Service) AdminListFxRates(ctx context.Context, telegramID int64) (*WebF
 
 // AdminSetManualFxRate stores an admin-entered fallback rate (base units per 1
 // unit of currency) for the mini app FX card.
-func (s *Service) AdminSetManualFxRate(ctx context.Context, telegramID int64, currency string, rate float64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminSetManualFxRate(ctx context.Context, currency string, rate float64) error {
 	currency = strings.ToUpper(strings.TrimSpace(currency))
 	if !validCurrencyCode(currency) || rate <= 0 {
 		return ErrBadInput
@@ -479,10 +461,7 @@ func (s *Service) AdminSetManualFxRate(ctx context.Context, telegramID int64, cu
 
 // AdminSetBaseCurrency persists the ISO code infrastructure costs convert into
 // and re-fetches auto rates against it (best-effort).
-func (s *Service) AdminSetBaseCurrency(ctx context.Context, telegramID int64, iso string) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
+func (s *Service) adminSetBaseCurrency(ctx context.Context, iso string) error {
 	iso = strings.ToUpper(strings.TrimSpace(iso))
 	if !validCurrencyCode(iso) {
 		return ErrBadInput
@@ -492,14 +471,6 @@ func (s *Service) AdminSetBaseCurrency(ctx context.Context, telegramID int64, is
 	}
 	_ = s.RefreshInfraFxRates(ctx)
 	return nil
-}
-
-// AdminRefreshFxRates fetches fresh auto rates on demand from the mini app.
-func (s *Service) AdminRefreshFxRates(ctx context.Context, telegramID int64) error {
-	if err := s.adminGuard(telegramID); err != nil {
-		return err
-	}
-	return s.RefreshInfraFxRates(ctx)
 }
 
 // RefreshInfraFxRates fetches base-per-symbol rates for every currency in use
@@ -630,7 +601,7 @@ func (s *Service) handleInfraPaid(ctx context.Context, cb *tg.CallbackQuery) boo
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
 		return true
 	}
-	if err := s.AdminMarkInfraServerPaid(ctx, cb.From.ID, id); err != nil {
+	if err := s.markInfraServerPaid(ctx, id); err != nil {
 		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Не удалось обновить сервер."))
 		return true
 	}

@@ -76,14 +76,14 @@ func TestAdminBroadcastGuards(t *testing.T) {
 	svc, _, _, _ := newTestService(t) // adminID == 1000
 	svc.finder = &fakeFinder{all: []Subscriber{{TelegramID: 10}}}
 
-	if _, err := svc.AdminBroadcast(context.Background(), 42, "hi"); !errors.Is(err, ErrNotAdmin) {
+	if _, err := runOp[*WebBroadcastResult](t, context.Background(), svc, 42, "broadcast.start", &AdminBroadcastInput{Message: "hi"}); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("non-admin: err=%v, want ErrNotAdmin", err)
 	}
-	if _, err := svc.AdminBroadcast(context.Background(), 1000, "   "); !errors.Is(err, ErrBadInput) {
+	if _, err := runOp[*WebBroadcastResult](t, context.Background(), svc, 1000, "broadcast.start", &AdminBroadcastInput{Message: "   "}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("empty text: err=%v, want ErrBadInput", err)
 	}
 
-	res, err := svc.AdminBroadcast(context.Background(), 1000, "hi")
+	res, err := runOp[*WebBroadcastResult](t, context.Background(), svc, 1000, "broadcast.start", &AdminBroadcastInput{Message: "hi"})
 	if err != nil || !res.Started {
 		t.Fatalf("res=%+v err=%v, want started", res, err)
 	}
@@ -99,7 +99,7 @@ func TestAdminBroadcastReturnsBeforeSending(t *testing.T) {
 	bot.beforeSend = func(int64) { <-release }
 	svc.finder = &fakeFinder{all: []Subscriber{{TelegramID: 10}, {TelegramID: 20}}}
 
-	res, err := svc.AdminBroadcast(context.Background(), 1000, "hi")
+	res, err := runOp[*WebBroadcastResult](t, context.Background(), svc, 1000, "broadcast.start", &AdminBroadcastInput{Message: "hi"})
 	if err != nil {
 		t.Fatalf("AdminBroadcast: %v", err)
 	}
@@ -125,17 +125,17 @@ func TestBroadcastRefusesToRunTwiceAtOnce(t *testing.T) {
 	bot.beforeSend = func(int64) { <-release }
 	svc.finder = &fakeFinder{all: []Subscriber{{TelegramID: 10}}}
 
-	if _, err := svc.AdminBroadcast(context.Background(), 1000, "hi"); err != nil {
+	if _, err := runOp[*WebBroadcastResult](t, context.Background(), svc, 1000, "broadcast.start", &AdminBroadcastInput{Message: "hi"}); err != nil {
 		t.Fatalf("first broadcast: %v", err)
 	}
-	if _, err := svc.AdminBroadcast(context.Background(), 1000, "hi again"); !errors.Is(err, ErrBroadcastInProgress) {
+	if _, err := runOp[*WebBroadcastResult](t, context.Background(), svc, 1000, "broadcast.start", &AdminBroadcastInput{Message: "hi again"}); !errors.Is(err, ErrBroadcastInProgress) {
 		t.Fatalf("second broadcast: err=%v, want ErrBroadcastInProgress", err)
 	}
 	close(release)
 	svc.background.Wait()
 
 	// Once it finishes, a new broadcast is allowed again.
-	if _, err := svc.AdminBroadcast(context.Background(), 1000, "later"); err != nil {
+	if _, err := runOp[*WebBroadcastResult](t, context.Background(), svc, 1000, "broadcast.start", &AdminBroadcastInput{Message: "later"}); err != nil {
 		t.Fatalf("broadcast after completion: %v", err)
 	}
 	svc.background.Wait()
@@ -147,7 +147,7 @@ func TestAdminBroadcastListErrorIsReportedToTheChat(t *testing.T) {
 	svc, bot, _, _ := newTestService(t)
 	svc.finder = &fakeFinder{listErr: errors.New("panel down")}
 
-	if _, err := svc.AdminBroadcast(context.Background(), 1000, "hi"); err != nil {
+	if _, err := runOp[*WebBroadcastResult](t, context.Background(), svc, 1000, "broadcast.start", &AdminBroadcastInput{Message: "hi"}); err != nil {
 		t.Fatalf("AdminBroadcast: %v", err)
 	}
 	svc.background.Wait()

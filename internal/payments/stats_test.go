@@ -18,7 +18,7 @@ func TestAdminStatsDataCountsPanelUsers(t *testing.T) {
 		{Status: "ACTIVE", ExpireAt: now.Add(-24 * time.Hour)},
 	}}
 
-	got, err := svc.AdminStatsData(context.Background(), 1000)
+	got, err := runOp[*WebAdminStats](t, context.Background(), svc, 1000, "stats.get", nil)
 	if err != nil {
 		t.Fatalf("AdminStatsData: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestAdminStatsDataCountsPanelUsers(t *testing.T) {
 
 func TestAdminStatsDataRejectsNonAdmin(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
-	if _, err := svc.AdminStatsData(context.Background(), 2222); !errors.Is(err, ErrNotAdmin) {
+	if _, err := runOp[*WebAdminStats](t, context.Background(), svc, 2222, "stats.get", nil); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("error = %v, want ErrNotAdmin", err)
 	}
 }

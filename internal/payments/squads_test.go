@@ -257,7 +257,7 @@ func TestAdminListSquadsMarksSelected(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	squads, err := svc.AdminListSquads(ctx, 1000)
+	squads, err := runOp[[]WebSquad](t, ctx, svc, 1000, "squads.list", nil)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestAdminListSquadsMarksSelected(t *testing.T) {
 		t.Fatalf("squads wrong: %+v", squads)
 	}
 
-	if _, err := svc.AdminListSquads(ctx, 9999); !errors.Is(err, ErrNotAdmin) {
+	if _, err := runOp[[]WebSquad](t, ctx, svc, 9999, "squads.list", nil); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("non-admin err = %v, want ErrNotAdmin", err)
 	}
 }
@@ -275,13 +275,13 @@ func TestAdminSetDefaultSquad(t *testing.T) {
 	ctx := context.Background()
 	svc.squads.(*fakeSquadLister).squads = []InternalSquad{{UUID: "sq-1", Name: "Default-Squad"}}
 
-	if err := svc.AdminSetDefaultSquad(ctx, 9999, "sq-1"); !errors.Is(err, ErrNotAdmin) {
+	if err := runOpErr(ctx, svc, 9999, "squad.default.set", &AdminUUIDInput{UUID: "sq-1"}); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("non-admin err = %v, want ErrNotAdmin", err)
 	}
-	if err := svc.AdminSetDefaultSquad(ctx, 1000, "nope"); !errors.Is(err, ErrBadInput) {
+	if err := runOpErr(ctx, svc, 1000, "squad.default.set", &AdminUUIDInput{UUID: "nope"}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("unknown uuid err = %v, want ErrBadInput", err)
 	}
-	if err := svc.AdminSetDefaultSquad(ctx, 1000, "sq-1"); err != nil {
+	if err := runOpErr(ctx, svc, 1000, "squad.default.set", &AdminUUIDInput{UUID: "sq-1"}); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if got, found, _ := st.GetSetting(ctx, defaultSquadNameKey); !found || got != "Default-Squad" {
@@ -295,7 +295,7 @@ func TestAdminPanelDataIncludesDefaultSquadName(t *testing.T) {
 	if err := st.UpsertSetting(ctx, defaultSquadNameKey, "Premium"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	panel, err := svc.AdminPanelData(ctx, 1000)
+	panel, err := runOp[*WebAdminPanel](t, ctx, svc, 1000, "panel.get", nil)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}

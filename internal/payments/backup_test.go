@@ -570,7 +570,7 @@ func TestAdminSendBackupReportsDeliveryFailure(t *testing.T) {
 	svc, bot, _ := newBackupTestService(t, []int64{1000}, false)
 	bot.sendErrs = map[int64]error{1000: io.ErrClosedPipe}
 
-	err := svc.AdminSendBackup(context.Background(), 1000)
+	err := runOpErr(context.Background(), svc, 1000, "backup.send", nil)
 	if !errors.Is(err, ErrBackupDelivery) {
 		t.Fatalf("AdminSendBackup error = %v, want ErrBackupDelivery", err)
 	}

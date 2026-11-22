@@ -165,13 +165,13 @@ func TestRegistrationGuardMiniAppAdminMethodsAndPanelQueue(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
 	ctx := context.Background()
 
-	if err := svc.AdminAddRegistrationGuardPattern(ctx, 42, "brand helper"); !errors.Is(err, ErrNotAdmin) {
+	if err := runOpErr(ctx, svc, 42, "guard.pattern.add", &AdminPatternInput{Pattern: "brand helper"}); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("non-admin add error = %v", err)
 	}
-	if err := svc.AdminAddRegistrationGuardPattern(ctx, adminTG, "Brand Helper"); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "guard.pattern.add", &AdminPatternInput{Pattern: "Brand Helper"}); err != nil {
 		t.Fatalf("admin add pattern: %v", err)
 	}
-	if err := svc.AdminAddRegistrationGuardPattern(ctx, adminTG, "brand helper"); !errors.Is(err, ErrRegistrationGuardPatternExists) {
+	if err := runOpErr(ctx, svc, adminTG, "guard.pattern.add", &AdminPatternInput{Pattern: "brand helper"}); !errors.Is(err, ErrRegistrationGuardPatternExists) {
 		t.Fatalf("duplicate add error = %v", err)
 	}
 
@@ -179,7 +179,7 @@ func TestRegistrationGuardMiniAppAdminMethodsAndPanelQueue(t *testing.T) {
 	if !svc.CheckTelegramRegistration(ctx, blockedUser) {
 		t.Fatal("custom pattern must block the Mini App identity")
 	}
-	panel, err := svc.AdminPanelData(ctx, adminTG)
+	panel, err := runOp[*WebAdminPanel](t, ctx, svc, adminTG, "panel.get", nil)
 	if err != nil {
 		t.Fatalf("admin panel: %v", err)
 	}
@@ -191,16 +191,16 @@ func TestRegistrationGuardMiniAppAdminMethodsAndPanelQueue(t *testing.T) {
 		t.Fatalf("panel blocks = %+v", panel.BlockedRegistrations)
 	}
 
-	if err := svc.AdminUnblockRegistration(ctx, adminTG, blockedUser.ID); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "guard.unblock", &AdminUnblockInput{TelegramID: blockedUser.ID}); err != nil {
 		t.Fatalf("unblock: %v", err)
 	}
-	if err := svc.AdminUnblockRegistration(ctx, adminTG, blockedUser.ID); !errors.Is(err, ErrRegistrationGuardNotFound) {
+	if err := runOpErr(ctx, svc, adminTG, "guard.unblock", &AdminUnblockInput{TelegramID: blockedUser.ID}); !errors.Is(err, ErrRegistrationGuardNotFound) {
 		t.Fatalf("stale unblock error = %v", err)
 	}
-	if err := svc.AdminDeleteRegistrationGuardPattern(ctx, adminTG, "BRAND HELPER"); err != nil {
+	if err := runOpErr(ctx, svc, adminTG, "guard.pattern.delete", &AdminPatternInput{Pattern: "BRAND HELPER"}); err != nil {
 		t.Fatalf("delete pattern: %v", err)
 	}
-	if err := svc.AdminDeleteRegistrationGuardPattern(ctx, adminTG, "brand helper"); !errors.Is(err, ErrRegistrationGuardPatternNotFound) {
+	if err := runOpErr(ctx, svc, adminTG, "guard.pattern.delete", &AdminPatternInput{Pattern: "brand helper"}); !errors.Is(err, ErrRegistrationGuardPatternNotFound) {
 		t.Fatalf("stale delete error = %v", err)
 	}
 }

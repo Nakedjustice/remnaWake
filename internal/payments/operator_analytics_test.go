@@ -29,10 +29,10 @@ func TestAdminOperatorAnalyticsMapsLocalStoreAndGuardsAdmin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := svc.AdminOperatorAnalytics(ctx, 2000, 30); !errors.Is(err, ErrNotAdmin) {
+	if _, err := runOp[*WebOperatorAnalytics](t, ctx, svc, 2000, "analytics.get", &AdminAnalyticsInput{Days: 30}); !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("non-admin error = %v", err)
 	}
-	got, err := svc.AdminOperatorAnalytics(ctx, 1000, 30)
+	got, err := runOp[*WebOperatorAnalytics](t, ctx, svc, 1000, "analytics.get", &AdminAnalyticsInput{Days: 30})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestAdminOperatorAnalyticsMapsLocalStoreAndGuardsAdmin(t *testing.T) {
 
 func TestAdminOperatorAnalyticsRejectsInvalidDays(t *testing.T) {
 	svc, _, _, _ := newTestService(t)
-	if _, err := svc.AdminOperatorAnalytics(context.Background(), 1000, 14); !errors.Is(err, ErrBadInput) {
+	if _, err := runOp[*WebOperatorAnalytics](t, context.Background(), svc, 1000, "analytics.get", &AdminAnalyticsInput{Days: 14}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("error = %v, want ErrBadInput", err)
 	}
 }
