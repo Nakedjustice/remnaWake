@@ -611,9 +611,24 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 			{Text: i18n.T("❌ Отклонить"), CallbackData: fmt.Sprintf("rej:%d", reqID)},
 		}},
 	}
+	if err := s.notifyAdminsWithReceipt(ctx, reqID, text, kb, att, fileID, isDoc,
+		"withdraw unnotified request failed", "payment request"); err != nil {
+		return 0, err
+	}
+	return reqID, nil
+}
+
+// notifyAdminsWithReceipt DMs every admin the pending-request notification: a
+// photo/document upload when att carries fresh bytes (storing the resulting
+// file_id once), a file_id resend when the receipt is already stored, or a
+// plain message otherwise. When no admin receives it the request is withdrawn
+// (reporting success would strand it) and an error is returned. withdrawLog
+// names the withdrawal failure; kind names the request in the returned error.
+func (s *Service) notifyAdminsWithReceipt(ctx context.Context, reqID int64, text string, kb *tg.InlineKeyboardMarkup, att *receiptAttachment, fileID string, isDoc bool, withdrawLog, kind string) error {
 	var refs []adminMsgRef
 	for _, adminID := range s.adminIDs {
 		var msgID int64
+		var err error
 		switch {
 		case att != nil && len(att.data) > 0 && fileID == "" && isDoc:
 			msgID, fileID, err = s.bot.SendDocumentUpload(ctx, adminID, att.filename, att.data, text, kb)
@@ -638,15 +653,13 @@ func (s *Service) createPaymentRequest(ctx context.Context, u *store.NotifiedUse
 		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
 	}
 	if len(refs) == 0 && len(s.adminIDs) > 0 {
-		// No admin got a confirm button, so reporting success would strand the
-		// request: withdraw it and let the caller ask the user to retry.
 		if _, derr := s.store.DeletePendingPaymentRequest(ctx, reqID); derr != nil {
-			s.logger.Error("withdraw unnotified request failed", "request_id", reqID, "err", derr.Error())
+			s.logger.Error(withdrawLog, "request_id", reqID, "err", derr.Error())
 		}
-		return 0, fmt.Errorf("payment request %d: notifying every admin failed", reqID)
+		return fmt.Errorf("%s %d: notifying every admin failed", kind, reqID)
 	}
 	s.putAdminMsgs(s.payMsgs, reqID, refs)
-	return reqID, nil
+	return nil
 }
 
 func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool {
@@ -722,9 +735,7 @@ func (s *Service) handleConfirm(ctx context.Context, cb *tg.CallbackQuery) bool 
 
 // handleReject processes admin's "Отклонить" button on a payment request.
 func (s *Service) handleReject(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized reject attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "reject") {
 		return true
 	}
 
@@ -756,12 +767,7 @@ func (s *Service) handleReject(ctx context.Context, cb *tg.CallbackQuery) bool {
 // clearPayButtons removes the confirm button from every admin's copy of the
 // payment notification for reqID, then forgets the stored refs.
 func (s *Service) clearPayButtons(ctx context.Context, reqID int64) {
-	refs := s.takeAdminMsgs(s.payMsgs, reqID)
-	for _, ref := range refs {
-		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
-			s.logger.Warn("clear admin confirm button failed", "chat_id", ref.chatID, "err", err.Error())
-		}
-	}
+	s.clearAdminButtons(ctx, s.payMsgs, reqID, "clear admin confirm button failed")
 }
 
 func (s *Service) tariffKeyboard(userID int64, plan string, tariffs []store.Tariff) *tg.InlineKeyboardMarkup {
@@ -1102,31 +1108,24 @@ func (s *Service) handleAdminProviderToggle(ctx context.Context, chatID int64, d
 }
 
 func (s *Service) startSetRequisitesFlow(ctx context.Context, chatID int64) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputRequisites
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, adminInputRequisites)
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отправьте новый текст реквизитов:"))
 }
 
 func (s *Service) startBroadcastFlow(ctx context.Context, chatID int64) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputBroadcast
-	state.pendingBroadcast = ""
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.mutateAdminInput(chatID, func(st *adminInputState) {
+		st.step = adminInputBroadcast
+		st.pendingBroadcast = ""
+	})
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отправьте текст рассылки следующим сообщением."))
 }
 
 func (s *Service) handleBroadcastSend(ctx context.Context, chatID int64, cb *tg.CallbackQuery) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	text := state.pendingBroadcast
-	state.pendingBroadcast = ""
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	var text string
+	s.mutateAdminInput(chatID, func(st *adminInputState) {
+		text = st.pendingBroadcast
+		st.pendingBroadcast = ""
+	})
 	if cb.Message != nil {
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
@@ -1153,14 +1152,12 @@ func (s *Service) handleBroadcastSend(ctx context.Context, chatID int64, cb *tg.
 }
 
 func (s *Service) handleBroadcastCancel(ctx context.Context, chatID int64, cb *tg.CallbackQuery) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.pendingBroadcast = ""
-	if state.step == adminInputBroadcast {
-		state.step = adminInputNone
-	}
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.mutateAdminInput(chatID, func(st *adminInputState) {
+		st.pendingBroadcast = ""
+		if st.step == adminInputBroadcast {
+			st.step = adminInputNone
+		}
+	})
 	if cb.Message != nil {
 		_ = s.bot.EditMessageReplyMarkup(ctx, cb.Message.Chat.ID, cb.Message.MessageID, nil)
 	}
@@ -1168,11 +1165,7 @@ func (s *Service) handleBroadcastCancel(ctx context.Context, chatID int64, cb *t
 }
 
 func (s *Service) startAddTariffFlow(ctx context.Context, chatID int64) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputTariffMonths
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, adminInputTariffMonths)
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите количество месяцев (целое ≥ 1):"))
 }
 
@@ -1196,4 +1189,17 @@ func (s *Service) formatAdminRequest(ctx context.Context, u *store.NotifiedUser,
 		b.WriteString(fmt.Sprintf(i18n.T("Выбрано: %d мес."), months))
 	}
 	return b.String()
+}
+
+// requireAdminCB reports whether the callback tapper is a configured admin of
+// an enabled service. Otherwise it warns about the attempt, answers the tap
+// with the standard insufficient-rights toast, and reports false. op names
+// the attempted action in the warn log.
+func (s *Service) requireAdminCB(ctx context.Context, cb *tg.CallbackQuery, op string) bool {
+	if s.isEnabled() && s.isAdmin(cb.From.ID) {
+		return true
+	}
+	s.logger.Warn("unauthorized "+op+" attempt", "from_id", cb.From.ID)
+	_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	return false
 }

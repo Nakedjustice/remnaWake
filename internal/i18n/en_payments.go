@@ -44,6 +44,7 @@ var enPayments = map[string]string{
 	"Прокси недоступны":                                "Proxies are down",
 	"Просрочены оплаты серверов":                       "Server payments are overdue",
 	"Скоро нужно оплатить серверы":                     "Server payments are due soon",
+	"Нажмите, чтобы развернуть список серверов ниже.":  "Tap to expand the server list below.",
 	"Доступно обновление":                              "Update available",
 
 	// Database backup
@@ -401,7 +402,7 @@ var enPayments = map[string]string{
 	"Этот профиль уже привязан к вашему Telegram.":                               "This profile is already linked to your Telegram.",
 	"Этот профиль уже привязан к другому Telegram. Обратитесь к администратору.": "This profile is linked to a different Telegram. Contact the administrator.",
 	"Этот тариф больше недоступен.":                                              "This plan is no longer available.",
-	"Я оплатил":            "I paid",
+	"Оплатить":             "Pay",
 	"бесплатно":            "free",
 	"день":                 "day",
 	"дней":                 "days",

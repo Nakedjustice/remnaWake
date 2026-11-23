@@ -37,67 +37,59 @@ func (s *Store) ListTariffs(ctx context.Context, plan string) ([]Tariff, error) 
 		plan = PlanStandard
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT plan, months, price, created_at, updated_at FROM tariffs
+		SELECT `+tariffColumns+` FROM tariffs
 		WHERE plan = ? ORDER BY months ASC
 	`, plan)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanTariffs(rows)
+	return scanList(rows, scanTariff)
 }
 
 // ListAllTariffs returns every tariff across all plans, ordered by plan then
 // months.
 func (s *Store) ListAllTariffs(ctx context.Context) ([]Tariff, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT plan, months, price, created_at, updated_at FROM tariffs
+		SELECT `+tariffColumns+` FROM tariffs
 		ORDER BY plan ASC, months ASC
 	`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanTariffs(rows)
+	return scanList(rows, scanTariff)
 }
 
-func scanTariffs(rows *sql.Rows) ([]Tariff, error) {
-	var out []Tariff
-	for rows.Next() {
-		var (
-			t            Tariff
-			created, upd string
-		)
-		if err := rows.Scan(&t.Plan, &t.Months, &t.Price, &created, &upd); err != nil {
-			return nil, err
-		}
-		t.CreatedAt, _ = parseTime(created)
-		t.UpdatedAt, _ = parseTime(upd)
-		out = append(out, t)
+// tariffColumns is the tariffs column list in scanTariff order.
+const tariffColumns = `plan, months, price, created_at, updated_at`
+
+// scanTariff reads one row in tariffColumns order.
+func scanTariff(sc rowScanner) (Tariff, error) {
+	var (
+		t            Tariff
+		created, upd string
+	)
+	if err := sc.Scan(&t.Plan, &t.Months, &t.Price, &created, &upd); err != nil {
+		return Tariff{}, err
 	}
-	return out, rows.Err()
+	t.CreatedAt, _ = parseTime(created)
+	t.UpdatedAt, _ = parseTime(upd)
+	return t, nil
 }
 
 func (s *Store) GetTariff(ctx context.Context, plan string, months int) (*Tariff, error) {
 	if plan == "" {
 		plan = PlanStandard
 	}
-	var (
-		t            Tariff
-		created, upd string
-	)
-	err := s.db.QueryRowContext(ctx, `
-		SELECT plan, months, price, created_at, updated_at FROM tariffs
-		WHERE plan = ? AND months = ?
-	`, plan, months).Scan(&t.Plan, &t.Months, &t.Price, &created, &upd)
+	t, err := scanTariff(s.db.QueryRowContext(ctx,
+		`SELECT `+tariffColumns+` FROM tariffs WHERE plan = ? AND months = ?`, plan, months))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	t.CreatedAt, _ = parseTime(created)
-	t.UpdatedAt, _ = parseTime(upd)
 	return &t, nil
 }
 

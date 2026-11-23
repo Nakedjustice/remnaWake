@@ -69,11 +69,7 @@ func (s *Service) handleTrialApprovalToggle(ctx context.Context, chatID int64) {
 }
 
 func (s *Service) startTrialLimitInput(ctx context.Context, chatID int64, step adminInputStep, prompt string) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = step
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, step)
 	_ = s.bot.SendPlain(ctx, chatID, prompt)
 }
 
@@ -83,9 +79,7 @@ func (s *Service) consumeTrialLimit(ctx context.Context, chatID int64, text stri
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 0. Значение 0 означает без ограничения."))
 		return true
 	}
-	s.mu.Lock()
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	s.clearAdminInput(chatID)
 	if traffic {
 		err = s.setTrialTrafficLimit(ctx, limit)
 	} else {
@@ -146,11 +140,7 @@ func (s *Service) handleTrialSquadPick(ctx context.Context, chatID int64, data s
 
 // startTrialDaysInput begins the "set trial duration" admin text flow.
 func (s *Service) startTrialDaysInput(ctx context.Context, chatID int64) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputTrialDays
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, adminInputTrialDays)
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите длительность пробного периода в днях (целое ≥ 1):"))
 }
 
@@ -160,9 +150,7 @@ func (s *Service) consumeTrialDays(ctx context.Context, chatID int64, text strin
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 1. Пример: 3"))
 		return true
 	}
-	s.mu.Lock()
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	s.clearAdminInput(chatID)
 	if err := s.setTrialDays(ctx, days); err != nil {
 		s.logger.Error("admin: save trial days failed", "err", err.Error())
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения настройки."))
@@ -212,11 +200,7 @@ func (s *Service) handleReferralToggle(ctx context.Context, chatID int64) {
 }
 
 func (s *Service) startReferralBonusInput(ctx context.Context, chatID int64, step adminInputStep) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = step
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, step)
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите количество бонусных дней (целое ≥ 0):"))
 }
 
@@ -226,9 +210,7 @@ func (s *Service) consumeReferralBonus(ctx context.Context, chatID int64, text s
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите целое число ≥ 0. Пример: 30"))
 		return true
 	}
-	s.mu.Lock()
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	s.clearAdminInput(chatID)
 	_, inviter, invitee := s.referralConfig()
 	if inviterSide {
 		inviter = days

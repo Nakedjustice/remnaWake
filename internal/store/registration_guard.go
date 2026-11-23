@@ -76,25 +76,20 @@ func (s *Store) ListBlockedRegistrationGuards(ctx context.Context) ([]Registrati
 		return nil, fmt.Errorf("list blocked registration guards: %w", err)
 	}
 	defer rows.Close()
-	var guards []RegistrationGuard
-	for rows.Next() {
+	return scanList(rows, func(r rowScanner) (RegistrationGuard, error) {
 		var (
 			guard   RegistrationGuard
 			blocked int
 			created string
 		)
-		if err := rows.Scan(&guard.TelegramID, &guard.Username, &guard.FirstName, &guard.LastName,
+		if err := r.Scan(&guard.TelegramID, &guard.Username, &guard.FirstName, &guard.LastName,
 			&guard.MatchedPattern, &blocked, &created); err != nil {
-			return nil, fmt.Errorf("scan blocked registration guard: %w", err)
+			return guard, fmt.Errorf("scan blocked registration guard: %w", err)
 		}
 		guard.Blocked = blocked != 0
 		guard.CreatedAt, _ = parseTime(created)
-		guards = append(guards, guard)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate blocked registration guards: %w", err)
-	}
-	return guards, nil
+		return guard, nil
+	})
 }
 
 // UnblockRegistration conditionally removes an automatic registration block.

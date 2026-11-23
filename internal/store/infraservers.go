@@ -41,22 +41,23 @@ const infraServerColumns = `id, name, hoster, country, cpu_cores, ram_mb, price,
 	period_months, next_due_at, reminded_stage, notes, created_at, updated_at`
 
 // scanInfraServer reads one row in infraServerColumns order.
-func scanInfraServer(sc interface{ Scan(...any) error }, srv *InfraServer) error {
+func scanInfraServer(sc rowScanner) (InfraServer, error) {
 	var (
+		srv          InfraServer
 		due          sql.NullString
 		created, upd string
 	)
 	if err := sc.Scan(&srv.ID, &srv.Name, &srv.Hoster, &srv.Country, &srv.CPUCores, &srv.RAMMB,
 		&srv.Price, &srv.Currency, &srv.PeriodMonths, &due, &srv.RemindedStage, &srv.Notes,
 		&created, &upd); err != nil {
-		return err
+		return InfraServer{}, err
 	}
 	if due.Valid {
 		srv.NextDueAt, _ = parseTime(due.String)
 	}
 	srv.CreatedAt, _ = parseTime(created)
 	srv.UpdatedAt, _ = parseTime(upd)
-	return nil
+	return srv, nil
 }
 
 // CreateInfraServer inserts a new server and returns its id.
@@ -85,25 +86,13 @@ func (s *Store) ListInfraServers(ctx context.Context) ([]InfraServer, error) {
 		return nil, err
 	}
 	defer rows.Close()
-
-	var out []InfraServer
-	for rows.Next() {
-		var srv InfraServer
-		if err := scanInfraServer(rows, &srv); err != nil {
-			return nil, err
-		}
-		out = append(out, srv)
-	}
-	return out, rows.Err()
+	return scanList(rows, scanInfraServer)
 }
 
 // GetInfraServer returns the server with id, or (nil, nil) when absent.
 func (s *Store) GetInfraServer(ctx context.Context, id int64) (*InfraServer, error) {
-	var srv InfraServer
-	err := scanInfraServer(
-		s.db.QueryRowContext(ctx, `SELECT `+infraServerColumns+` FROM infra_servers WHERE id = ?`, id),
-		&srv,
-	)
+	srv, err := scanInfraServer(s.db.QueryRowContext(ctx,
+		`SELECT `+infraServerColumns+` FROM infra_servers WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

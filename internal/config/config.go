@@ -272,26 +272,15 @@ func Load() (*Config, error) {
 		Currency:   getenv("CURRENCY", "₽"),
 	}
 
-	timeout := getenv("HTTP_TIMEOUT", "15s")
-	d, err := time.ParseDuration(timeout)
-	if err != nil {
-		return nil, fmt.Errorf("invalid HTTP_TIMEOUT: %w", err)
+	if cfg.HTTP.Timeout, err = getenvDuration("HTTP_TIMEOUT", "15s"); err != nil {
+		return nil, err
 	}
-	cfg.HTTP.Timeout = d
-
-	interval := getenv("AUTOUPDATE_CHECK_INTERVAL", "6h")
-	iv, err := time.ParseDuration(interval)
-	if err != nil {
-		return nil, fmt.Errorf("invalid AUTOUPDATE_CHECK_INTERVAL: %w", err)
+	if cfg.AutoUpdate.CheckInterval, err = getenvDuration("AUTOUPDATE_CHECK_INTERVAL", "6h"); err != nil {
+		return nil, err
 	}
-	cfg.AutoUpdate.CheckInterval = iv
-
-	pollInterval := getenv("XRAY_CHECKER_POLL_INTERVAL", "2m")
-	pi, err := time.ParseDuration(pollInterval)
-	if err != nil {
-		return nil, fmt.Errorf("invalid XRAY_CHECKER_POLL_INTERVAL: %w", err)
+	if cfg.XrayChecker.PollInterval, err = getenvDuration("XRAY_CHECKER_POLL_INTERVAL", "2m"); err != nil {
+		return nil, err
 	}
-	cfg.XrayChecker.PollInterval = pi
 
 	if rate := strings.TrimSpace(os.Getenv("TELEGRAM_STARS_RATE")); rate != "" {
 		r, err := strconv.Atoi(rate)
@@ -424,30 +413,38 @@ func getenv(key, def string) string {
 	return def
 }
 
+// getenvParsed reads an env var and parses it with parse, falling back to def
+// when unset, empty or unparseable.
+func getenvParsed[T any](key string, def T, parse func(string) (T, error)) T {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return def
+	}
+	p, err := parse(v)
+	if err != nil {
+		return def
+	}
+	return p
+}
+
 // getenvInt reads an integer env var, falling back to def when unset, empty or
 // unparseable.
 func getenvInt(key string, def int) int {
-	v, ok := os.LookupEnv(key)
-	if !ok || v == "" {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return def
-	}
-	return n
+	return getenvParsed(key, def, strconv.Atoi)
 }
 
 func getenvBool(key string, def bool) bool {
-	v, ok := os.LookupEnv(key)
-	if !ok || v == "" {
-		return def
-	}
-	b, err := strconv.ParseBool(v)
+	return getenvParsed(key, def, strconv.ParseBool)
+}
+
+// getenvDuration parses a duration env var, wrapping parse errors like the
+// per-key blocks it replaces.
+func getenvDuration(key, def string) (time.Duration, error) {
+	d, err := time.ParseDuration(getenv(key, def))
 	if err != nil {
-		return def
+		return 0, fmt.Errorf("invalid %s: %w", key, err)
 	}
-	return b
+	return d, nil
 }
 
 // parseDaysList parses a comma-separated list of positive day numbers

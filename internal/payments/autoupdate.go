@@ -97,11 +97,7 @@ func (s *Service) sendUpdateSettings(ctx context.Context, chatID int64) {
 }
 
 func (s *Service) startUpdateIntervalInput(ctx context.Context, chatID int64) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputUpdateInterval
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, adminInputUpdateInterval)
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Введите интервал проверки обновлений: например 15m, 6h или 1d."))
 }
 
@@ -121,9 +117,7 @@ func (s *Service) consumeUpdateInterval(ctx context.Context, chatID int64, text 
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Ошибка сохранения интервала проверки обновлений."))
 		return true
 	}
-	s.mu.Lock()
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	s.clearAdminInput(chatID)
 	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Интервал проверки обновлений сохранён: %s"), interval.String()))
 	return true
 }

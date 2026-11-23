@@ -192,6 +192,14 @@ func TestAdminActionCenterAggregatesAttentionItems(t *testing.T) {
 	if items["infra_overdue"].DueAt == "" || items["infra_due_soon"].DueAt == "" {
 		t.Fatalf("missing infrastructure deadlines: %+v", items)
 	}
+	for id, wantStatus := range map[string]string{"infra_overdue": "overdue", "infra_due_soon": "soon"} {
+		if got := items[id].Detail; got != "Нажмите, чтобы развернуть список серверов ниже." {
+			t.Fatalf("%s detail = %q, want the inline-expand hint", id, got)
+		}
+		if got := items[id].Filter["due_status"]; got != wantStatus {
+			t.Fatalf("%s filter due_status = %q, want %s (the mini app panel filters by it)", id, got, wantStatus)
+		}
+	}
 	if got := items["low_traffic_users"].Filter["cohort"]; got != "low_traffic" {
 		t.Fatalf("low-traffic filter = %q, want low_traffic", got)
 	}

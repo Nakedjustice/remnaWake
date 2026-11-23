@@ -218,23 +218,12 @@ func (s *Service) notifyAdminsInviteRequest(ctx context.Context, reqID int64, in
 			{Text: i18n.T("❌ Отклонить"), CallbackData: fmt.Sprintf("inv_rej:%d", reqID)},
 		}},
 	}
-	var refs []adminMsgRef
-	for _, adminID := range s.adminIDs {
-		msgID, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
-		if err != nil {
-			s.logger.Error("invite: notify admin failed", "admin_id", adminID, "err", err.Error())
-			continue
-		}
-		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
-	}
-	s.putAdminMsgs(s.inviteMsgs, reqID, refs)
+	s.notifyAdminsWithKeyboard(ctx, s.inviteMsgs, reqID, text, kb, "invite: notify admin failed")
 }
 
 // handleInviteApprove processes admin's "Одобрить" button.
 func (s *Service) handleInviteApprove(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized invite approve attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "invite approve") {
 		return true
 	}
 
@@ -421,9 +410,7 @@ func referralBonusSuffix(days int) string {
 
 // handleInviteReject processes admin's "Отклонить" button.
 func (s *Service) handleInviteReject(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized invite reject attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "invite reject") {
 		return true
 	}
 
@@ -476,12 +463,7 @@ func (s *Service) rejectInviteRequest(ctx context.Context, reqID int64) (*store.
 // clearInviteButtons removes the approve/reject buttons from every admin's copy
 // of the invite notification for reqID, then forgets the stored refs.
 func (s *Service) clearInviteButtons(ctx context.Context, reqID int64) {
-	refs := s.takeAdminMsgs(s.inviteMsgs, reqID)
-	for _, ref := range refs {
-		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
-			s.logger.Warn("clear admin invite button failed", "chat_id", ref.chatID, "err", err.Error())
-		}
-	}
+	s.clearAdminButtons(ctx, s.inviteMsgs, reqID, "clear admin invite button failed")
 }
 
 // handleInviteCancel processes the "Отмена" button shown during username confirmation.

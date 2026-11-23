@@ -62,17 +62,18 @@ func (s *Store) ReadAdminStats(ctx context.Context, since time.Time) (*AdminStat
 		return nil, err
 	}
 	defer rows.Close()
-	for rows.Next() {
+	byStatus, err := scanMap(rows, func(r rowScanner) (string, int, error) {
 		var status string
 		var n int
-		if err := rows.Scan(&status, &n); err != nil {
-			return nil, err
+		if err := r.Scan(&status, &n); err != nil {
+			return status, n, err
 		}
-		st.GiftsByStatus[status] = n
-	}
-	if err := rows.Err(); err != nil {
+		return status, n, nil
+	})
+	if err != nil {
 		return nil, err
 	}
+	st.GiftsByStatus = byStatus
 
 	err = s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM invite_requests WHERE status = 'pending'`,

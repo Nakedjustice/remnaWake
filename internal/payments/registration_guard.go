@@ -279,11 +279,7 @@ func (s *Service) customRegistrationGuardPatterns() []string {
 }
 
 func (s *Service) startRegistrationGuardPatternInput(ctx context.Context, chatID int64) {
-	s.mu.Lock()
-	state := s.adminInput[chatID]
-	state.step = adminInputRegistrationGuardPattern
-	s.adminInput[chatID] = state
-	s.mu.Unlock()
+	s.setAdminInputStep(chatID, adminInputRegistrationGuardPattern)
 	_ = s.bot.SendPlain(ctx, chatID, i18n.T("Отправьте новый паттерн следующим сообщением. Он будет искаться в имени и нике пользователя без учёта регистра."))
 }
 
@@ -298,9 +294,7 @@ func (s *Service) consumeRegistrationGuardPattern(ctx context.Context, chatID in
 		return true
 	case err != nil:
 		s.logger.Error("registration guard: add custom pattern failed", "err", err.Error())
-		s.mu.Lock()
-		delete(s.adminInput, chatID)
-		s.mu.Unlock()
+		s.clearAdminInput(chatID)
 		_ = s.bot.SendPlain(ctx, chatID, i18n.T("Не удалось сохранить паттерн."))
 		return true
 	case !added:
@@ -308,9 +302,7 @@ func (s *Service) consumeRegistrationGuardPattern(ctx context.Context, chatID in
 		return true
 	}
 	normalized, _ := normalizeRegistrationGuardPattern(text)
-	s.mu.Lock()
-	delete(s.adminInput, chatID)
-	s.mu.Unlock()
+	s.clearAdminInput(chatID)
 	_ = s.bot.SendPlain(ctx, chatID, fmt.Sprintf(i18n.T("Паттерн сохранён: %s"), normalized))
 	return true
 }

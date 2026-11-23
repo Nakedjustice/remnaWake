@@ -36,50 +36,42 @@ func (s *Store) UpsertPlan(ctx context.Context, p Plan) error {
 	return err
 }
 
-func (s *Store) GetPlan(ctx context.Context, code string) (*Plan, error) {
+// planColumns is the plans column list in scanPlan order.
+const planColumns = `code, name, tag, squad_uuid, traffic_gb, device_limit, created_at, updated_at`
+
+// scanPlan reads one row in planColumns order.
+func scanPlan(sc rowScanner) (Plan, error) {
 	var (
 		p            Plan
 		created, upd string
 	)
-	err := s.db.QueryRowContext(ctx, `
-		SELECT code, name, tag, squad_uuid, traffic_gb, device_limit, created_at, updated_at
-		FROM plans WHERE code = ?
-	`, code).Scan(&p.Code, &p.Name, &p.Tag, &p.SquadUUID, &p.TrafficGB, &p.DeviceLimit, &created, &upd)
+	if err := sc.Scan(&p.Code, &p.Name, &p.Tag, &p.SquadUUID, &p.TrafficGB, &p.DeviceLimit, &created, &upd); err != nil {
+		return Plan{}, err
+	}
+	p.CreatedAt, _ = parseTime(created)
+	p.UpdatedAt, _ = parseTime(upd)
+	return p, nil
+}
+
+func (s *Store) GetPlan(ctx context.Context, code string) (*Plan, error) {
+	p, err := scanPlan(s.db.QueryRowContext(ctx,
+		`SELECT `+planColumns+` FROM plans WHERE code = ?`, code))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	p.CreatedAt, _ = parseTime(created)
-	p.UpdatedAt, _ = parseTime(upd)
 	return &p, nil
 }
 
 func (s *Store) ListPlans(ctx context.Context) ([]Plan, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT code, name, tag, squad_uuid, traffic_gb, device_limit, created_at, updated_at
-		FROM plans ORDER BY code ASC
-	`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+planColumns+` FROM plans ORDER BY code ASC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	var out []Plan
-	for rows.Next() {
-		var (
-			p            Plan
-			created, upd string
-		)
-		if err := rows.Scan(&p.Code, &p.Name, &p.Tag, &p.SquadUUID, &p.TrafficGB, &p.DeviceLimit, &created, &upd); err != nil {
-			return nil, err
-		}
-		p.CreatedAt, _ = parseTime(created)
-		p.UpdatedAt, _ = parseTime(upd)
-		out = append(out, p)
-	}
-	return out, rows.Err()
+	return scanList(rows, scanPlan)
 }
 
 // DeletePlan removes a plan together with its tariff grid so orphaned prices

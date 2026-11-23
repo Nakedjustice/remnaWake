@@ -368,23 +368,12 @@ func (s *Service) notifyAdminsTrialRequest(ctx context.Context, reqID int64, tel
 			{Text: i18n.T("❌ Отклонить"), CallbackData: fmt.Sprintf("tr_rej:%d", reqID)},
 		}},
 	}
-	var refs []adminMsgRef
-	for _, adminID := range s.adminIDs {
-		msgID, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
-		if err != nil {
-			s.logger.Error("trial: notify admin failed", "admin_id", adminID, "err", err.Error())
-			continue
-		}
-		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
-	}
-	s.putAdminMsgs(s.trialReqMsgs, reqID, refs)
+	s.notifyAdminsWithKeyboard(ctx, s.trialReqMsgs, reqID, text, kb, "trial: notify admin failed")
 }
 
 // handleTrialApprove processes an admin's "Одобрить" button on a trial request.
 func (s *Service) handleTrialApprove(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized trial approve attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "trial approve") {
 		return true
 	}
 
@@ -424,9 +413,7 @@ func (s *Service) handleTrialApprove(ctx context.Context, cb *tg.CallbackQuery) 
 
 // handleTrialReject processes an admin's "Отклонить" button on a trial request.
 func (s *Service) handleTrialReject(ctx context.Context, cb *tg.CallbackQuery) bool {
-	if !s.isEnabled() || !s.isAdmin(cb.From.ID) {
-		s.logger.Warn("unauthorized trial reject attempt", "from_id", cb.From.ID)
-		_ = s.bot.AnswerCallbackQuery(ctx, cb.ID, i18n.T("Недостаточно прав."))
+	if !s.requireAdminCB(ctx, cb, "trial reject") {
 		return true
 	}
 
@@ -563,10 +550,5 @@ func (s *Service) rejectTrialRequest(ctx context.Context, reqID int64) (*store.T
 // clearTrialButtons removes the approve/reject buttons from every admin's copy
 // of the trial-request notification, then forgets the stored refs.
 func (s *Service) clearTrialButtons(ctx context.Context, reqID int64) {
-	refs := s.takeAdminMsgs(s.trialReqMsgs, reqID)
-	for _, ref := range refs {
-		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
-			s.logger.Warn("clear admin trial button failed", "chat_id", ref.chatID, "err", err.Error())
-		}
-	}
+	s.clearAdminButtons(ctx, s.trialReqMsgs, reqID, "clear admin trial button failed")
 }

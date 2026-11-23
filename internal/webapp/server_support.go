@@ -1,16 +1,11 @@
 package webapp
 
 import (
-	"encoding/json"
-	"net/http"
+		"net/http"
 )
 
 // handleSupport returns the authenticated user's own support thread.
-func (s *Server) handleSupport(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticateSupport(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleSupport(w http.ResponseWriter, r *http.Request, userID int64) {
 	data, err := s.cabinet.SupportHistoryUser(r.Context(), userID)
 	if err != nil {
 		s.writeCabinetError(w, "support history", userID, err)
@@ -20,16 +15,11 @@ func (s *Server) handleSupport(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSupportSend stores a user's support message and notifies the admins.
-func (s *Server) handleSupportSend(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticateSupport(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleSupportSend(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Text string `json:"text"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 16384, &req) {
 		return
 	}
 	if err := s.cabinet.SupportSendUser(r.Context(), userID, req.Text); err != nil {
@@ -40,11 +30,7 @@ func (s *Server) handleSupportSend(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSupportClose closes (deletes) the user's own support thread.
-func (s *Server) handleSupportClose(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticateSupport(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleSupportClose(w http.ResponseWriter, r *http.Request, userID int64) {
 	if err := s.cabinet.SupportCloseUser(r.Context(), userID); err != nil {
 		s.writeCabinetError(w, "support close", userID, err)
 		return
@@ -65,19 +51,14 @@ type ticketRequest struct {
 // decodeTicketRequest reads a per-ticket body, answering 400 itself on garbage.
 func decodeTicketRequest(w http.ResponseWriter, r *http.Request) (ticketRequest, bool) {
 	var req ticketRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 16384, &req) {
 		return req, false
 	}
 	return req, true
 }
 
 // handleSupportTickets lists the authenticated user's tickets.
-func (s *Server) handleSupportTickets(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticateSupport(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleSupportTickets(w http.ResponseWriter, r *http.Request, userID int64) {
 	data, err := s.cabinet.SupportTicketsUser(r.Context(), userID)
 	if err != nil {
 		s.writeCabinetError(w, "support tickets", userID, err)
@@ -87,11 +68,7 @@ func (s *Server) handleSupportTickets(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSupportTicketThread returns one of the user's tickets with its history.
-func (s *Server) handleSupportTicketThread(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticateSupport(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleSupportTicketThread(w http.ResponseWriter, r *http.Request, userID int64) {
 	req, ok := decodeTicketRequest(w, r)
 	if !ok {
 		return
@@ -105,11 +82,7 @@ func (s *Server) handleSupportTicketThread(w http.ResponseWriter, r *http.Reques
 }
 
 // handleSupportTicketCreate opens a new ticket with its first message.
-func (s *Server) handleSupportTicketCreate(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticateSupport(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleSupportTicketCreate(w http.ResponseWriter, r *http.Request, userID int64) {
 	req, ok := decodeTicketRequest(w, r)
 	if !ok {
 		return
@@ -123,11 +96,7 @@ func (s *Server) handleSupportTicketCreate(w http.ResponseWriter, r *http.Reques
 }
 
 // handleSupportTicketSend appends the user's reply to one of their tickets.
-func (s *Server) handleSupportTicketSend(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticateSupport(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleSupportTicketSend(w http.ResponseWriter, r *http.Request, userID int64) {
 	req, ok := decodeTicketRequest(w, r)
 	if !ok {
 		return
@@ -140,11 +109,7 @@ func (s *Server) handleSupportTicketSend(w http.ResponseWriter, r *http.Request)
 }
 
 // handleSupportTicketClose closes one of the user's tickets.
-func (s *Server) handleSupportTicketClose(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticateSupport(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleSupportTicketClose(w http.ResponseWriter, r *http.Request, userID int64) {
 	req, ok := decodeTicketRequest(w, r)
 	if !ok {
 		return

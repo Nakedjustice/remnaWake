@@ -82,27 +82,27 @@ func (s *Server) Handler() http.Handler {
 	// Public payment-gateway callback (no initData auth): Platega verifies the
 	// transaction itself via its API, so the body is trusted only for its id.
 	mux.HandleFunc("POST /platega/callback", s.handlePlategaCallback)
-	mux.HandleFunc("GET /api/me", s.handleMe)
-	mux.HandleFunc("POST /api/renew", s.handleRenew)
-	mux.HandleFunc("POST /api/traffic-extension", s.handleTrafficExtension)
-	mux.HandleFunc("POST /api/gift", s.handleGift)
-	mux.HandleFunc("POST /api/invite", s.handleInvite)
-	mux.HandleFunc("POST /api/register", s.handleRegister)
-	mux.HandleFunc("POST /api/gift/redeem", s.handleGiftRedeem)
-	mux.HandleFunc("POST /api/receipt", s.handleReceipt)
-	mux.HandleFunc("POST /api/platega/check", s.handlePlategaCheck)
-	mux.HandleFunc("POST /api/notifications", s.handleNotifications)
-	mux.HandleFunc("POST /api/trial", s.handleTrial)
-	mux.HandleFunc("GET /api/devices", s.handleDevices)
-	mux.HandleFunc("POST /api/devices/revoke", s.handleDeviceRevoke)
-	mux.HandleFunc("GET /api/support", s.handleSupport)
-	mux.HandleFunc("POST /api/support/send", s.handleSupportSend)
-	mux.HandleFunc("POST /api/support/close", s.handleSupportClose)
-	mux.HandleFunc("GET /api/support/tickets", s.handleSupportTickets)
-	mux.HandleFunc("POST /api/support/ticket", s.handleSupportTicketThread)
-	mux.HandleFunc("POST /api/support/ticket/new", s.handleSupportTicketCreate)
-	mux.HandleFunc("POST /api/support/ticket/send", s.handleSupportTicketSend)
-	mux.HandleFunc("POST /api/support/ticket/close", s.handleSupportTicketClose)
+	mux.HandleFunc("GET /api/me", s.withUser(s.handleMe))
+	mux.HandleFunc("POST /api/renew", s.withUser(s.handleRenew))
+	mux.HandleFunc("POST /api/traffic-extension", s.withUser(s.handleTrafficExtension))
+	mux.HandleFunc("POST /api/gift", s.withUser(s.handleGift))
+	mux.HandleFunc("POST /api/invite", s.withUser(s.handleInvite))
+	mux.HandleFunc("POST /api/register", s.withUser(s.handleRegister))
+	mux.HandleFunc("POST /api/gift/redeem", s.withUser(s.handleGiftRedeem))
+	mux.HandleFunc("POST /api/receipt", s.withUser(s.handleReceipt))
+	mux.HandleFunc("POST /api/platega/check", s.withUser(s.handlePlategaCheck))
+	mux.HandleFunc("POST /api/notifications", s.withUser(s.handleNotifications))
+	mux.HandleFunc("POST /api/trial", s.withUser(s.handleTrial))
+	mux.HandleFunc("GET /api/devices", s.withUser(s.handleDevices))
+	mux.HandleFunc("POST /api/devices/revoke", s.withUser(s.handleDeviceRevoke))
+	mux.HandleFunc("GET /api/support", s.withSupportUser(s.handleSupport))
+	mux.HandleFunc("POST /api/support/send", s.withSupportUser(s.handleSupportSend))
+	mux.HandleFunc("POST /api/support/close", s.withSupportUser(s.handleSupportClose))
+	mux.HandleFunc("GET /api/support/tickets", s.withSupportUser(s.handleSupportTickets))
+	mux.HandleFunc("POST /api/support/ticket", s.withSupportUser(s.handleSupportTicketThread))
+	mux.HandleFunc("POST /api/support/ticket/new", s.withSupportUser(s.handleSupportTicketCreate))
+	mux.HandleFunc("POST /api/support/ticket/send", s.withSupportUser(s.handleSupportTicketSend))
+	mux.HandleFunc("POST /api/support/ticket/close", s.withSupportUser(s.handleSupportTicketClose))
 	mux.HandleFunc("GET /api/admin", s.adminOp("panel.get", nil, ""))
 	mux.HandleFunc("POST /api/admin/backup", s.adminOp("backup.send", nil, ""))
 	mux.HandleFunc("GET /api/admin/action-center", s.adminOp("action_center.get", nil, ""))
@@ -245,6 +245,41 @@ func (s *Server) authenticateSupport(w http.ResponseWriter, r *http.Request) (in
 	return user.ID, true
 }
 
+// withUser authenticates a Mini App identity and applies the registration
+// guard before invoking fn, so handlers receive the caller's Telegram ID
+// without repeating the prologue.
+func (s *Server) withUser(fn func(w http.ResponseWriter, r *http.Request, userID int64)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := s.authenticate(w, r)
+		if !ok {
+			return
+		}
+		fn(w, r, userID)
+	}
+}
+
+// withSupportUser is the support-route variant of withUser that keeps the
+// blocked-user exemption: the guard still runs but never rejects.
+func (s *Server) withSupportUser(fn func(w http.ResponseWriter, r *http.Request, userID int64)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := s.authenticateSupport(w, r)
+		if !ok {
+			return
+		}
+		fn(w, r, userID)
+	}
+}
+
+// decodeBody JSON-decodes a size-capped request body, answering 400 itself on
+// garbage so handlers keep their happy path.
+func decodeBody(w http.ResponseWriter, r *http.Request, limit int64, v any) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit)).Decode(v); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+		return false
+	}
+	return true
+}
+
 // handlePlategaCallback receives Platega's webhook. The body carries only a
 // transaction id; the service re-fetches the real status from Platega's API.
 // It always answers 200 (unless the body is unreadable) so Platega does not
@@ -268,11 +303,7 @@ func (s *Server) handlePlategaCallback(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, userID int64) {
 	data, err := s.cabinet.CabinetData(r.Context(), userID)
 	if err != nil {
 		s.logger.Error("webapp: cabinet data failed", "err", err.Error(), "telegram_id", userID)
@@ -282,11 +313,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, data)
 }
 
-func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		RemnawaveID         int64  `json:"remnawave_id"`
 		Months              int    `json:"months"`
@@ -294,8 +321,7 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		Plan                string `json:"plan"` // "" = standard
 		PlanChangeConfirmed bool   `json:"plan_change_confirmed"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 
@@ -333,18 +359,13 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) handleTrafficExtension(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleTrafficExtension(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		RemnawaveID int64  `json:"remnawave_id"`
 		TrafficGB   int    `json:"traffic_gb"`
 		Provider    string `json:"provider"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	result, err := s.cabinet.CreateTrafficExtensionRequest(r.Context(), userID, req.RemnawaveID, req.TrafficGB, req.Provider)
@@ -379,11 +400,7 @@ func (s *Server) handleTrafficExtension(w http.ResponseWriter, r *http.Request) 
 
 // handleDevices returns the caller's HWID slot usage, one section per linked
 // profile.
-func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request, userID int64) {
 	data, err := s.cabinet.DeviceOverview(r.Context(), userID)
 	if err != nil {
 		s.writeCabinetError(w, "devices", userID, err)
@@ -395,17 +412,12 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 // handleDeviceRevoke frees one slot. The hwid travels in the body because it is
 // long and arbitrary; the profile is named by id and re-checked against the
 // caller's own profiles by the service.
-func (s *Server) handleDeviceRevoke(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleDeviceRevoke(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		RemnawaveID int64  `json:"remnawave_id"`
 		HWID        string `json:"hwid"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	data, err := s.cabinet.RevokeDevice(r.Context(), userID, req.RemnawaveID, req.HWID)
@@ -476,16 +488,11 @@ func (s *Server) writeCabinetError(w http.ResponseWriter, action string, telegra
 	}
 }
 
-func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Query string `json:"query"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, 400, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	result, err := s.cabinet.RegisterProfile(r.Context(), userID, req.Query)
@@ -496,18 +503,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": result.Username})
 }
 
-func (s *Server) handleGiftRedeem(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleGiftRedeem(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Code        string `json:"code"`
 		RemnawaveID int64  `json:"remnawave_id"`
 		Username    string `json:"username"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
-		writeJSONError(w, 400, "malformed request body")
+	if !decodeBody(w, r, 8192, &req) {
 		return
 	}
 	result, err := s.cabinet.RedeemGift(r.Context(), userID, req.Code, req.RemnawaveID, req.Username)
@@ -518,11 +520,7 @@ func (s *Server) handleGiftRedeem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": result.Username, "subscription_url": result.SubscriptionURL, "expire_at": result.ExpireAt})
 }
 
-func (s *Server) handleReceipt(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleReceipt(w http.ResponseWriter, r *http.Request, userID int64) {
 	r.Body = http.MaxBytesReader(w, r.Body, (50<<20)+(1<<20))
 	if err := r.ParseMultipartForm(50 << 20); err != nil {
 		var maxErr *http.MaxBytesError
@@ -555,16 +553,11 @@ func (s *Server) handleReceipt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handlePlategaCheck(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handlePlategaCheck(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		RequestID int64 `json:"request_id"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, 400, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	result, err := s.cabinet.CheckPlategaPayment(r.Context(), userID, req.RequestID)
@@ -575,16 +568,11 @@ func (s *Server) handlePlategaCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": result.Status})
 }
 
-func (s *Server) handleGift(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleGift(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Months int `json:"months"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.cabinet.CreateGiftRequest(r.Context(), userID, req.Months); err != nil {
@@ -594,16 +582,11 @@ func (s *Server) handleGift(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleInvite(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleInvite(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Username string `json:"username"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.cabinet.CreateInviteRequest(r.Context(), userID, req.Username); err != nil {
@@ -613,17 +596,12 @@ func (s *Server) handleInvite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Kind  string `json:"kind"`
 		Muted bool   `json:"muted"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	if err := s.cabinet.SetNotificationPref(r.Context(), userID, req.Kind, req.Muted); err != nil {
@@ -633,16 +611,11 @@ func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleTrial(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleTrial(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req struct {
 		Username string `json:"username"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "malformed request body")
+	if !decodeBody(w, r, 4096, &req) {
 		return
 	}
 	result, err := s.cabinet.ClaimTrial(r.Context(), userID, req.Username)

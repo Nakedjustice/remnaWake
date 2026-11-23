@@ -207,7 +207,7 @@ func (s *Service) Run(ctx context.Context) error {
 			continue
 		}
 
-		// Persist a snapshot so the «Я оплатил» flow works (even after a restart).
+		// Persist a snapshot so the «Оплатить» flow works (even after a restart).
 		if err := s.pay.RememberUser(ctx, store.NotifiedUser{
 			RemnawaveID: u.ID,
 			Username:    u.Username,

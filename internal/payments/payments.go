@@ -234,6 +234,37 @@ type adminInputState struct {
 	supportTicket int64
 }
 
+// mutateAdminInput updates a chat's pending admin-input state under the
+// service lock, starting a fresh entry when the chat has none.
+func (s *Service) mutateAdminInput(chatID int64, mutate func(st *adminInputState)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.adminInput[chatID]
+	mutate(&st)
+	s.adminInput[chatID] = st
+}
+
+// setAdminInputStep moves a chat's pending admin-input to the given step.
+func (s *Service) setAdminInputStep(chatID int64, step adminInputStep) {
+	s.mutateAdminInput(chatID, func(st *adminInputState) { st.step = step })
+}
+
+// popAdminInput returns a chat's pending admin-input state and clears it.
+func (s *Service) popAdminInput(chatID int64) adminInputState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.adminInput[chatID]
+	delete(s.adminInput, chatID)
+	return st
+}
+
+// clearAdminInput drops a chat's pending admin-input state.
+func (s *Service) clearAdminInput(chatID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.adminInput, chatID)
+}
+
 type adminMsgRef struct {
 	chatID    int64
 	messageID int64
@@ -294,7 +325,6 @@ type payPhotoState struct {
 	kind       string
 	trafficGB  int
 	baseBytes  int64
-	extraBytes int64
 	createdAt  time.Time
 }
 
@@ -1052,7 +1082,7 @@ func (s *Service) isEnabled() bool {
 	return len(s.adminIDs) > 0
 }
 
-// PaymentButton returns the single «Я оплатил» keyboard, or nil when the
+// PaymentButton returns the single «Оплатить» keyboard, or nil when the
 // payment flow is disabled (no admin configured).
 func (s *Service) PaymentButton(userID int64) *tg.InlineKeyboardMarkup {
 	if !s.isEnabled() {
@@ -1060,7 +1090,7 @@ func (s *Service) PaymentButton(userID int64) *tg.InlineKeyboardMarkup {
 	}
 	return &tg.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tg.InlineKeyboardButton{
-			{{Text: i18n.T("Я оплатил"), CallbackData: fmt.Sprintf("pay:%d", userID)}},
+			{{Text: i18n.T("Оплатить"), CallbackData: fmt.Sprintf("pay:%d", userID)}},
 		},
 	}
 }
@@ -1091,6 +1121,32 @@ func (s *Service) takeAdminMsgs(m map[int64]adminMsgEntry, id int64) []adminMsgR
 	e := m[id]
 	delete(m, id)
 	return e.refs
+}
+
+// notifyAdminsWithKeyboard DMs every admin a keyboard message and remembers
+// the sent refs under id in m so resolving can clear the buttons in all admin
+// chats. label names the failures in the log.
+func (s *Service) notifyAdminsWithKeyboard(ctx context.Context, m map[int64]adminMsgEntry, id int64, text string, kb *tg.InlineKeyboardMarkup, label string) {
+	var refs []adminMsgRef
+	for _, adminID := range s.adminIDs {
+		msgID, err := s.bot.SendPlainWithKeyboard(ctx, adminID, text, kb)
+		if err != nil {
+			s.logger.Error(label, "admin_id", adminID, "err", err.Error())
+			continue
+		}
+		refs = append(refs, adminMsgRef{chatID: adminID, messageID: msgID})
+	}
+	s.putAdminMsgs(m, id, refs)
+}
+
+// clearAdminButtons removes the keyboards from every remembered admin message
+// for id in m, then forgets the stored refs. label names the failures in the log.
+func (s *Service) clearAdminButtons(ctx context.Context, m map[int64]adminMsgEntry, id int64, label string) {
+	for _, ref := range s.takeAdminMsgs(m, id) {
+		if err := s.bot.EditMessageReplyMarkup(ctx, ref.chatID, ref.messageID, nil); err != nil {
+			s.logger.Warn(label, "chat_id", ref.chatID, "err", err.Error())
+		}
+	}
 }
 
 func (s *Service) priceLabel(price int) string {
